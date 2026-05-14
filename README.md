@@ -16,6 +16,7 @@ Bring your own LLM and get full AI chat, agentic coding, and Power Mode workflow
 - 🌐 [Website](https://neuralinverse.com)
 - 📧 [Contact](mailto:github@neuralinverse.com)
 - 🏢 [Enterprise Edition](https://neuralinverse.com) - compliance, GRC, and legacy modernization for regulated industries
+- [![Sponsor NeuralInverse](https://img.shields.io/badge/Sponsor-NeuralInverse-ea4aaa?logo=github-sponsors&logoColor=white)](https://github.com/sponsors/NeuralInverse)
 
 
 ## Install
