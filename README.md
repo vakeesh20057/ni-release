@@ -33,17 +33,33 @@ irm neuralinverse.com/win | iex
 
 ## Features
 
-- **AI Chat**: Inline and sidebar chat with full codebase context
+### AI Chat & Agentic Coding
+- Inline and sidebar chat with full codebase context
+- **Power Mode**: autonomous multi-step agent that plans, edits, runs commands, and iterates without hand-holding
+- **Bring Your Own LLM**: direct integration with Claude, GPT-4, Gemini, Ollama, Bedrock, and more - your API keys stay local, no proxy
 
-- **Power Mode**: Agentic coding workflows - plan, edit, and run multi-step tasks autonomously
+### Firmware & Embedded Development
+Purpose-built for embedded engineers - not just syntax highlighting:
+- **MCU database**: 357 MCU variants across 11 manufacturers (STM32, NXP, ESP32, Nordic, Renesas, TI, Infineon, RP2040, AURIX, and more) with full specs, memory maps, and peripheral lists
+- **SVD auto-load**: fetches CMSIS-SVD register maps on demand, parses peripheral trees with bit-field detail, handles `derivedFrom` inheritance
+- **Datasheet intelligence**: drop in a PDF and the agent extracts register maps, timing constraints, errata, and pinouts - 3-tier pipeline with LLM reclassification, content-hash caching (zero re-processing on re-open), and page-level citations
+- **22 `fw_*` agent tools**: register map queries, peripheral config, bit-field lookup, errata checks, timing constraints, build + flash, serial monitor, MISRA/CERT-C checks, GDB debug (breakpoints, step, memory read/write), binary size analysis, code generation for peripheral init / ISR / DMA / clock config
+- **Platform knowledge packs**: STM32, ESP32, nRF (Zephyr), RP2040 - clock trees, DMA patterns, ISR constraints, toolchain quirks injected into every agent session
+- **Build system support**: PlatformIO, CMake, ESP-IDF, Make, Zephyr, Arduino, Mbed, STM32CubeIDE - build and flash directly from the IDE
+- **Serial monitor**: Web Serial API, 10,000-line ring buffer, baud auto-detection, debug probe auto-detection (ST-Link, J-Link, CMSIS-DAP, FTDI, CH340, and more)
+- **Compliance-aware**: MISRA C:2012, CERT C, IEC 62304, ISO 26262 rules injected into the agent context so generated code respects safety constraints
 
-- **Bring Your Own LLM**: Direct integration with Claude, GPT-4, Gemini, Ollama, Bedrock, and more - no middleman, your keys stay with you
+### Legacy Modernization
+Migrate legacy codebases to modern languages without losing business logic:
+- **Discovery**: scans source trees across 20+ languages - COBOL, PL/SQL, RPG, Natural, FORTRAN, Assembler, AUTOSAR ARXML, CAN DBC, IEC 61131, TTCN-3, and more - extracting dependencies, complexity metrics, tech debt, and regulated data patterns
+- **Semantic fingerprinting**: extracts business rules, type mappings, regulated fields (PCI-DSS, financial-core, tax-compliance), and naming conventions from legacy code using a deterministic + LLM two-layer pipeline
+- **Migration planning**: CPM critical path scheduling across 7 phases (foundation through cutover), 12 blocker types, API compatibility gates, compliance ordering, effort estimation with safety-critical language surcharges
+- **Translation engine**: language-pair profiles with idiom mappings (COBOL to Java: 32 idioms; PL/SQL to TypeScript; RPG to Java; Angular 1 to 18; and more), 6-priority context budget, verification checks, and decision tracking
+- **Knowledge base**: persistent store for every translation decision, type mapping, glossary term, annotation, and compliance gate result - survives IDE restarts, importable/exportable
+- **Cutover engine**: readiness gate checks, audit bundle export with chain integrity (FNV-1a hash), committed file writing to target tree
 
-- **Modernization Engine**: Legacy codebase migration tooling with discovery, planning, translation, and cutover phases - supports COBOL, PL/SQL, RPG, Natural, and more
-
-- **Firmware Support**: Datasheet knowledge base and embedded development tooling
-
-- **Multi-model**: Switch between providers and models per task
+### Multi-model
+Switch models per task - use a fast model for chat, a powerful one for agentic runs.
 
 
 ## What is not in CE
