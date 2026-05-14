@@ -18,6 +18,19 @@ Bring your own LLM and get full AI chat, agentic coding, and Power Mode workflow
 - 🏢 [Enterprise Edition](https://neuralinverse.com) - compliance, GRC, and legacy modernization for regulated industries
 
 
+## Install
+
+**macOS / Linux**
+```bash
+curl -fsSL neuralinverse.com/sh | bash
+```
+
+**Windows** (PowerShell)
+```powershell
+irm neuralinverse.com/win | iex
+```
+
+
 ## Features
 
 - **AI Chat**: Inline and sidebar chat with full codebase context
