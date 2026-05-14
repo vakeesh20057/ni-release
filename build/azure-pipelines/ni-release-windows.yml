@@ -1,0 +1,405 @@
+################################################################################
+#  NeuralInverse IDE — Windows Release Pipeline (all architectures)
+#
+#    Windows x64   → .exe  .msi  .zip   (Intel / AMD 64-bit)
+#    Windows arm64 → .exe  .zip         (Surface Pro X / Snapdragon)
+#
+#  Trigger: same v* tag as ni-release.yml — runs in parallel.
+#
+#  Required Azure DevOps setup (same as ni-release.yml):
+#    1. Azure service connection named:  azure-neuralinverse
+#    2. GitHub service connection named: github-neuralinverse
+#    3. Pipeline variables:
+#         NI_GITHUB_REPO      = neuralinverse/neuralinverse
+#         NI_STORAGE_ACCOUNT  = <azure storage account name>
+#         NI_STORAGE_KEY      = <storage account key>  (mark as secret)
+#         GITHUB_TOKEN        = <github PAT with public_repo scope> (mark as secret)
+################################################################################
+
+trigger:
+  tags:
+    include:
+      - "v*"
+  branches:
+    exclude:
+      - "*"
+
+pr: none
+
+variables:
+  NODE_VERSION: "20.x"
+  NI_QUALITY: "stable"
+  NI_APP_NAME: "neuralinverse"
+  NI_DISPLAY_NAME: "NeuralInverse"
+  NI_VERSION: "0.1.0"
+
+################################################################################
+#  STAGE 1 — Windows x64  (.exe + .msi + .zip)
+################################################################################
+stages:
+  - stage: Build_Windows_x64
+    displayName: "NeuralInverse — Windows x64"
+    pool:
+      vmImage: "windows-2022"
+    jobs:
+      - job: build_win32_x64
+        displayName: "Windows x64 (.exe + .msi + .zip)"
+        timeoutInMinutes: 180
+        steps:
+          - checkout: self
+            fetchDepth: 1
+
+          - task: NodeTool@0
+            displayName: "Install Node.js $(NODE_VERSION)"
+            inputs:
+              versionSpec: $(NODE_VERSION)
+
+          - task: Cache@2
+            displayName: "Restore npm cache"
+            inputs:
+              key: 'npm | "$(Agent.OS)-x64" | package-lock.json'
+              restoreKeys: |
+                npm | "$(Agent.OS)-x64"
+              path: $(npm_config_cache)
+
+          - powershell: |
+              $wixPath = "C:\Program Files (x86)\WiX Toolset v3.14\bin"
+              if (Test-Path "$wixPath\candle.exe") {
+                Write-Host "WiX found at $wixPath"
+                echo "##vso[task.prependpath]$wixPath"
+              } else {
+                Write-Host "Installing WiX Toolset v3..."
+                choco install wixtoolset --version 3.14.1 -y --no-progress
+                echo "##vso[task.prependpath]$wixPath"
+              }
+            displayName: "Ensure WiX Toolset is on PATH"
+
+          - script: |
+              npm config set fetch-retry-mintimeout 20000
+              npm config set fetch-retry-maxtimeout 120000
+              npm config set fetch-retries 5
+              npm config set fetch-timeout 300000
+              npm ci
+            displayName: "Install dependencies"
+            env:
+              ELECTRON_SKIP_BINARY_DOWNLOAD: "1"
+              GITHUB_TOKEN: $(GITHUB_TOKEN)
+
+          - script: npm run buildreact
+            displayName: "Build React UI"
+
+          - script: node node_modules/.bin/gulp compile-build-without-mangling
+            displayName: "Compile TypeScript (production)"
+            env:
+              NODE_OPTIONS: "--max-old-space-size=12288"
+
+          - script: node node_modules/.bin/gulp minify-vscode
+            displayName: "Minify (produces out-vscode-min/)"
+            env:
+              NODE_OPTIONS: "--max-old-space-size=12288"
+
+          - script: node node_modules/.bin/gulp vscode-win32-x64-min-ci
+            displayName: "Gulp — package Windows x64"
+            env:
+              VSCODE_QUALITY: $(NI_QUALITY)
+              VSCODE_BUILD_WIN32_MSI: "1"
+
+          - powershell: |
+              $version = "$(NI_VERSION)"
+              $displayName = "$(NI_DISPLAY_NAME)"
+              $releaseDir = ".build\release"
+              New-Item -ItemType Directory -Force -Path $releaseDir | Out-Null
+
+              $exts = @('.exe', '.msi', '.zip')
+              Get-ChildItem -Path "." -Recurse -File -ErrorAction SilentlyContinue |
+                Where-Object {
+                  $exts -contains $_.Extension -and
+                  $_.FullName -notlike "*\node_modules\*" -and
+                  $_.FullName -notlike "*\.git\*" -and
+                  $_.FullName -notlike "*\release\*"
+                } |
+                ForEach-Object {
+                  $ext = $_.Extension
+                  $dest = Join-Path $releaseDir "$displayName-$version-win32-x64$ext"
+                  Copy-Item $_.FullName $dest -Force
+                  Write-Host "Collected: $dest"
+                }
+            displayName: "Collect .exe, .msi, .zip"
+
+          - powershell: |
+              $version = "$(NI_VERSION)"
+              $releaseDir = ".build\release"
+              $msiDest = Join-Path $releaseDir "$(NI_DISPLAY_NAME)-$version-win32-x64.msi"
+
+              if (Test-Path $msiDest) {
+                Write-Host ".msi already present - skipping WiX fallback"
+                exit 0
+              }
+
+              $appDir = Get-ChildItem -Path ".", ".." -Directory -ErrorAction SilentlyContinue |
+                Where-Object { $_.Name -match "win32" -and $_.Name -notmatch "node_modules" } |
+                Select-Object -First 1
+
+              if (-not $appDir) {
+                Write-Host "##[warning]App directory not found - .msi will not be produced"
+                exit 0
+              }
+
+              $wixOut = ".build\wix"
+              New-Item -ItemType Directory -Force -Path $wixOut | Out-Null
+              $harvestedWxs = Join-Path $wixOut "NeuralInverseFiles.wxs"
+              $msiTmp = Join-Path $wixOut "NeuralInverse.msi"
+
+              & heat dir $appDir.FullName -nologo -srd -gg -sreg -cg NeuralInverseFiles -dr INSTALLFOLDER "-var:var.SourceDir" "-out:$harvestedWxs"
+              & candle -nologo -arch x64 "-dProductVersion=$version" "-dSourceDir=$($appDir.FullName)" "build\win32\NeuralInverse.wxs" $harvestedWxs "-out:$wixOut\"
+              & light -nologo -ext WixUIExtension (Get-ChildItem $wixOut -Filter "*.wixobj").FullName "-out:$msiTmp"
+
+              if (Test-Path $msiTmp) {
+                Copy-Item $msiTmp $msiDest
+                Write-Host "Produced: $msiDest"
+              } else {
+                Write-Host "##[warning]WiX build did not produce .msi"
+              }
+            displayName: "Build .msi — WiX fallback"
+
+          - powershell: Get-ChildItem .build\release\ | Format-Table Name, Length
+            displayName: "List Windows x64 artifacts"
+
+          - task: PublishPipelineArtifact@1
+            displayName: "Publish Windows x64 artifacts"
+            inputs:
+              targetPath: ".build/release"
+              artifact: "NeuralInverse-win32-x64"
+              publishLocation: pipeline
+
+          - task: AzureCLI@2
+            displayName: "Checkpoint — upload Windows x64 to Azure Blob"
+            inputs:
+              azureSubscription: "azure-neuralinverse"
+              scriptType: "pscore"
+              scriptLocation: "inlineScript"
+              inlineScript: |
+                az storage blob upload-batch `
+                  --account-name "$(NI_STORAGE_ACCOUNT)" `
+                  --account-key "$(NI_STORAGE_KEY)" `
+                  --destination "releases" `
+                  --destination-path "$(NI_VERSION)" `
+                  --source ".build/release" `
+                  --overwrite true
+                Write-Host "Windows x64 checkpoint saved to releases/$(NI_VERSION)/"
+
+################################################################################
+#  STAGE 2 — Windows arm64  (.exe + .zip)  — Surface / Snapdragon
+################################################################################
+  - stage: Build_Windows_arm64
+    displayName: "NeuralInverse — Windows arm64"
+    pool:
+      vmImage: "windows-2022"
+    jobs:
+      - job: build_win32_arm64
+        displayName: "Windows arm64 (.exe + .zip)"
+        timeoutInMinutes: 180
+        steps:
+          - checkout: self
+            fetchDepth: 1
+
+          - task: NodeTool@0
+            displayName: "Install Node.js $(NODE_VERSION)"
+            inputs:
+              versionSpec: $(NODE_VERSION)
+
+          - task: Cache@2
+            displayName: "Restore npm cache"
+            inputs:
+              key: 'npm | "$(Agent.OS)-arm64" | package-lock.json'
+              restoreKeys: |
+                npm | "$(Agent.OS)-arm64"
+              path: $(npm_config_cache)
+
+          - script: |
+              npm config set fetch-retry-mintimeout 20000
+              npm config set fetch-retry-maxtimeout 120000
+              npm config set fetch-retries 5
+              npm config set fetch-timeout 300000
+              npm ci
+            displayName: "Install dependencies"
+            env:
+              npm_config_arch: arm64
+              ELECTRON_SKIP_BINARY_DOWNLOAD: "1"
+              GITHUB_TOKEN: $(GITHUB_TOKEN)
+
+          - script: npm run buildreact
+            displayName: "Build React UI"
+
+          - script: node node_modules/.bin/gulp compile-build-without-mangling
+            displayName: "Compile TypeScript (production)"
+            env:
+              NODE_OPTIONS: "--max-old-space-size=12288"
+
+          - script: node node_modules/.bin/gulp minify-vscode
+            displayName: "Minify (produces out-vscode-min/)"
+            env:
+              NODE_OPTIONS: "--max-old-space-size=12288"
+
+          - script: node node_modules/.bin/gulp vscode-win32-arm64-min-ci
+            displayName: "Gulp — package Windows arm64"
+            env:
+              VSCODE_QUALITY: $(NI_QUALITY)
+              npm_config_arch: arm64
+              VSCODE_BUILD_WIN32_MSI: "1"
+
+          - powershell: |
+              $version = "$(NI_VERSION)"
+              $displayName = "$(NI_DISPLAY_NAME)"
+              $releaseDir = ".build\release"
+              New-Item -ItemType Directory -Force -Path $releaseDir | Out-Null
+
+              $exts = @('.exe', '.msi', '.zip')
+              Get-ChildItem -Path "." -Recurse -File -ErrorAction SilentlyContinue |
+                Where-Object {
+                  $exts -contains $_.Extension -and
+                  $_.FullName -notlike "*\node_modules\*" -and
+                  $_.FullName -notlike "*\.git\*" -and
+                  $_.FullName -notlike "*\release\*"
+                } |
+                ForEach-Object {
+                  $ext = $_.Extension
+                  $dest = Join-Path $releaseDir "$displayName-$version-win32-arm64$ext"
+                  Copy-Item $_.FullName $dest -Force
+                  Write-Host "Collected: $dest"
+                }
+            displayName: "Collect .exe and .zip"
+
+          - powershell: |
+              $version = "$(NI_VERSION)"
+              $releaseDir = ".build\release"
+              $msiDest = Join-Path $releaseDir "$(NI_DISPLAY_NAME)-$version-win32-arm64.msi"
+
+              if (Test-Path $msiDest) {
+                Write-Host ".msi already present - skipping WiX fallback"
+                exit 0
+              }
+
+              $appDir = Get-ChildItem -Path ".", ".." -Directory -ErrorAction SilentlyContinue |
+                Where-Object { $_.Name -match "arm64" -and $_.Name -notmatch "node_modules" } |
+                Select-Object -First 1
+
+              if (-not $appDir) {
+                Write-Host "##[warning]App directory not found - .msi will not be produced"
+                exit 0
+              }
+
+              $wixOut = ".build\wix-arm64"
+              New-Item -ItemType Directory -Force -Path $wixOut | Out-Null
+              $harvestedWxs = Join-Path $wixOut "NeuralInverseFiles.wxs"
+              $msiTmp = Join-Path $wixOut "NeuralInverse.msi"
+
+              & heat dir $appDir.FullName -nologo -srd -gg -sreg -cg NeuralInverseFiles -dr INSTALLFOLDER "-var:var.SourceDir" "-out:$harvestedWxs"
+              & candle -nologo -arch arm64 "-dProductVersion=$version" "-dSourceDir=$($appDir.FullName)" "build\win32\NeuralInverse.wxs" $harvestedWxs "-out:$wixOut\"
+              & light -nologo -ext WixUIExtension (Get-ChildItem $wixOut -Filter "*.wixobj").FullName "-out:$msiTmp"
+
+              if (Test-Path $msiTmp) {
+                Copy-Item $msiTmp $msiDest
+                Write-Host "Produced: $msiDest"
+              } else {
+                Write-Host "##[warning]WiX build did not produce arm64 .msi"
+              }
+            displayName: "Build .msi — WiX fallback (arm64)"
+
+          - powershell: Get-ChildItem .build\release\ | Format-Table Name, Length
+            displayName: "List Windows arm64 artifacts"
+
+          - task: PublishPipelineArtifact@1
+            displayName: "Publish Windows arm64 artifacts"
+            inputs:
+              targetPath: ".build/release"
+              artifact: "NeuralInverse-win32-arm64"
+              publishLocation: pipeline
+
+          - task: AzureCLI@2
+            displayName: "Checkpoint — upload Windows arm64 to Azure Blob"
+            inputs:
+              azureSubscription: "azure-neuralinverse"
+              scriptType: "pscore"
+              scriptLocation: "inlineScript"
+              inlineScript: |
+                az storage blob upload-batch `
+                  --account-name "$(NI_STORAGE_ACCOUNT)" `
+                  --account-key "$(NI_STORAGE_KEY)" `
+                  --destination "releases" `
+                  --destination-path "$(NI_VERSION)" `
+                  --source ".build/release" `
+                  --overwrite true
+                Write-Host "Windows arm64 checkpoint saved to releases/$(NI_VERSION)/"
+
+################################################################################
+#  STAGE 3 — GitHub Release  (Windows formats only)
+################################################################################
+  - stage: GitHub_Release_Windows
+    displayName: "NeuralInverse — Publish Windows GitHub Release"
+    dependsOn:
+      - Build_Windows_x64
+      - Build_Windows_arm64
+    condition: succeeded()
+    pool:
+      vmImage: "ubuntu-latest"
+    jobs:
+      - job: publish_windows_release
+        displayName: "Create Windows GitHub Release"
+        steps:
+          - checkout: none
+
+          - task: AzureCLI@2
+            displayName: "Download Windows artifacts from Azure Blob"
+            inputs:
+              azureSubscription: "azure-neuralinverse"
+              scriptType: "bash"
+              scriptLocation: "inlineScript"
+              inlineScript: |
+                DEST="$(Build.ArtifactStagingDirectory)/release"
+                mkdir -p "$DEST"
+                az storage blob download-batch \
+                  --account-name "$(NI_STORAGE_ACCOUNT)" \
+                  --account-key "$(NI_STORAGE_KEY)" \
+                  --source "releases" \
+                  --destination "$DEST" \
+                  --pattern "$(NI_VERSION)/*"
+                mv "$DEST/$(NI_VERSION)/"* "$DEST/" 2>/dev/null || true
+                rmdir "$DEST/$(NI_VERSION)" 2>/dev/null || true
+                ls -lh "$DEST/"
+
+          - task: GitHubRelease@1
+            displayName: "Publish Windows builds to GitHub Releases"
+            inputs:
+              gitHubConnection: "github-neuralinverse"
+              repositoryName: "$(NI_GITHUB_REPO)"
+              action: "create"
+              tag: "v$(NI_VERSION)-windows"
+              title: "NeuralInverse IDE v$(NI_VERSION) — Windows"
+              releaseNotesSource: "inline"
+              releaseNotes: |
+                ## NeuralInverse IDE v$(NI_VERSION) — Windows
+
+                All Windows architectures. For macOS and Linux see [v$(NI_VERSION)](../../releases/tag/v$(NI_VERSION)).
+
+                ---
+
+                ### Windows x64 (Intel / AMD)
+
+                | File | Use case |
+                |---|---|
+                | `NeuralInverse-*-win32-x64.exe` | Standard install wizard |
+                | `NeuralInverse-*-win32-x64.msi` | Enterprise / Group Policy / SCCM — `msiexec /i NeuralInverse.msi /quiet` |
+                | `NeuralInverse-*-win32-x64.zip` | Developers / CI environments |
+
+                ### Windows arm64 (Surface Pro X / Snapdragon)
+
+                | File | Use case |
+                |---|---|
+                | `NeuralInverse-*-win32-arm64.exe` | Standard install wizard |
+                | `NeuralInverse-*-win32-arm64.msi` | Enterprise / Group Policy / SCCM — `msiexec /i NeuralInverse.msi /quiet` |
+                | `NeuralInverse-*-win32-arm64.zip` | Developers / CI environments |
+              assets: "$(Build.ArtifactStagingDirectory)/release/*"
+              isDraft: false
+              isPreRelease: false
+              addChangeLog: false
