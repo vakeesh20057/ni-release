@@ -4,15 +4,15 @@
  *--------------------------------------------------------------------------------------------*/
 
 /**
- * ModernisationPart — dedicated auxiliary window console for Modernisation Mode.
+ * ModernisationPart -- dedicated auxiliary window console for Modernisation Mode.
  *
- * Opened via Cmd+Alt+M. Fully standalone — no sidebar.
+ * Opened via Cmd+Alt+M. Fully standalone -- no sidebar.
  * Inherits the active VS Code colour theme via CSS custom properties.
  *
  * Screens:
- *  IDLE    — Create or open a Modernisation Project.
- *  WIZARD  — Step 1: Legacy folder · Step 2: Modern folder · Step 3: Migration pattern.
- *  ACTIVE  — Left: workflow stages + config · Right: compliance analysis pane.
+ *  IDLE    -- Create or open a Modernisation Project.
+ *  WIZARD  -- Step 1: Legacy folder . Step 2: Modern folder . Step 3: Migration pattern.
+ *  ACTIVE  -- Left: workflow stages + config . Right: compliance analysis pane.
  *            Stage 2 (Planning) has an explicit approval gate before Stage 3 unlocks.
  */
 
@@ -44,7 +44,9 @@ import {
 	MIGRATION_PATTERN_PRESETS,
 	MIGRATION_PATTERN_LABELS,
 	MIGRATION_PATTERN_DESCRIPTIONS,
+	IFirmwareModuleConfig,
 } from '../modernisationSessionService.js';
+import { buildFirmwareConfigPanel, requiresFirmwareConfig } from './firmwareConfigPanel.js';
 import { IDiscoveryService } from '../engine/discovery/discoveryService.js';
 import { IDiscoveryResult } from '../engine/discovery/discoveryTypes.js';
 import { IKnowledgeUnit, IKnowledgeFile, ITypeMappingDecision, INamingDecision } from '../../common/knowledgeBaseTypes.js';
@@ -56,7 +58,7 @@ import { ICutoverService } from '../engine/cutover/service.js';
 import { IAutonomyService } from '../engine/autonomy/service.js';
 import { ModernisationConsole } from './console/modernisationConsole.js';
 
-// ─── Stage metadata ───────────────────────────────────────────────────────────
+// --- Stage metadata -----------------------------------------------------------
 
 const STAGE_DESCRIPTIONS: Record<ModernisationStage, string> = {
 	discovery:  'Scan the legacy codebase. Identify and fingerprint all migration units.',
@@ -67,12 +69,12 @@ const STAGE_DESCRIPTIONS: Record<ModernisationStage, string> = {
 };
 
 
-// ─── Storage keys ─────────────────────────────────────────────────────────────
+// --- Storage keys -------------------------------------------------------------
 
 const DISCOVERY_STORAGE_KEY = 'neuralInverse.modernisation.discoveryResult.v1';
 const ROADMAP_STORAGE_KEY   = 'neuralInverse.modernisation.roadmap.v1';
 
-// ─── DOM helpers (no innerHTML — Trusted Types compliant) ─────────────────────
+// --- DOM helpers (no innerHTML -- Trusted Types compliant) ---------------------
 
 function $e<K extends keyof HTMLElementTagNameMap>(tag: K, css?: string): HTMLElementTagNameMap[K] {
 	const el = document.createElement(tag);
@@ -86,7 +88,7 @@ function $t<K extends keyof HTMLElementTagNameMap>(tag: K, text: string, css?: s
 	return el;
 }
 
-// ─── Part ─────────────────────────────────────────────────────────────────────
+// --- Part ---------------------------------------------------------------------
 
 export class ModernisationPart extends Part {
 
@@ -107,6 +109,7 @@ export class ModernisationPart extends Part {
 	private _wizardTargets: Array<{ uri: URI; label: string }> = [];
 	private _wizardPattern: MigrationPattern | undefined;
 	private _wizardBusy    = false;
+	private _wizardFirmwareConfig: Partial<IFirmwareModuleConfig> = { complianceFrameworks: [] };
 
 	// Analysis result area
 	private _resultsEl!: HTMLElement;
@@ -151,7 +154,7 @@ export class ModernisationPart extends Part {
 
 		// Initialise the KB as soon as a session becomes active so the console
 		// shows units rather than "Knowledge base not active".
-		// kb.init() is idempotent when called with the same sessionId — safe to
+		// kb.init() is idempotent when called with the same sessionId -- safe to
 		// call on every onDidChangeSession fire while the session is active.
 		const initKBIfNeeded = (s: IModernisationSessionData) => {
 			if (!s.isActive || kbService.isActive) { return; }
@@ -170,7 +173,7 @@ export class ModernisationPart extends Part {
 				if (this._discoveryResult) {
 					this._seedKBFromDiscovery(this._discoveryResult);
 				}
-			}).catch(() => { /* storage error — non-fatal */ });
+			}).catch(() => { /* storage error -- non-fatal */ });
 		};
 
 		// Initialise immediately if a session is already active at construction time
@@ -178,7 +181,7 @@ export class ModernisationPart extends Part {
 
 		this._disposables.add(sessionService.onDidChangeSession(s => {
 			if (!s.isActive) {
-				// Session ended — close KB and clear persisted results
+				// Session ended -- close KB and clear persisted results
 				kbService.close();
 				this._discoveryResult = undefined;
 				this._roadmap         = undefined;
@@ -191,16 +194,16 @@ export class ModernisationPart extends Part {
 		}));
 	}
 
-	// ─── Storage persistence ─────────────────────────────────────────────────
+	// --- Storage persistence -------------------------------------------------
 
 	private _tryRestoreFromStorage(): void {
 		const rawDiscovery = this._storage.get(DISCOVERY_STORAGE_KEY, StorageScope.WORKSPACE);
 		if (rawDiscovery) {
-			try { this._discoveryResult = JSON.parse(rawDiscovery); } catch { /* corrupt — ignore */ }
+			try { this._discoveryResult = JSON.parse(rawDiscovery); } catch { /* corrupt -- ignore */ }
 		}
 		const rawRoadmap = this._storage.get(ROADMAP_STORAGE_KEY, StorageScope.WORKSPACE);
 		if (rawRoadmap) {
-			try { this._roadmap = JSON.parse(rawRoadmap); } catch { /* corrupt — ignore */ }
+			try { this._roadmap = JSON.parse(rawRoadmap); } catch { /* corrupt -- ignore */ }
 		}
 	}
 
@@ -223,20 +226,20 @@ export class ModernisationPart extends Part {
 	/**
 	 * Seed the KB with units from a discovery result.
 	 *
-	 * Only source units are seeded — target units are the output of migration and
+	 * Only source units are seeded -- target units are the output of migration and
 	 * do not need to be tracked as migration atoms in the KB.
 	 *
 	 * Already-migrated services are detected via crossProjectPairings: if a source
 	 * unit already has a paired target unit on disk, it is seeded as 'committed'
 	 * with targetFile populated so the Unit Index reflects real progress.
 	 *
-	 * Idempotent — safe to call multiple times (e.g. on reload).
+	 * Idempotent -- safe to call multiple times (e.g. on reload).
 	 */
 	private _seedKBFromDiscovery(discovery: IDiscoveryResult): void {
 		if (!this.kbService.isActive) { return; }
 		const now = Date.now();
 
-		// Build lookup: targetUnitId → { filePath, language } for all target units
+		// Build lookup: targetUnitId -> { filePath, language } for all target units
 		const targetUnitMap = new Map<string, { filePath: string; lang: string }>();
 		for (const targetScan of discovery.targets) {
 			for (const unit of targetScan.units) {
@@ -244,9 +247,9 @@ export class ModernisationPart extends Part {
 			}
 		}
 
-		// Build lookup: sourceUnitId → best pairing (highest confidence wins)
-		// Any valid pairing (confidence ≥ 0.20, the global filter threshold) means
-		// the source unit already has a mapped counterpart in the target — mark committed.
+		// Build lookup: sourceUnitId -> best pairing (highest confidence wins)
+		// Any valid pairing (confidence  0.20, the global filter threshold) means
+		// the source unit already has a mapped counterpart in the target -- mark committed.
 		const sourceToTarget = new Map<string, { targetFile: string; confidence: number }>();
 		for (const pairing of discovery.crossProjectPairings) {
 			const tgt = targetUnitMap.get(pairing.targetUnitId);
@@ -261,13 +264,13 @@ export class ModernisationPart extends Part {
 		const toAdd: IKnowledgeUnit[] = [];
 		const toUpdate: Array<{ id: string; patch: Partial<IKnowledgeUnit> }> = [];
 
-		// ── Source units ──────────────────────────────────────────────────
+		// -- Source units --------------------------------------------------
 		for (const scan of discovery.sources) {
 			for (const unit of scan.units) {
 				const pairing    = sourceToTarget.get(unit.id);
 				const targetFile = pairing?.targetFile;
-				// Any cross-project pairing means a target implementation exists → committed
-				// No pairing means nothing has been written yet → pending
+				// Any cross-project pairing means a target implementation exists -> committed
+				// No pairing means nothing has been written yet -> pending
 				const newStatus: IKnowledgeUnit['status'] = targetFile ? 'committed' : 'pending';
 
 				if (this.kbService.hasUnit(unit.id)) {
@@ -306,7 +309,7 @@ export class ModernisationPart extends Part {
 			}
 		}
 
-		// ── Target units ──────────────────────────────────────────────────
+		// -- Target units --------------------------------------------------
 		// Add ALL target units to the KB so total = source + target (294, not 256).
 		// Target units that are paired with a source unit are already committed.
 		// Unpaired target units (new architecture not yet linked to source) are also committed
@@ -327,7 +330,7 @@ export class ModernisationPart extends Part {
 					dependsOn:      unit.dependencies,
 					usedBy:         unit.dependents,
 					businessRules:  [],
-					// Target units already exist in the target project — always committed
+					// Target units already exist in the target project -- always committed
 					status:         'committed',
 					targetFile:     unit.legacyFilePath,
 					approvals:      [],
@@ -337,7 +340,7 @@ export class ModernisationPart extends Part {
 			}
 		}
 
-		// ── File registry ─────────────────────────────────────────────────
+		// -- File registry -------------------------------------------------
 		const fileMap = new Map<string, IKnowledgeFile>();
 		for (const scan of [...discovery.sources, ...discovery.targets]) {
 			for (const unit of scan.units) {
@@ -364,7 +367,7 @@ export class ModernisationPart extends Part {
 		this.kbService.batchEnd();
 
 		// Pre-seed decision log with standard type mappings for the detected language pair.
-		// Only do this once — if there are already decisions recorded, skip.
+		// Only do this once -- if there are already decisions recorded, skip.
 		const existingDecisions = this.kbService.getDecisions();
 		const hasDecisions = existingDecisions.typeMapping.length > 0 || existingDecisions.naming.length > 0;
 		if (!hasDecisions) {
@@ -375,12 +378,12 @@ export class ModernisationPart extends Part {
 	}
 
 	private _seedDecisionLog(srcLang: string, tgtLang: string, now: number): void {
-		const pair = `${srcLang}→${tgtLang}`;
+		const pair = `${srcLang}->${tgtLang}`;
 		type TypeMapping = [string, string, string]; // [sourceType, targetType, rationale]
 		const typeMappings: TypeMapping[] = [];
 		const namingDecisions: Array<[string, string, string]> = []; // [sourceName, targetName, domain]
 
-		if (pair === 'javascript→java' || pair === 'typescript→java') {
+		if (pair === 'javascript->java' || pair === 'typescript->java') {
 			typeMappings.push(
 				['string',              'String',                      'JS string is immutable, maps to Java String'],
 				['number',              'int / long / double',          'JS number is float64; use int/long for integers, double for decimals'],
@@ -405,12 +408,12 @@ export class ModernisationPart extends Part {
 				['get*/set* accessors',  'getX()/setX() JavaBeans',    'naming'],
 				['handler functions',    'doHandle() / process()',     'naming'],
 			);
-		} else if (pair === 'javascript→typescript' || pair === 'typescript→typescript') {
+		} else if (pair === 'javascript->typescript' || pair === 'typescript->typescript') {
 			typeMappings.push(
 				['any',    'unknown',  'Prefer unknown over any for type safety'],
 				['object', 'Record<string, unknown>', 'Typed object literal'],
 			);
-		} else if (pair === 'cobol→java' || pair === 'cobol→typescript') {
+		} else if (pair === 'cobol->java' || pair === 'cobol->typescript') {
 			typeMappings.push(
 				['PIC 9(n)',        'int / long',      'COBOL fixed integer maps to Java int/long'],
 				['PIC 9(n)V9(m)',   'BigDecimal',      'COBOL decimal maps to BigDecimal for precision'],
@@ -463,7 +466,7 @@ export class ModernisationPart extends Part {
 		return parent;
 	}
 
-	// ─── Render dispatcher ───────────────────────────────────────────────────
+	// --- Render dispatcher ---------------------------------------------------
 
 	private _render(): void {
 		while (this._root.firstChild) { this._root.removeChild(this._root.firstChild); }
@@ -488,7 +491,7 @@ export class ModernisationPart extends Part {
 		}
 	}
 
-	// ─── Top bar ─────────────────────────────────────────────────────────────
+	// --- Top bar -------------------------------------------------------------
 
 	private _buildTopBar(session: IModernisationSessionData): HTMLElement {
 		const bar = $e('div', [
@@ -529,7 +532,7 @@ export class ModernisationPart extends Part {
 		return bar;
 	}
 
-	// ─── IDLE screen ─────────────────────────────────────────────────────────
+	// --- IDLE screen ---------------------------------------------------------
 
 	private _renderIdle(root: HTMLElement): void {
 		const wrap = $e('div', [
@@ -554,6 +557,7 @@ export class ModernisationPart extends Part {
 			this._wizardSources = [];
 			this._wizardTargets = [];
 			this._wizardPattern = undefined;
+			this._wizardFirmwareConfig = { complianceFrameworks: [] };
 			this._render();
 		}));
 		wrap.appendChild(createCard);
@@ -567,7 +571,7 @@ export class ModernisationPart extends Part {
 			'font-size:12px;color:var(--vscode-descriptionForeground);line-height:1.6;margin-bottom:16px;'));
 		openCard.appendChild(this._btn('Open Existing Project', false, async () => {
 			const uris = await this.fileDialogService.showOpenDialog({
-				title: 'Open Modernisation Project — select a folder with Modernisation.inverse',
+				title: 'Open Modernisation Project -- select a folder with Modernisation.inverse',
 				canSelectFiles: false, canSelectFolders: true, canSelectMany: false,
 			});
 			if (!uris?.[0]) { return; }
@@ -577,6 +581,7 @@ export class ModernisationPart extends Part {
 				this._wizardSources = [{ uri: uris[0], label: this._basename(uris[0].path) }];
 				this._wizardTargets = [];
 				this._wizardPattern = undefined;
+				this._wizardFirmwareConfig = { complianceFrameworks: [] };
 				this._render();
 			}
 		}));
@@ -594,7 +599,7 @@ export class ModernisationPart extends Part {
 		].join(';'));
 	}
 
-	// ─── WIZARD screen ───────────────────────────────────────────────────────
+	// --- WIZARD screen -------------------------------------------------------
 
 	private _renderWizard(root: HTMLElement): void {
 		// Derive topology from selected pattern (if any)
@@ -620,7 +625,7 @@ export class ModernisationPart extends Part {
 		const body = $e('div', 'flex:1;display:flex;overflow:hidden;');
 		root.appendChild(body);
 
-		// ── Left panel ────────────────────────────────────────────────────
+		// -- Left panel ----------------------------------------------------
 		const left = $e('div', [
 			'width:340px', 'min-width:280px', 'flex-shrink:0',
 			'display:flex', 'flex-direction:column', 'gap:10px',
@@ -721,6 +726,19 @@ export class ModernisationPart extends Part {
 			'font-size:11px;color:var(--vscode-descriptionForeground);line-height:1.5;'));
 		left.appendChild(note);
 
+		// Firmware / sector config panel (only shown for firmware-category patterns)
+		const selectedPreset = MIGRATION_PATTERN_PRESETS.find(p => p.id === this._wizardPattern);
+		const firmwarePanel = buildFirmwareConfigPanel(
+			selectedPreset?.category,
+			this._wizardFirmwareConfig,
+			(patch) => { this._wizardFirmwareConfig = { ...this._wizardFirmwareConfig, ...patch }; this._render(); },
+		);
+		if (firmwarePanel) {
+			const fwSection = $e('div', 'margin-top:16px;');
+			fwSection.appendChild(firmwarePanel);
+			left.appendChild(fwSection);
+		}
+
 		// Spacer + init button
 		left.appendChild($e('div', 'flex:1;min-height:12px;'));
 
@@ -740,6 +758,11 @@ export class ModernisationPart extends Part {
 						validTargets,
 						this._wizardPattern,
 					);
+					// Apply firmware config if one was collected
+					const hasFirmwareConfig = requiresFirmwareConfig(selectedPreset?.category);
+					if (hasFirmwareConfig && Object.keys(this._wizardFirmwareConfig).length > 0) {
+						this.sessionService.setFirmwareConfig(this._wizardFirmwareConfig as IFirmwareModuleConfig);
+					}
 					await this.commandService.executeCommand('neuralInverse.openModernisationSourceWindows');
 					await this.commandService.executeCommand('neuralInverse.openModernisationTargetWindows');
 				} finally {
@@ -757,7 +780,7 @@ export class ModernisationPart extends Part {
 
 		body.appendChild(left);
 
-		// ── Right panel — pattern picker ──────────────────────────────────
+		// -- Right panel -- pattern picker ----------------------------------
 		body.appendChild(this._patternPanel(initBtn as HTMLButtonElement));
 	}
 
@@ -896,7 +919,7 @@ export class ModernisationPart extends Part {
 		}
 		panel.appendChild(list);
 
-		// Custom / universal text input — fixed at bottom
+		// Custom / universal text input -- fixed at bottom
 		const customBar = $e('div', [
 			'flex-shrink:0', 'padding:12px 16px',
 			'border-top:1px solid var(--vscode-panel-border,var(--vscode-widget-border))',
@@ -912,7 +935,7 @@ export class ModernisationPart extends Part {
 			'border:1px solid var(--vscode-input-border,var(--vscode-widget-border))',
 			'border-radius:3px', 'font-size:12px', 'font-family:inherit',
 		].join(';'));
-		(customInput as HTMLInputElement).placeholder = 'e.g. PL/1 → Node.js, EJB consolidation…';
+		(customInput as HTMLInputElement).placeholder = 'e.g. PL/1 -> Node.js, EJB consolidation...';
 		// Pre-fill if the current pattern is not a preset
 		const isCustom = this._wizardPattern && !MIGRATION_PATTERN_PRESETS.find(p => p.id === this._wizardPattern);
 		if (isCustom) { (customInput as HTMLInputElement).value = this._wizardPattern!; }
@@ -944,7 +967,7 @@ export class ModernisationPart extends Part {
 		return panel;
 	}
 
-	// ─── ACTIVE screen ───────────────────────────────────────────────────────
+	// --- ACTIVE screen -------------------------------------------------------
 
 	private _renderActive(root: HTMLElement, session: IModernisationSessionData): void {
 		const layout = $e('div', 'flex:1;display:flex;overflow:hidden;');
@@ -958,7 +981,7 @@ export class ModernisationPart extends Part {
 	private _buildWorkflowPanel(session: IModernisationSessionData): HTMLElement {
 		const panel = $e('div', 'width:300px;min-width:280px;flex-shrink:0;display:flex;flex-direction:column;overflow-y:auto;background:var(--vscode-sideBar-background,var(--vscode-editor-background));');
 
-		// Project section — sources + targets
+		// Project section -- sources + targets
 		const projSec = this._section('Projects');
 		for (const pt of session.sources) {
 			projSec.appendChild(this._projectRow('SRC', pt, 'neuralInverse.openModernisationSourceWindows'));
@@ -1066,7 +1089,7 @@ export class ModernisationPart extends Part {
 		}
 		panel.appendChild(wfSec);
 
-		// Session configuration — always visible at bottom of sidebar
+		// Session configuration -- always visible at bottom of sidebar
 		panel.appendChild($e('div', 'height:8px;border-top:1px solid var(--vscode-widget-border);margin-top:4px;'));
 		panel.appendChild(this._buildConfigPanel(session));
 
@@ -1088,7 +1111,7 @@ export class ModernisationPart extends Part {
 		} else if (session.currentStage === 'cutover') {
 			panel.appendChild(this._buildCutoverPane(session));
 		} else {
-			// Fallback — should never reach here with a valid stage
+			// Fallback -- should never reach here with a valid stage
 			panel.appendChild(this._buildFilePickers(session));
 			panel.appendChild(this._buildAnalyseRow());
 			this._resultsEl = $e('div', 'flex:1;overflow-y:auto;padding:20px;');
@@ -1102,7 +1125,7 @@ export class ModernisationPart extends Part {
 		return panel;
 	}
 
-	// ─── Discovery pane (Stage 1) ─────────────────────────────────────────────
+	// --- Discovery pane (Stage 1) ---------------------------------------------
 
 	private _buildDiscoveryPane(session: IModernisationSessionData): HTMLElement {
 		const pane = $e('div', 'flex:1;overflow-y:auto;padding:24px 28px;');
@@ -1252,7 +1275,7 @@ export class ModernisationPart extends Part {
 				].join(';'));
 
 				if (isNewProject) {
-					// Empty target — will be created during migration
+					// Empty target -- will be created during migration
 					chips.appendChild($t('span',
 						isTarget
 							? '\u2014 Empty target directory. Will be populated during migration.'
@@ -1351,7 +1374,7 @@ export class ModernisationPart extends Part {
 		}
 	}
 
-	// ─── Planning pane ───────────────────────────────────────────────────────
+	// --- Planning pane -------------------------------------------------------
 
 	private _buildPlanningPane(session: IModernisationSessionData): HTMLElement {
 		const pane = $e('div', 'flex:1;overflow-y:auto;padding:24px 28px;');
@@ -1363,7 +1386,7 @@ export class ModernisationPart extends Part {
 			'Scan the legacy codebase, generate an AI-refined migration roadmap, review every phase and blocker, then approve to unlock Stage 3.',
 			'font-size:12px;color:var(--vscode-descriptionForeground);line-height:1.6;margin:0 0 20px;'));
 
-		// ── Run / regenerate button ───────────────────────────────────────
+		// -- Run / regenerate button ---------------------------------------
 		const hasStage1 = !!this._discoveryResult;
 		const ctrlRow = $e('div', 'display:flex;align-items:center;gap:10px;margin-bottom:8px;flex-wrap:wrap;');
 		const runBtn = this._btn(
@@ -1419,7 +1442,7 @@ export class ModernisationPart extends Part {
 			pane.appendChild($e('div', 'height:12px;'));
 		}
 
-		// ── Progress log (visible while running, or if log has entries) ──
+		// -- Progress log (visible while running, or if log has entries) --
 		if (this._plannerRunning || this._plannerLog.length > 0) {
 			const logWrap = $e('div', [
 				'border:1px solid var(--vscode-widget-border)',
@@ -1451,7 +1474,7 @@ export class ModernisationPart extends Part {
 			pane.appendChild(logWrap);
 		}
 
-		// ── Roadmap content ───────────────────────────────────────────────
+		// -- Roadmap content -----------------------------------------------
 		if (this._roadmap) {
 			// Summary stats bar
 			pane.appendChild(this._buildRoadmapSummary(this._roadmap));
@@ -1564,11 +1587,11 @@ export class ModernisationPart extends Part {
 
 	/** Re-render only the right-panel pane without a full root re-render (avoids flicker). */
 	private _reRenderPlanningPane(session: IModernisationSessionData): void {
-		// Full re-render is safe here — the planning pane is stateful via class fields
+		// Full re-render is safe here -- the planning pane is stateful via class fields
 		this._render();
 	}
 
-	// ─── Stage 3 + 4: Migration & Validation (parallel progress dashboard) ──────
+	// --- Stage 3 + 4: Migration & Validation (parallel progress dashboard) ------
 
 	private _buildMigrationPane(session: IModernisationSessionData): HTMLElement {
 		return this._buildMigrationValidationDashboard(session, 'migration');
@@ -1581,12 +1604,12 @@ export class ModernisationPart extends Part {
 	/**
 	 * Shared dashboard shown for both Stage 3 and Stage 4.
 	 * Renders the 4-tab ModernisationConsole (Unit Index, Pending Decisions,
-	 * Decision Log, Progress) — or a plan-not-approved guard if needed.
+	 * Decision Log, Progress) -- or a plan-not-approved guard if needed.
 	 */
 	private _buildMigrationValidationDashboard(session: IModernisationSessionData, _activeView: 'migration' | 'validation'): HTMLElement {
 		const pane = $e('div', 'flex:1;overflow:hidden;display:flex;flex-direction:column;');
 
-		// ── Plan not approved guard ───────────────────────────────────────
+		// -- Plan not approved guard ---------------------------------------
 		if (!session.planApproved) {
 			const warn = $e('div', [
 				'padding:14px 16px', 'border-radius:6px',
@@ -1608,7 +1631,7 @@ export class ModernisationPart extends Part {
 			return pane;
 		}
 
-		// ── 4-tab Modernisation Console ──────────────────────────────────
+		// -- 4-tab Modernisation Console ----------------------------------
 		// Create once and reuse across re-renders to preserve filter/tab state
 		if (!this._console) {
 			this._console = new ModernisationConsole(
@@ -1623,7 +1646,7 @@ export class ModernisationPart extends Part {
 
 	}
 
-	// ─── Stage 5: Cutover pane ───────────────────────────────────────────────
+	// --- Stage 5: Cutover pane -----------------------------------------------
 
 	private _buildCutoverPane(_session: IModernisationSessionData): HTMLElement {
 		const pane = $e('div', 'flex:1;overflow-y:auto;padding:24px 28px;');
@@ -1692,7 +1715,7 @@ export class ModernisationPart extends Part {
 			summaryGrid.appendChild(sCell('Total Units', String(this._roadmap.totalUnits)));
 			summaryGrid.appendChild(sCell('Phases', String(this._roadmap.phases?.length ?? 0)));
 			if (this._roadmap.estimatedHoursLow && this._roadmap.estimatedHoursHigh) {
-				summaryGrid.appendChild(sCell('Est. Hours', `${this._roadmap.estimatedHoursLow}–${this._roadmap.estimatedHoursHigh}`));
+				summaryGrid.appendChild(sCell('Est. Hours', `${this._roadmap.estimatedHoursLow}--${this._roadmap.estimatedHoursHigh}`));
 			}
 			summary.appendChild(summaryGrid);
 			pane.appendChild(summary);
@@ -1711,7 +1734,7 @@ export class ModernisationPart extends Part {
 		return pane;
 	}
 
-	// ─── Roadmap sub-views ───────────────────────────────────────────────────
+	// --- Roadmap sub-views ---------------------------------------------------
 
 	private _buildRoadmapSummary(roadmap: IMigrationRoadmap): HTMLElement {
 		const bar = $e('div', [
@@ -1744,7 +1767,7 @@ export class ModernisationPart extends Part {
 
 		const effortLow  = roadmap.estimatedHoursLow  ?? 0;
 		const effortHigh = roadmap.estimatedHoursHigh ?? 0;
-		bar.appendChild(stat('Est. Effort', effortHigh > 0 ? `${effortLow}–${effortHigh}h` : '—'));
+		bar.appendChild(stat('Est. Effort', effortHigh > 0 ? `${effortLow}--${effortHigh}h` : '--'));
 
 		if (roadmap.aiEstimatedEffort) {
 			bar.appendChild(this._divider());
@@ -1789,7 +1812,7 @@ export class ModernisationPart extends Part {
 			hdr.appendChild($t('span', `${phase.unitIds.length} units`,
 				'font-size:10px;color:var(--vscode-descriptionForeground);'));
 			// Effort
-			hdr.appendChild($t('span', `${phase.estimatedHoursLow}–${phase.estimatedHoursHigh}h`,
+			hdr.appendChild($t('span', `${phase.estimatedHoursLow}--${phase.estimatedHoursHigh}h`,
 				'font-size:10px;color:var(--vscode-descriptionForeground);'));
 
 			// Gate badges
@@ -2016,7 +2039,7 @@ export class ModernisationPart extends Part {
 
 	private _buildApprovalGate(session: IModernisationSessionData): HTMLElement {
 		if (session.planApproved) {
-			// Already approved — show status + navigation
+			// Already approved -- show status + navigation
 			const banner = $e('div', [
 				'padding:14px 16px', 'border-radius:6px',
 				'background:var(--vscode-inputValidation-infoBackground,rgba(100,200,100,0.07))',
@@ -2057,7 +2080,7 @@ export class ModernisationPart extends Part {
 		return banner;
 	}
 
-	// ─── Helpers shared by planning view ─────────────────────────────────────
+	// --- Helpers shared by planning view -------------------------------------
 
 	private _buildSection(title: string, content: HTMLElement): HTMLElement {
 		const wrap = $e('div', [
@@ -2145,6 +2168,39 @@ export class ModernisationPart extends Part {
 		row2.appendChild(stageSelect);
 		body.appendChild(row2);
 
+		// Show firmware config summary if set
+		if (session.firmwareConfig) {
+			const fc = session.firmwareConfig;
+			const fwCard = $e('div', 'margin-top:16px; border:1px solid var(--vscode-widget-border); border-radius:6px; overflow:hidden;');
+			const fwHdr = $e('div', 'padding:8px 12px; background:var(--vscode-sideBarSectionHeader-background); display:flex; align-items:center; justify-content:space-between;');
+			fwHdr.appendChild($t('span', 'Firmware Config', 'font-size:11px; font-weight:600; color:#e0a84e;'));
+			const editBtn = $t('button', 'Edit', 'font-size:10px; padding:2px 8px; cursor:pointer; background:var(--vscode-button-secondaryBackground); color:var(--vscode-button-secondaryForeground); border:1px solid var(--vscode-button-border,var(--vscode-widget-border)); border-radius:3px;');
+			// clicking Edit re-opens a firmware config panel in an overlay -- for now just show summary
+			fwHdr.appendChild(editBtn);
+			fwCard.appendChild(fwHdr);
+			const fwBody = $e('div', 'padding:8px 12px; font-size:11px; color:var(--vscode-foreground); display:flex; flex-wrap:wrap; gap:6px 16px;');
+			const addStat = (k: string, v: string | undefined) => {
+				if (!v) { return; }
+				const chip = $e('div', 'display:flex; gap:4px; align-items:center;');
+				chip.appendChild($t('span', k + ':', 'color:var(--vscode-descriptionForeground);'));
+				chip.appendChild($t('span', v, 'color:var(--vscode-foreground); font-weight:500;'));
+				fwBody.appendChild(chip);
+			};
+			addStat('MCU', fc.mcuVariant ?? fc.mcuFamily);
+			addStat('RTOS', fc.rtos);
+			addStat('Target RTOS', fc.targetRtos);
+			addStat('ASIL', fc.asilTarget);
+			addStat('SIL', fc.silTarget);
+			addStat('MISRA', fc.misraVersion);
+			addStat('3GPP', fc.release3gpp);
+			addStat('IEC 62443', fc.iec62443SecurityLevel);
+			if (fc.complianceFrameworks?.length) {
+				addStat('Frameworks', fc.complianceFrameworks.join(', '));
+			}
+			fwCard.appendChild(fwBody);
+			body.appendChild(fwCard);
+		}
+
 		sec.appendChild(body);
 		return sec;
 	}
@@ -2196,7 +2252,7 @@ export class ModernisationPart extends Part {
 		return row;
 	}
 
-	// ─── Analysis ────────────────────────────────────────────────────────────
+	// --- Analysis ------------------------------------------------------------
 
 	private async _runAnalysis(): Promise<void> {
 		const session = this.sessionService.session;
@@ -2297,7 +2353,7 @@ export class ModernisationPart extends Part {
 		return sec;
 	}
 
-	// ─── Shared helpers ───────────────────────────────────────────────────────
+	// --- Shared helpers -------------------------------------------------------
 
 	private _projectRow(badge: string, pt: IProjectTarget, openCmd: string): HTMLElement {
 		const row = $e('div', 'display:flex;align-items:center;gap:8px;margin-bottom:6px;');
