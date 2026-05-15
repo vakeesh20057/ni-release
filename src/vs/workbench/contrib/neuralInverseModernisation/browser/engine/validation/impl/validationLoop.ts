@@ -12,21 +12,21 @@
  * ## 4-step sequence
  *
  * ```
- * Step 1 — Eligibility check
+ * Step 1 -- Eligibility check
  *   Verify unit exists, has both sourceText/resolvedSource and targetText.
  *   Acquire a KB lock to prevent concurrent validation jobs on the same unit.
  *
- * Step 2 — Layer 1: Static checks
+ * Step 2 -- Layer 1: Static checks
  *   Run deterministic structural checks (no LLM).
  *   If ALL static checks fail (obvious broken translation), short-circuit to 'failed'.
  *   This saves LLM budget on clearly broken translations.
  *
- * Step 3 — Layer 2: LLM semantic analysis (optional)
+ * Step 3 -- Layer 2: LLM semantic analysis (optional)
  *   Build the equivalence prompt.
  *   Call the LLM with retry logic.
  *   Parse the XML response into test cases + divergences.
  *
- * Step 4 — Outcome determination
+ * Step 4 -- Outcome determination
  *   Combine Layer 1 static results with Layer 2 LLM test cases.
  *   Classify into ValidationOutcome.
  *   Build and return IValidationResult.
@@ -34,13 +34,13 @@
  *
  * ## Outcome classification rules
  *
- *   - Any static 'fail' AND LLM failCount > 0  → 'failed'
- *   - LLM failCount > 0                         → 'failed'
- *   - Static has 'fail' but LLM all pass        → 'partial'  (static concern, LLM disagrees)
- *   - Static has 'warn' OR confidence < 'high'  → 'partial'
- *   - All pass, confidence = 'high'             → 'validated'
- *   - All pass, confidence = 'medium'           → 'validated' (medium is good enough)
- *   - All pass, confidence = 'low'/'uncertain'  → 'partial'
+ *   - Any static 'fail' AND LLM failCount > 0  -> 'failed'
+ *   - LLM failCount > 0                         -> 'failed'
+ *   - Static has 'fail' but LLM all pass        -> 'partial'  (static concern, LLM disagrees)
+ *   - Static has 'warn' OR confidence < 'high'  -> 'partial'
+ *   - All pass, confidence = 'high'             -> 'validated'
+ *   - All pass, confidence = 'medium'           -> 'validated' (medium is good enough)
+ *   - All pass, confidence = 'low'/'uncertain'  -> 'partial'
  *
  * ## Error contract
  *
@@ -66,7 +66,7 @@ import { buildValidationPrompt } from './validationPromptBuilder.js';
 import { parseValidationResponse } from './validationResultParser.js';
 
 
-// ─── Constants ────────────────────────────────────────────────────────────────
+// --- Constants ----------------------------------------------------------------
 
 const LOGGING_NAME = 'ModernisationValidationEngine';
 const LOCK_OWNER   = 'validation-engine';
@@ -76,7 +76,7 @@ const LOCK_TTL_MS  = 8 * 60 * 1000; // 8 minutes
 const VALIDATED_CONFIDENCE: ValidationConfidence[] = ['high', 'medium'];
 
 
-// ─── Main entry ───────────────────────────────────────────────────────────────
+// --- Main entry ---------------------------------------------------------------
 
 /**
  * Execute the full validation loop for a single knowledge unit.
@@ -102,7 +102,7 @@ export async function runValidationLoop(
 	let   lockAcquired = false;
 
 	try {
-		// ── Step 1: Eligibility ──────────────────────────────────────────────────
+		// -- Step 1: Eligibility --------------------------------------------------
 		const unit = kb.getUnit(unitId);
 		if (!unit) {
 			return _makeErrorResult(unitId, 'unknown', startMs, 'Unit not found in KB.');
@@ -118,11 +118,11 @@ export async function runValidationLoop(
 
 		if (!sourceCode.trim()) {
 			return _makeErrorResult(unitId, unit.name, startMs,
-				'No source code available — run Phase 1 (Source Resolution) first.');
+				'No source code available -- run Phase 1 (Source Resolution) first.');
 		}
 		if (!targetCode.trim()) {
 			return _makeErrorResult(unitId, unit.name, startMs,
-				'No translated target code available — run Phase 4 (Translation) first.');
+				'No translated target code available -- run Phase 4 (Translation) first.');
 		}
 
 		// Acquire unit lock
@@ -139,7 +139,7 @@ export async function runValidationLoop(
 		const targetLang = options.targetLanguage ?? _inferLang(unit.targetFile);
 		const sourceLang = unit.sourceLang ?? 'unknown';
 
-		// ── Step 2: Static checks ────────────────────────────────────────────────
+		// -- Step 2: Static checks ------------------------------------------------
 		let staticChecks: IStaticCheckResult[] = [];
 
 		if (options.includeStaticChecks ?? DEFAULT_VALIDATION_OPTIONS.includeStaticChecks) {
@@ -170,7 +170,7 @@ export async function runValidationLoop(
 			};
 		}
 
-		// ── Step 3: LLM semantic analysis ────────────────────────────────────────
+		// -- Step 3: LLM semantic analysis ----------------------------------------
 		let testCases:    IValidationTestCase[]     = [];
 		let analysis      = '';
 		let confidence:   ValidationConfidence      = 'uncertain';
@@ -180,7 +180,7 @@ export async function runValidationLoop(
 		let lastParseError: string | undefined;
 
 		if (options.includeLLMAnalysis ?? DEFAULT_VALIDATION_OPTIONS.includeLLMAnalysis) {
-			// Model selection — same pattern as translation engine
+			// Model selection -- same pattern as translation engine
 			const modelSelection: ModelSelection | null =
 				settings.state.modelSelectionOfFeature['Checks'] ??
 				settings.state.modelSelectionOfFeature['Chat'] ??
@@ -188,7 +188,7 @@ export async function runValidationLoop(
 
 			if (!modelSelection) {
 				return _makeErrorResult(unitId, unit.name, startMs,
-					'No model configured — set a model for the Checks or Chat feature in Void settings.');
+					'No model configured -- set a model for the Checks or Chat feature in Void settings.');
 			}
 
 			// Gather business rules for the prompt (top 5)
@@ -258,7 +258,7 @@ export async function runValidationLoop(
 			}
 		}
 
-		// ── Step 4: Outcome determination ────────────────────────────────────────
+		// -- Step 4: Outcome determination ----------------------------------------
 		const passCount  = testCases.filter(tc => tc.passed).length;
 		const failCount  = testCases.filter(tc => !tc.passed).length;
 		const outcome    = _determineOutcome(
@@ -294,7 +294,7 @@ export async function runValidationLoop(
 
 
 
-// ─── Outcome determination ────────────────────────────────────────────────────
+// --- Outcome determination ----------------------------------------------------
 
 function _determineOutcome(
 	staticAggregate: 'pass' | 'warn' | 'fail',
@@ -303,10 +303,10 @@ function _determineOutcome(
 	confidence:      ValidationConfidence,
 	llmSucceeded:    boolean,
 ): ValidationOutcome {
-	// Any LLM-confirmed divergences → failed
+	// Any LLM-confirmed divergences -> failed
 	if (failCount > 0) { return 'failed'; }
 
-	// Static check failure with no LLM override → partial (needs human review)
+	// Static check failure with no LLM override -> partial (needs human review)
 	if (staticAggregate === 'fail' && totalTests === 0) { return 'failed'; }
 	if (staticAggregate === 'fail') { return 'partial'; }
 
@@ -315,7 +315,7 @@ function _determineOutcome(
 		return staticAggregate === 'pass' ? 'partial' : 'failed';
 	}
 
-	// All tests pass — check confidence
+	// All tests pass -- check confidence
 	if (VALIDATED_CONFIDENCE.includes(confidence)) {
 		// Static warnings allowed with high/medium confidence
 		return 'validated';
@@ -326,7 +326,7 @@ function _determineOutcome(
 }
 
 
-// ─── LLM call wrapper ─────────────────────────────────────────────────────────
+// --- LLM call wrapper ---------------------------------------------------------
 
 type PromptMessage = { role: 'system' | 'user' | 'assistant'; content: string };
 
@@ -372,7 +372,7 @@ function _callLLM(
 }
 
 
-// ─── Language inference ────────────────────────────────────────────────────────
+// --- Language inference --------------------------------------------------------
 
 function _inferLang(targetFile: string | undefined): string {
 	if (!targetFile) { return 'unknown'; }
@@ -390,7 +390,7 @@ function _inferLang(targetFile: string | undefined): string {
 }
 
 
-// ─── Result factories ─────────────────────────────────────────────────────────
+// --- Result factories ---------------------------------------------------------
 
 function _makeErrorResult(
 	unitId:      string,

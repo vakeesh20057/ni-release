@@ -9,7 +9,7 @@
  * Bridges the fingerprint engine and the Knowledge Base.
  *
  * After Layer 2 extraction produces ISemanticRule[], this adapter:
- * 1. Converts ISemanticRule[] → IBusinessRule[] (KB format)
+ * 1. Converts ISemanticRule[] -> IBusinessRule[] (KB format)
  * 2. Calls kb.recordBusinessRules(unitId, rules)
  * 3. Calls kb.assignUnitToDomain(unitId, domain) for each compliance domain
  * 4. Updates the glossary if new domain terms are identified
@@ -20,7 +20,7 @@
  * ## ID Generation
  *
  * Business rule IDs are deterministically generated from (unitId + ruleIndex + domain + descriptionHash).
- * This means re-running extraction on the same unit produces the same IDs — no orphan rules accumulate.
+ * This means re-running extraction on the same unit produces the same IDs -- no orphan rules accumulate.
  *
  * ## Confidence Assignment
  *
@@ -35,13 +35,13 @@ import { IComplianceFingerprint, ISemanticRule } from '../../../../common/modern
 import { fnv1a32 } from './fingerprintCache.js';
 
 
-// ─── Confidence Constants ─────────────────────────────────────────────────────
+// --- Confidence Constants -----------------------------------------------------
 
 const CONFIDENCE_AI_DEFAULT = 0.85;
 const CONFIDENCE_AI_PRESERVATION_REQUIRED = 0.95;
 
 
-// ─── Business Rule Adapter ────────────────────────────────────────────────────
+// --- Business Rule Adapter ----------------------------------------------------
 
 /**
  * Write a fingerprint's semantic content to the Knowledge Base.
@@ -59,12 +59,12 @@ export function applyFingerprintToKB(
 	fingerprint: IComplianceFingerprint,
 ): void {
 	if (!fingerprint.llmExtractionComplete) {
-		// Layer 2 did not complete — no semantic rules to write.
+		// Layer 2 did not complete -- no semantic rules to write.
 		// The fingerprint record itself is still written by the caller.
 		return;
 	}
 
-	// 1. Convert semantic rules → business rules
+	// 1. Convert semantic rules -> business rules
 	const businessRules = convertSemanticRules(unitId, fingerprint.semanticRules);
 
 	// 2. Persist to KB (replaces any previous rules from an earlier extraction)
@@ -83,7 +83,7 @@ export function applyFingerprintToKB(
 }
 
 
-// ─── Semantic Rule → Business Rule Conversion ─────────────────────────────────
+// --- Semantic Rule -> Business Rule Conversion ---------------------------------
 
 /**
  * Convert ISemanticRule[] (fingerprint format) to IBusinessRule[] (KB format).
@@ -115,7 +115,7 @@ function convertSemanticRules(unitId: string, semanticRules: ISemanticRule[]): I
  * Format: `br:{unitId}:{ruleIndex}:{descriptionHash}`
  *
  * The description hash ensures that if the LLM produces a different description
- * for a rule (even with the same index), it gets a different ID — preventing
+ * for a rule (even with the same index), it gets a different ID -- preventing
  * a stale description from being associated with a new rule ID.
  */
 function buildBusinessRuleId(unitId: string, index: number, rule: ISemanticRule): string {
@@ -124,7 +124,7 @@ function buildBusinessRuleId(unitId: string, index: number, rule: ISemanticRule)
 }
 
 
-// ─── Domain Management ────────────────────────────────────────────────────────
+// --- Domain Management --------------------------------------------------------
 
 /**
  * Ensure a business domain exists in the KB.
@@ -201,7 +201,7 @@ function frameworksForDomain(domainName: string): string[] {
 }
 
 
-// ─── Glossary Updates ─────────────────────────────────────────────────────────
+// --- Glossary Updates ---------------------------------------------------------
 
 /**
  * Update the KB glossary with domain terms inferred from the fingerprint.
@@ -246,7 +246,7 @@ function updateGlossaryFromRules(
 }
 
 
-// ─── KB State Helpers ─────────────────────────────────────────────────────────
+// --- KB State Helpers ---------------------------------------------------------
 
 /**
  * Remove all business rules extracted by the AI for a given unit.

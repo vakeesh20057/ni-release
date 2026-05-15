@@ -14,19 +14,19 @@
  *
  * 1. `%TYPE` anchored declaration:
  *    `v_balance accounts.balance%TYPE`
- *    → The AI doesn't know that `accounts.balance` is NUMBER(15,2).
+ *    -> The AI doesn't know that `accounts.balance` is NUMBER(15,2).
  *
  * 2. `%ROWTYPE` anchored declaration:
  *    `v_acct_rec accounts%ROWTYPE`
- *    → The AI doesn't know what columns the `accounts` table has.
+ *    -> The AI doesn't know what columns the `accounts` table has.
  *
  * 3. Package-level type reference:
  *    `v_rec pkg_billing.t_invoice_rec`
- *    → The AI doesn't know what `t_invoice_rec` is defined as in pkg_billing.
+ *    -> The AI doesn't know what `t_invoice_rec` is defined as in pkg_billing.
  *
  * 4. Cross-package procedure call:
  *    `pkg_billing.calc_late_fee(p_acct_id, p_days_overdue, v_fee)`
- *    → The AI doesn't know the signature of calc_late_fee.
+ *    -> The AI doesn't know the signature of calc_late_fee.
  *
  * ## Strategy
  *
@@ -48,7 +48,7 @@
  *
  * ## Why Comments, Not Inline Expansion?
  *
- * PL/SQL is compiled — it knows its types at compilation time. If we inline the
+ * PL/SQL is compiled -- it knows its types at compilation time. If we inline the
  * actual type definition in place of `%TYPE`, the code would no longer be valid
  * PL/SQL. Comments preserve the code's integrity while giving the AI the context
  * it needs.
@@ -58,7 +58,7 @@ import { IDependencyRef, IDependencyResolutionResult } from './resolutionTypes.j
 import { IKnowledgeBaseService } from '../../../knowledgeBase/service.js';
 
 
-// ─── Public API ───────────────────────────────────────────────────────────────
+// --- Public API ---------------------------------------------------------------
 
 export interface IPlsqlInlineOptions {
 	insertMarkers: boolean;
@@ -94,7 +94,7 @@ export function resolvePlsqlTypes(
 }
 
 
-// ─── %TYPE and %ROWTYPE Resolution ────────────────────────────────────────────
+// --- %TYPE and %ROWTYPE Resolution --------------------------------------------
 
 /**
  * Find all %TYPE and %ROWTYPE anchored declarations and inject resolved type comments.
@@ -140,7 +140,7 @@ function resolveTypeRefs(
 			result = result.slice(0, insertPos) + comment + result.slice(insertPos);
 			resolvedRefs.push({ ref: depRef, resolved: true, inlinedContent: comment });
 		} else {
-			const comment = ` -- [TYPE REF: ${m[1].toUpperCase()} — not resolved from KB]`;
+			const comment = ` -- [TYPE REF: ${m[1].toUpperCase()} -- not resolved from KB]`;
 			result = result.slice(0, insertPos) + comment + result.slice(insertPos);
 			unresolvedRefs.push({ ref: depRef, resolved: false, inlinedContent: '', failureReason: 'Type not found in KB data schemas' });
 		}
@@ -162,7 +162,7 @@ function resolveTypeRefs(
 function resolveTypeFromKB(ref: string, anchor: string, kb: IKnowledgeBaseService): string | undefined {
 	const upperRef = ref.toUpperCase();
 
-	// Check type mapping decisions first (human-confirmed → highest priority)
+	// Check type mapping decisions first (human-confirmed -> highest priority)
 	const decisions = kb.getDecisions();
 	const typeMapping = decisions.typeMapping.find(
 		d => d.sourceType.toUpperCase() === upperRef || d.sourceType.toUpperCase() === `${upperRef}${anchor}`
@@ -202,7 +202,7 @@ function resolveTypeFromKB(ref: string, anchor: string, kb: IKnowledgeBaseServic
 }
 
 
-// ─── Package Call Resolution ──────────────────────────────────────────────────
+// --- Package Call Resolution --------------------------------------------------
 
 /**
  * Find package procedure/function calls and inject signature context.
@@ -239,7 +239,7 @@ function resolvePackageCalls(
 	}
 
 	// Build a single resolution header comment at the top of the unit
-	// (avoid cluttering every call site — one summary block is cleaner)
+	// (avoid cluttering every call site -- one summary block is cleaner)
 	const resolvedPackages = new Map<string, string[]>();
 	const unresolvedPackages: string[] = [];
 
@@ -272,8 +272,8 @@ function resolvePackageCalls(
 	}
 
 	const headerLines: string[] = [
-		'-- ══════════════════════════════════════════════════════════════════',
-		'-- NEURAL INVERSE — PACKAGE REFERENCE RESOLUTION',
+		'-- ==================================================================',
+		'-- NEURAL INVERSE -- PACKAGE REFERENCE RESOLUTION',
 	];
 
 	for (const [pkg, sigs] of resolvedPackages) {
@@ -284,17 +284,17 @@ function resolvePackageCalls(
 	}
 
 	for (const pkg of unresolvedPackages) {
-		headerLines.push(`-- Package: ${pkg} [NOT IN KNOWLEDGE BASE — external or not yet scanned]`);
+		headerLines.push(`-- Package: ${pkg} [NOT IN KNOWLEDGE BASE -- external or not yet scanned]`);
 	}
 
-	headerLines.push('-- ══════════════════════════════════════════════════════════════════');
+	headerLines.push('-- ==================================================================');
 	headerLines.push('');
 
 	return headerLines.join('\n') + text;
 }
 
 
-// ─── PL/SQL Built-in Detection ────────────────────────────────────────────────
+// --- PL/SQL Built-in Detection ------------------------------------------------
 
 const PLSQL_BUILTINS = new Set([
 	'DBMS_OUTPUT', 'DBMS_LOCK', 'DBMS_UTILITY', 'DBMS_SQL', 'DBMS_LOB',

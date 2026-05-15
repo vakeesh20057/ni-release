@@ -13,22 +13,22 @@
  * Units are sorted by a composite priority score (higher = earlier):
  *
  *   1. Risk level (critical=4, high=3, medium=2, low=1)
- *      — Higher-risk units should be validated first as their failures
+ *      -- Higher-risk units should be validated first as their failures
  *        are most dangerous to leave undetected.
  *
  *   2. Regulated domain (+2 bonus)
- *      — Units in regulated domains (PII/PCI/PHI/GDPR) must be validated
+ *      -- Units in regulated domains (PII/PCI/PHI/GDPR) must be validated
  *        before non-regulated units of the same risk level.
  *
  *   3. Dependent count bonus (min(dependentCount, 5))
- *      — Units used by many others are more likely to be blockers;
+ *      -- Units used by many others are more likely to be blockers;
  *        validate them early so failures cascade-surface quickly.
  *
- *   4. Has existing equivalence result (−3 penalty)
- *      — Units already validated get lower priority unless they have
+ *   4. Has existing equivalence result (-3 penalty)
+ *      -- Units already validated get lower priority unless they have
  *        divergences (outcome != 'validated'), in which case treat normally.
  *
- *   5. Name (alphabetic tie-break) — stable ordering for reproducibility.
+ *   5. Name (alphabetic tie-break) -- stable ordering for reproducibility.
  *
  * ## Eligible units
  *
@@ -41,7 +41,7 @@ import { IKnowledgeBaseService } from '../../../knowledgeBase/service.js';
 import { IKnowledgeUnit } from '../../../../common/knowledgeBaseTypes.js';
 
 
-// ─── Risk ordering ─────────────────────────────────────────────────────────────
+// --- Risk ordering -------------------------------------------------------------
 
 const RISK_SCORE: Record<string, number> = {
 	critical: 4,
@@ -51,7 +51,7 @@ const RISK_SCORE: Record<string, number> = {
 };
 
 
-// ─── Scheduler ────────────────────────────────────────────────────────────────
+// --- Scheduler ----------------------------------------------------------------
 
 export class ValidationScheduler {
 	private readonly _queue: IKnowledgeUnit[];
@@ -94,7 +94,7 @@ export class ValidationScheduler {
 		return counts;
 	}
 
-	// ── Comparator ────────────────────────────────────────────────────────────
+	// -- Comparator ------------------------------------------------------------
 
 	private static _compareUnits(a: IKnowledgeUnit, b: IKnowledgeUnit): number {
 		const scoreA = ValidationScheduler._priorityScore(a);
@@ -132,7 +132,7 @@ export class ValidationScheduler {
 }
 
 
-// ─── Factory ──────────────────────────────────────────────────────────────────
+// --- Factory ------------------------------------------------------------------
 
 /**
  * Build a ValidationScheduler from the KB, filtered to eligible statuses.
@@ -151,7 +151,7 @@ export function buildValidationScheduler(
 }
 
 
-// ─── Preview helpers ──────────────────────────────────────────────────────────
+// --- Preview helpers ----------------------------------------------------------
 
 export interface IValidationScheduleEntry {
 	unitId:      string;

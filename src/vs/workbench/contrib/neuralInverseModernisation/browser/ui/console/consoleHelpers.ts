@@ -7,12 +7,12 @@
  * Shared DOM helpers, colour constants, and formatting utilities
  * used by all four Modernisation Console views.
  *
- * No innerHTML — all DOM construction uses textContent + element APIs (Trusted Types compliant).
+ * No innerHTML -- all DOM construction uses textContent + element APIs (Trusted Types compliant).
  */
 
 import { UnitStatus, RiskLevel } from '../../../common/knowledgeBaseTypes.js';
 
-// ─── DOM helpers ──────────────────────────────────────────────────────────────
+// --- DOM helpers --------------------------------------------------------------
 
 export function $e<K extends keyof HTMLElementTagNameMap>(
 	tag: K,
@@ -143,7 +143,7 @@ export function $card(extraCss?: string): HTMLElement {
 }
 
 
-// ─── Colour maps ──────────────────────────────────────────────────────────────
+// --- Colour maps --------------------------------------------------------------
 
 export const STATUS_COLOR: Record<UnitStatus, string> = {
 	pending:     '#888888',
@@ -186,7 +186,7 @@ export const DECISION_TYPE_LABEL: Record<string, string> = {
 };
 
 
-// ─── Formatting ───────────────────────────────────────────────────────────────
+// --- Formatting ---------------------------------------------------------------
 
 export function relativeTime(ms: number): string {
 	const diff = Date.now() - ms;
@@ -198,7 +198,7 @@ export function relativeTime(ms: number): string {
 
 export function truncate(s: string, maxLen: number): string {
 	if (s.length <= maxLen) { return s; }
-	return s.slice(0, maxLen) + '\u2026';
+	return s.slice(0, maxLen) + '...';
 }
 
 export function basename(path: string): string {
@@ -214,7 +214,7 @@ export function pct(n: number, total: number): number {
 }
 
 
-// ─── Status badge ─────────────────────────────────────────────────────────────
+// --- Status badge -------------------------------------------------------------
 
 export function $statusBadge(status: UnitStatus): HTMLElement {
 	const color = STATUS_COLOR[status] ?? '#888';
@@ -267,7 +267,7 @@ export function $typeBadge(type: string): HTMLElement {
 }
 
 
-// ─── Progress bar ─────────────────────────────────────────────────────────────
+// --- Progress bar -------------------------------------------------------------
 
 export function $progressBar(
 	value: number,    // 0-100
@@ -289,7 +289,7 @@ export function $progressBar(
 }
 
 
-// ─── Pagination controls ──────────────────────────────────────────────────────
+// --- Pagination controls ------------------------------------------------------
 
 export interface IPaginationState {
 	page: number;
@@ -315,7 +315,7 @@ export function $pagination(
 		'flex-shrink:0',
 	].join(';'));
 
-	const prevBtn = $btn('\u2039 Prev', false, onPrev, 'padding:2px 8px;font-size:11px;');
+	const prevBtn = $btn(' Prev', false, onPrev, 'padding:2px 8px;font-size:11px;');
 	if (page === 0) {
 		(prevBtn as HTMLButtonElement).disabled = true;
 		prevBtn.style.opacity = '0.4';
@@ -324,10 +324,10 @@ export function $pagination(
 	row.appendChild(prevBtn);
 
 	row.appendChild($t('span',
-		total === 0 ? 'No results' : `${start}–${end} of ${total}`,
+		total === 0 ? 'No results' : `${start}-${end} of ${total}`,
 		'flex:1;text-align:center;'));
 
-	const nextBtn = $btn('Next \u203a', false, onNext, 'padding:2px 8px;font-size:11px;');
+	const nextBtn = $btn('Next ', false, onNext, 'padding:2px 8px;font-size:11px;');
 	if (page >= totalPages - 1) {
 		(nextBtn as HTMLButtonElement).disabled = true;
 		nextBtn.style.opacity = '0.4';

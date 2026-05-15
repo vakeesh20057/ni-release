@@ -4,7 +4,7 @@
  *--------------------------------------------------------------------------------------------*/
 
 /**
- * # Validation Engine — Public Exports & DI Registration
+ * # Validation Engine -- Public Exports & DI Registration
  *
  * Import this file as a side-effect to register the ValidationEngineService in the DI container:
  *
@@ -15,13 +15,13 @@
  * All external consumers should import from this file, not from internal modules.
  */
 
-// ── Public service interface ──────────────────────────────────────────────────
+// -- Public service interface --------------------------------------------------
 export {
 	IValidationEngineService,
 	ValidationBatchAlreadyRunningError,
 } from './service.js';
 
-// ── Validation options & results ──────────────────────────────────────────────
+// -- Validation options & results ----------------------------------------------
 export type {
 	IValidationOptions,
 	IValidationResult,
@@ -36,18 +36,18 @@ export type {
 } from './impl/validationTypes.js';
 export { DEFAULT_VALIDATION_OPTIONS } from './impl/validationTypes.js';
 
-// ── Schedule preview ──────────────────────────────────────────────────────────
+// -- Schedule preview ----------------------------------------------------------
 export type { IValidationScheduleEntry } from './impl/validationScheduler.js';
 export { previewValidationSchedule } from './impl/validationScheduler.js';
 
-// ── Metrics helpers ───────────────────────────────────────────────────────────
+// -- Metrics helpers -----------------------------------------------------------
 export { outcomeLabel, confidenceLabel, formatBatchMetricsSummary } from './impl/validationMetrics.js';
 
-// ── Override recording (used by unitEditorView approve flow) ──────────────────
+// -- Override recording (used by unitEditorView approve flow) ------------------
 export { recordEquivalenceOverride, deriveEvidencePath } from './impl/validationRecorder.js';
 
 
-// ── DI registration ───────────────────────────────────────────────────────────
+// -- DI registration -----------------------------------------------------------
 import { registerSingleton, InstantiationType } from '../../../../../../platform/instantiation/common/extensions.js';
 import { IValidationEngineService as _IValidationEngineService } from './service.js';
 import { ValidationEngineServiceImpl } from './ValidationEngineServiceImpl.js';

@@ -13,7 +13,7 @@
 import { IKnowledgeBaseService } from '../../../knowledgeBase/service.js';
 
 
-// ─── Types ────────────────────────────────────────────────────────────────────
+// --- Types --------------------------------------------------------------------
 
 export interface ICutoverMetrics {
 	/** Total units in the KB (excludes skipped) */
@@ -28,14 +28,14 @@ export interface ICutoverMetrics {
 	overridden:        number;
 	/** Units still not in a terminal state */
 	inProgress:        number;
-	/** Proportion of non-skipped units in committed+validated state (0–1) */
+	/** Proportion of non-skipped units in committed+validated state (0-1) */
 	completionRate:    number;
 	/** True when cutover was previously approved */
 	cutoverApproved:   boolean;
 }
 
 
-// ─── Builder ─────────────────────────────────────────────────────────────────
+// --- Builder -----------------------------------------------------------------
 
 export function buildCutoverMetrics(
 	kb:               IKnowledgeBaseService,

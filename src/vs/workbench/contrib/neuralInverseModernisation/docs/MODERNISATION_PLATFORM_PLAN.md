@@ -1,6 +1,8 @@
-# NeuralInverse Modernisation Platform — Complete Build Plan
+# NeuralInverse Modernisation Platform -- Complete Build Plan
 
 > One step at a time. A to Z. Universal.
+
+> Note: Backend sync and compliance dashboard are available in NeuralInverse Enterprise.
 
 ---
 
@@ -21,13 +23,13 @@ PROCEDURE DIVISION.
     CALL 'DBRT0010' USING WS-CUST-REC.
 ```
 
-`COPY CUSTMAST` — Claude does not have the copybook. It sees a reference to 40 fields
+`COPY CUSTMAST` -- Claude does not have the copybook. It sees a reference to 40 fields
 and has no idea what they are.
 
-`CALL 'DBRT0010'` — Claude does not know what that program does or what interface it
+`CALL 'DBRT0010'` -- Claude does not know what that program does or what interface it
 expects.
 
-`PERFORM 3000-VALIDATE-CUSTOMER` — that paragraph might be 300 lines down in the same
+`PERFORM 3000-VALIDATE-CUSTOMER` -- that paragraph might be 300 lines down in the same
 file, or in a different file entirely.
 
 So the AI produces a guess. For isolated toy programs it works. For a real 500-program
@@ -35,15 +37,15 @@ banking system it fails immediately.
 
 **The same problem exists in every language:**
 
-- Java EE: `@EJB UserSessionBean bean` — what does that bean do?
-- Angular 1: `UserService.getAccount()` — what shape does that return?
-- PL/SQL: `CALL pkg_billing.calc_fee(acct_id)` — what package, what logic?
-- RPG: `CALL 'GLPGM'` — what program, what data structure?
+- Java EE: `@EJB UserSessionBean bean` -- what does that bean do?
+- Angular 1: `UserService.getAccount()` -- what shape does that return?
+- PL/SQL: `CALL pkg_billing.calc_fee(acct_id)` -- what package, what logic?
+- RPG: `CALL 'GLPGM'` -- what program, what data structure?
 
 The AI is not the bottleneck. **Missing context is the bottleneck.**
 
 The Modernisation Console exists to solve this. It is not a wizard. It is not a dashboard
-with stats. It is the **agent's working memory for the entire migration** — built once,
+with stats. It is the **agent's working memory for the entire migration** -- built once,
 queried continuously, updated as decisions are made.
 
 ---
@@ -53,7 +55,7 @@ queried continuously, updated as decisions are made.
 ### Not This
 
 ```
-[Step 1: Discovery] → [Step 2: Planning] → [Step 3: Migration] → [Step 4: Validation] → [Step 5: Cutover]
+[Step 1: Discovery] -> [Step 2: Planning] -> [Step 3: Migration] -> [Step 4: Validation] -> [Step 5: Cutover]
 ```
 
 A linear wizard forces humans to follow a sequence. Real migrations don't work like that.
@@ -80,7 +82,7 @@ that came before because it drew from the same knowledge base.
 Humans don't translate code. Humans make decisions that the AI cannot:
 - "This field name `WS-ACCT-BAL` means account balance in the billing domain"
 - "This rounding logic must use COMP-3 semantics, not IEEE 754 float"
-- "This paragraph handles regulatory reporting — compliance officer must approve"
+- "This paragraph handles regulatory reporting -- compliance officer must approve"
 
 These decisions are recorded in the Console once and applied everywhere automatically.
 
@@ -90,7 +92,7 @@ before the AI can proceed. This is the single source of truth for the entire mig
 
 ---
 
-## 2. Universal — Every Modernisation Type
+## 2. Universal -- Every Modernisation Type
 
 The platform handles any source language to any target language. The mechanism is
 identical. Only the parsers and decomposers change.
@@ -142,7 +144,7 @@ pattern-specific. The routing logic is.
 
 ## 3. How the AI Actually Translates a Unit
 
-This is the core loop. Everything else — the Console, the tools, the knowledge base —
+This is the core loop. Everything else -- the Console, the tools, the knowledge base --
 exists to make this loop work reliably at scale.
 
 ### The Translation Loop (Per Unit)
@@ -173,7 +175,7 @@ exists to make this loop work reliably at scale.
 
 5. RECORD
    Console updates:
-   - Unit status: in-progress → approved / flagged
+   - Unit status: in-progress -> approved / flagged
    - Any new decisions extracted from this translation
    - Modern interface (so subsequent units can call it correctly)
    - Equivalence test result when available
@@ -191,13 +193,13 @@ context. The 100th unit translated gets:
 The AI gets smarter about this specific codebase as the migration progresses because
 the Console accumulates decisions and the agent draws from them.
 
-A human making a single decision — "in this codebase, PIC 9(15)V99 always maps to
-BigDecimal" — propagates to every remaining unit automatically through the context
+A human making a single decision -- "in this codebase, PIC 9(15)V99 always maps to
+BigDecimal" -- propagates to every remaining unit automatically through the context
 injection at step 2.
 
 ---
 
-## 4. The Knowledge Base — Core Data Model
+## 4. The Knowledge Base -- Core Data Model
 
 This is the central data structure the Console maintains. Everything else reads from
 and writes to it.
@@ -228,7 +230,7 @@ interface IModernisationKnowledgeBase {
 }
 ```
 
-### IKnowledgeUnit — The Atom of Migration
+### IKnowledgeUnit -- The Atom of Migration
 
 ```typescript
 interface IKnowledgeUnit {
@@ -295,19 +297,19 @@ type UnitStatus =
     | 'ready'           // Resolved and ready for AI translation
     | 'translating'     // Agent is working on it
     | 'review'          // Draft complete, awaiting human review
-    | 'flagged'         // Fingerprint divergence — needs approval
+    | 'flagged'         // Fingerprint divergence -- needs approval
     | 'approved'        // Translation approved, ready to commit
     | 'committed'       // Written to disk and committed to VCS
     | 'validating'      // Equivalence test running
     | 'validated'       // Equivalence test passed
     | 'complete'        // All done
     | 'skipped'         // Deliberately excluded
-    | 'blocked';        // Cannot proceed — human action required
+    | 'blocked';        // Cannot proceed -- human action required
 
 type RiskLevel = 'low' | 'medium' | 'high' | 'critical';
 ```
 
-### IDecisionLog — Human Decisions That Apply Everywhere
+### IDecisionLog -- Human Decisions That Apply Everywhere
 
 ```typescript
 interface IDecisionLog {
@@ -329,7 +331,7 @@ interface ITypeMappingDecision {
     decidedAt:   number;
 }
 
-// "WS-ACCT-BAL → accountBalance, domain: billing"
+// "WS-ACCT-BAL -> accountBalance, domain: billing"
 interface INamingDecision {
     id:          string;
     sourceName:  string;
@@ -350,7 +352,7 @@ interface IRuleInterpretation {
     decidedAt:  number;
 }
 
-// "DBRT0010 is a utility — translate as a static helper, not a service"
+// "DBRT0010 is a utility -- translate as a static helper, not a service"
 interface IPatternOverride {
     id:           string;
     pattern:      string;   // regex or exact name
@@ -361,7 +363,7 @@ interface IPatternOverride {
 }
 ```
 
-### IBusinessGlossary — What The AI Has Learned About This Codebase
+### IBusinessGlossary -- What The AI Has Learned About This Codebase
 
 ```typescript
 interface IBusinessGlossary {
@@ -377,7 +379,7 @@ interface IBusinessTerm {
     domain:      string;     // e.g. 'billing', 'customer', 'settlement'
     sourceLocs:  string[];   // Unit IDs where this term appears
     extractedBy: 'ai' | 'human';
-    confidence:  number;     // 0–1
+    confidence:  number;     // 0-1
 }
 
 // A domain extracted from the codebase
@@ -426,7 +428,7 @@ interface IPendingDecision {
 
 These are the tools registered in the Console that agents call. Not stats. Data.
 
-### Read Tools (Agent → Console)
+### Read Tools (Agent -> Console)
 
 ```typescript
 // Get a unit with all dependencies resolved inline, ready to translate
@@ -468,7 +470,7 @@ search_units(query: string): IKnowledgeUnit[];
 get_fingerprint(unitId: string): IComplianceFingerprint | null;
 ```
 
-### Write Tools (Agent → Console)
+### Write Tools (Agent -> Console)
 
 ```typescript
 // Record the translation result for a unit
@@ -493,7 +495,7 @@ flag_blocked(unitId: string, pendingDecision: IPendingDecision): void;
 record_equivalence(unitId: string, result: IEquivalenceResult): void;
 ```
 
-### Human Decision Tools (Console → Human)
+### Human Decision Tools (Console -> Human)
 
 These surface in the Console UI as decision prompts:
 
@@ -513,7 +515,7 @@ request_compliance_approval(unitId: string, divergence: IFingerprintDivergence):
 
 ---
 
-## 6. The Console UI — What It Actually Shows
+## 6. The Console UI -- What It Actually Shows
 
 Not stats. Not a progress wizard. A **data workspace** with four views:
 
@@ -544,7 +546,7 @@ in real time. Unit navigator on the left rail.
 
 ---
 
-## 7. Build Plan — A to Z
+## 7. Build Plan -- A to Z
 
 One step at a time. Each step is independently valuable. Each step builds on the last.
 
@@ -556,7 +558,7 @@ One step at a time. Each step is independently valuable. Each step builds on the
 | Step | What | File |
 |------|------|------|
 | 0.1 | `IModernisationKnowledgeBase` and all sub-types | `common/knowledgeBaseTypes.ts` |
-| 0.2 | `IKnowledgeBaseService` — CRUD + query + persistence | `browser/knowledgeBaseService.ts` |
+| 0.2 | `IKnowledgeBaseService` -- CRUD + query + persistence | `browser/knowledgeBaseService.ts` |
 | 0.3 | `IKnowledgeBaseService` registered as DI singleton | `neuralInverseModernisation.contribution.ts` |
 | 0.4 | Persistence: save/load from workspace storage (survives reload) | `browser/knowledgeBaseService.ts` |
 | 0.5 | Unit tests: CRUD, filtering, serialisation | `test/knowledgeBaseService.test.ts` |
@@ -580,7 +582,7 @@ One step at a time. Each step is independently valuable. Each step builds on the
 | 1.8 | TypeScript/JavaScript parser: modules, classes, functions | `browser/engine/parsers/typescriptParser.ts` |
 | 1.9 | RPG parser: procedures, modules, service programs | `browser/engine/parsers/rpgParser.ts` |
 | 1.10 | Generic AST fallback parser (tree-sitter) for other languages | `browser/engine/parsers/genericParser.ts` |
-| 1.11 | `IUnitDecomposer`: language → `IKnowledgeUnit[]` (uses parser + resolver) | `browser/engine/unitDecomposer.ts` |
+| 1.11 | `IUnitDecomposer`: language -> `IKnowledgeUnit[]` (uses parser + resolver) | `browser/engine/unitDecomposer.ts` |
 | 1.12 | `IDependencyGraphBuilder`: build `dependsOn`/`usedBy` maps | `browser/engine/dependencyGraphBuilder.ts` |
 
 **Gate:** Point at a COBOL program with 10 copybook dependencies. Get back a
@@ -595,8 +597,8 @@ for a Java EE project. Same interface, different parser.
 | Step | What | File |
 |------|------|------|
 | 2.1 | `IBusinessRuleExtractor` interface | `browser/engine/businessRuleExtractor.ts` |
-| 2.2 | Deterministic extractor: field names, constants, known patterns → rules | `browser/engine/deterministicRuleExtractor.ts` |
-| 2.3 | LLM extractor: `sendOneShotQuery` on resolved unit → structured rules | `browser/engine/llmRuleExtractor.ts` |
+| 2.2 | Deterministic extractor: field names, constants, known patterns -> rules | `browser/engine/deterministicRuleExtractor.ts` |
+| 2.3 | LLM extractor: `sendOneShotQuery` on resolved unit -> structured rules | `browser/engine/llmRuleExtractor.ts` |
 | 2.4 | Domain classifier: which GRC/business domains does this unit touch? | `browser/engine/domainClassifier.ts` |
 | 2.5 | Risk scorer: Low/Medium/High/Critical based on domains + regulated fields | `browser/engine/riskScorer.ts` |
 | 2.6 | Glossary builder: extract named terms + domains from units | `browser/engine/glossaryBuilder.ts` |
@@ -613,10 +615,10 @@ Touches domains: fee_calculation, account_management. Risk: High."
 
 | Step | What | File |
 |------|------|------|
-| 3.1 | `IComplianceFingerprint` types (universal — already partially in `modernisationTypes.ts`) | `common/fingerprintTypes.ts` |
-| 3.2 | Deterministic fingerprint extractor: regulated fields, invariants | `browser/engine/fingerprint/deterministicExtractor.ts` (exists, extend) |
-| 3.3 | LLM semantic fingerprint extractor: semantic rules, domain classification | `browser/engine/fingerprint/llmSemanticExtractor.ts` (exists, extend) |
-| 3.4 | Fingerprint comparison engine: structural diff, match %, divergences | `browser/engine/fingerprint/fingerprintComparisonService.ts` (exists, extend) |
+| 3.1 | `IComplianceFingerprint` types (universal) | `common/fingerprintTypes.ts` |
+| 3.2 | Deterministic fingerprint extractor: regulated fields, invariants | `browser/engine/fingerprint/deterministicExtractor.ts` |
+| 3.3 | LLM semantic fingerprint extractor: semantic rules, domain classification | `browser/engine/fingerprint/llmSemanticExtractor.ts` |
+| 3.4 | Fingerprint comparison engine: structural diff, match %, divergences | `browser/engine/fingerprint/fingerprintComparisonService.ts` |
 | 3.5 | Language-specific regulated field patterns: COBOL PIC, SQL column types, Java annotations | `browser/engine/fingerprint/regulatedFieldPatterns.ts` |
 | 3.6 | Invariant extraction: mathematical rules that must hold across translation | `browser/engine/fingerprint/invariantExtractor.ts` |
 
@@ -632,14 +634,14 @@ passes. Works the same for a PL/SQL procedure.
 | Step | What | File |
 |------|------|------|
 | 4.1 | `ITranslationEngine` interface | `browser/engine/translation/translationEngine.ts` |
-| 4.2 | Context assembler: unit + decisions + glossary + interfaces → prompt | `browser/engine/translation/contextAssembler.ts` |
-| 4.3 | Prompt builder: structured prompt per source→target language pair | `browser/engine/translation/promptBuilder.ts` |
+| 4.2 | Context assembler: unit + decisions + glossary + interfaces -> prompt | `browser/engine/translation/contextAssembler.ts` |
+| 4.3 | Prompt builder: structured prompt per source->target language pair | `browser/engine/translation/promptBuilder.ts` |
 | 4.4 | LLM caller: streamed generation via `sendLLMMessage` | `browser/engine/translation/llmCaller.ts` |
 | 4.5 | Output parser: extract translated code from LLM response | `browser/engine/translation/outputParser.ts` |
 | 4.6 | Interface extractor: derive the public interface of the translated unit | `browser/engine/translation/interfaceExtractor.ts` |
 | 4.7 | Decision harvester: extract new type mappings / naming decisions from the translation | `browser/engine/translation/decisionHarvester.ts` |
 | 4.8 | Draft buffer: hold translated code as pending until approved | `browser/engine/translation/draftBuffer.ts` |
-| 4.9 | Translation loop orchestrator: resolve → context → translate → fingerprint → record | `browser/engine/translation/translationOrchestrator.ts` |
+| 4.9 | Translation loop orchestrator: resolve -> context -> translate -> fingerprint -> record | `browser/engine/translation/translationOrchestrator.ts` |
 | 4.10 | Retry logic: if fingerprint blocked, try translation again with divergence as context | built into 4.9 |
 
 **Gate:** Point the engine at a single COBOL paragraph. It resolves dependencies, builds
@@ -678,8 +680,8 @@ It can call `record_translation(...)` and the Console updates immediately.
 
 | Step | What | File |
 |------|------|------|
-| 6.1 | `IModernisationScanService` — orchestrates full codebase scan | `browser/modernisationScanService.ts` |
-| 6.2 | Walk files → parse → decompose → build graph → extract rules → fingerprint | built into scan service |
+| 6.1 | `IModernisationScanService` -- orchestrates full codebase scan | `browser/modernisationScanService.ts` |
+| 6.2 | Walk files -> parse -> decompose -> build graph -> extract rules -> fingerprint | built into scan service |
 | 6.3 | Progress events: `onDidProgress` per file, per unit, per phase | built into scan service |
 | 6.4 | Incremental scan: only re-scan changed files | built into scan service |
 | 6.5 | Scan result stored in knowledge base | built into scan service |
@@ -691,7 +693,7 @@ Scan a Java EE project. Same result, different parsers.
 
 ---
 
-### Phase 7: Console UI — Data Workspace
+### Phase 7: Console UI -- Data Workspace
 *Goal: The four views. Data for humans and agents, not stats.*
 
 | Step | What | File |
@@ -727,9 +729,9 @@ Scan a Java EE project. Same result, different parsers.
 
 | Step | What | File |
 |------|------|------|
-| 9.1 | Dependency-ordered phase builder (uses `dependsOn` graph from KB) | existing `engine/planning/phaseBuilder.ts` — connect to KB |
-| 9.2 | Risk-ordered sequencing within phases | existing planning engine — connect to KB |
-| 9.3 | Compliance gate insertion (High/Critical units get approval gates) | existing planning engine — connect to KB |
+| 9.1 | Dependency-ordered phase builder (uses `dependsOn` graph from KB) | existing `engine/planning/phaseBuilder.ts` -- connect to KB |
+| 9.2 | Risk-ordered sequencing within phases | existing planning engine -- connect to KB |
+| 9.3 | Compliance gate insertion (High/Critical units get approval gates) | existing planning engine -- connect to KB |
 | 9.4 | Plan stored in knowledge base (not separate state) | update `modernisationSessionService.ts` |
 | 9.5 | Plan approval recorded in knowledge base audit log | update approval flow |
 
@@ -740,7 +742,7 @@ Scan a Java EE project. Same result, different parsers.
 
 | Step | What | File |
 |------|------|------|
-| 10.1 | `IOutputEquivalenceService` — test harness runner | `browser/engine/validation/outputEquivalenceService.ts` |
+| 10.1 | `IOutputEquivalenceService` -- test harness runner | `browser/engine/validation/outputEquivalenceService.ts` |
 | 10.2 | COBOL test runner: compile + run with test inputs via z/OS emulator or GnuCOBOL | `browser/engine/validation/cobolTestRunner.ts` |
 | 10.3 | Generic test runner: execute arbitrary programs with stdin/stdout comparison | `browser/engine/validation/genericTestRunner.ts` |
 | 10.4 | Divergence detector: value, rounding, record count, checksum | `browser/engine/validation/divergenceDetector.ts` |
@@ -766,8 +768,8 @@ Scan a Java EE project. Same result, different parsers.
 
 | Step | What | File |
 |------|------|------|
-| 12.1 | All Phase 5 tools available in Void Agent + Power Mode (already done for discovery tools) | connect to knowledge tools |
-| 12.2 | Agent workflow: `get_next_unit` → `get_unit_context` → translate → `record_translation` → `set_unit_status` | agent uses existing tool loop |
+| 12.1 | All Phase 5 tools available in Void Agent + Power Mode | connect to knowledge tools |
+| 12.2 | Agent workflow: `get_next_unit` -> `get_unit_context` -> translate -> `record_translation` -> `set_unit_status` | agent uses existing tool loop |
 | 12.3 | Blocked unit handling: agent calls `flag_blocked`, Console surfaces decision to human, agent polls for resolution | `browser/engine/translation/translationOrchestrator.ts` |
 | 12.4 | Multi-agent parallelism: multiple agents working on independent units simultaneously | via `INeuralInverseSubAgentService` (existing) |
 | 12.5 | Agent decision harvesting: agent extracts decisions from its own translations and proposes them | built into `decisionHarvester.ts` |
@@ -779,18 +781,19 @@ Scan a Java EE project. Same result, different parsers.
 | What | Why Not |
 |------|---------|
 | COBOL compiler | Use GnuCOBOL or IBM toolchain for equivalence testing |
-| IDE for the target language | That is VS Code — it is already the IDE |
-| CI/CD pipeline | Out of scope — the Console generates the audit package, customer plugs it into their pipeline |
+| IDE for the target language | That is VS Code -- it is already the IDE |
+| CI/CD pipeline | Out of scope -- the Console generates the audit package, customer plugs it into their pipeline |
 | CICS emulator | Phase 10 initial version uses file-based test harnesses; CICS support is a future milestone |
-| Web console for compliance officers | Phase 1 is in-IDE only. Web console is a separate future product |
 | LLM training on legacy code | We use the LLM as-is via the Void layer. No fine-tuning in scope |
+
+> Note: Backend sync and compliance dashboard are available in NeuralInverse Enterprise.
 
 ---
 
 ## 9. Key Design Principles
 
 **1. The knowledge base is the product.**
-Everything else — the UI, the agent tools, the parser, the fingerprint engine — exists to
+Everything else -- the UI, the agent tools, the parser, the fingerprint engine -- exists to
 populate and consume the knowledge base. A migrated codebase with a full knowledge base
 is an asset the customer owns forever.
 
@@ -810,8 +813,8 @@ non-negotiable and cannot be bypassed.
 
 **5. Universal from day 1.**
 The parser is pluggable. The decomposer is language-specific but the output type
-(`IKnowledgeUnit`) is universal. Every downstream service — fingerprint, translation,
-validation, audit — speaks `IKnowledgeUnit` and is therefore language-agnostic.
+(`IKnowledgeUnit`) is universal. Every downstream service -- fingerprint, translation,
+validation, audit -- speaks `IKnowledgeUnit` and is therefore language-agnostic.
 
 **6. Progressive disclosure.**
 Start with COBOL because it is the hardest case. Every other language is a subset.

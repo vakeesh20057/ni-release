@@ -23,7 +23,7 @@
  * ## Migration Guarantee
  *
  * Version migration NEVER blocks startup. Re-extraction happens as background work
- * via the FingerprintScheduler. Units with stale fingerprints remain usable — they
+ * via the FingerprintScheduler. Units with stale fingerprints remain usable -- they
  * just have `schemaVersion < FINGERPRINT_SCHEMA_VERSION`, which is visible in the UI
  * as "fingerprint refresh pending".
  */
@@ -31,7 +31,7 @@
 import { IModernisationKnowledgeBase } from '../../../../common/knowledgeBaseTypes.js';
 
 
-// ─── Current Version ──────────────────────────────────────────────────────────
+// --- Current Version ----------------------------------------------------------
 
 /**
  * Current fingerprint schema version.
@@ -40,18 +40,18 @@ import { IModernisationKnowledgeBase } from '../../../../common/knowledgeBaseTyp
  * different fingerprint content for the same source code.
  *
  * History:
- *   1 — Initial schema: COBOL Layer 1 only
- *   2 — Added PL/SQL, RPG, NATURAL Layer 1 patterns
- *   3 — Added Java EE, Python, VB6 Layer 1 patterns
- *   4 — Added semanticRules, complianceDomains (Layer 2)
- *   5 — Added additionalInvariants from LLM (Layer 2 enrichment)
- *   6 — Added contentHash + schemaVersion fields to IComplianceFingerprint
- *   7 — Expanded COBOL paragraph patterns (EOD, MONTH-END, YEAR-END)
+ *   1 -- Initial schema: COBOL Layer 1 only
+ *   2 -- Added PL/SQL, RPG, NATURAL Layer 1 patterns
+ *   3 -- Added Java EE, Python, VB6 Layer 1 patterns
+ *   4 -- Added semanticRules, complianceDomains (Layer 2)
+ *   5 -- Added additionalInvariants from LLM (Layer 2 enrichment)
+ *   6 -- Added contentHash + schemaVersion fields to IComplianceFingerprint
+ *   7 -- Expanded COBOL paragraph patterns (EOD, MONTH-END, YEAR-END)
  */
 export const FINGERPRINT_SCHEMA_VERSION = 7;
 
 
-// ─── Stale Detection ─────────────────────────────────────────────────────────
+// --- Stale Detection ---------------------------------------------------------
 
 /**
  * Returns true if the given fingerprint was produced with an older schema version
@@ -68,7 +68,7 @@ export function isFingerprintStale(schemaVersion: number | undefined): boolean {
 }
 
 
-// ─── Schema Migration Scan ────────────────────────────────────────────────────
+// --- Schema Migration Scan ----------------------------------------------------
 
 /**
  * Result of a schema migration scan.
@@ -90,7 +90,7 @@ export interface ISchemaMigrationResult {
  * This is called at service startup. Results are passed to the FingerprintScheduler
  * to queue stale units for background re-extraction.
  *
- * This function does NOT trigger re-extraction — it only identifies what needs it.
+ * This function does NOT trigger re-extraction -- it only identifies what needs it.
  * The caller (FingerprintServiceImpl) passes the staleUnitIds to the scheduler.
  */
 export function scanForStaleFingerprints(kb: IModernisationKnowledgeBase): ISchemaMigrationResult {
@@ -120,7 +120,7 @@ export function scanForStaleFingerprints(kb: IModernisationKnowledgeBase): ISche
 }
 
 
-// ─── Version Stamping ─────────────────────────────────────────────────────────
+// --- Version Stamping ---------------------------------------------------------
 
 /**
  * Returns the current schema version.

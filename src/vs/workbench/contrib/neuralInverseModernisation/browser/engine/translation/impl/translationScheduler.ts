@@ -47,7 +47,7 @@ import { IKnowledgeUnit, RiskLevel, UnitStatus } from '../../../../common/knowle
 import { ITranslationOptions } from './translationTypes.js';
 
 
-// ─── Risk priority mapping ────────────────────────────────────────────────────
+// --- Risk priority mapping ----------------------------------------------------
 
 const RISK_SCORE: Record<RiskLevel, number> = {
 	critical: 4,
@@ -59,7 +59,7 @@ const RISK_SCORE: Record<RiskLevel, number> = {
 const RISK_ORDER: RiskLevel[] = ['critical', 'high', 'medium', 'low'];
 
 
-// ─── Scheduler ────────────────────────────────────────────────────────────────
+// --- Scheduler ----------------------------------------------------------------
 
 export interface IScheduledUnit {
 	/** The unit to translate */
@@ -85,7 +85,7 @@ export class TranslationScheduler {
 		this._queue = queue;
 	}
 
-	// ── Factory ───────────────────────────────────────────────────────────────
+	// -- Factory ---------------------------------------------------------------
 
 	/**
 	 * Build a prioritised translation schedule from the provided units.
@@ -101,16 +101,16 @@ export class TranslationScheduler {
 			| 'skipIfDependenciesUnresolved'
 		>,
 	): TranslationScheduler {
-		// ── Filter eligible units ─────────────────────────────────────────────
+		// -- Filter eligible units ---------------------------------------------
 		const minRiskScore = RISK_SCORE[options.minRiskLevel ?? 'low'];
 		const eligible     = units.filter(u => isEligible(u, options.eligibleStatuses, minRiskScore, options.skipIfDependenciesUnresolved));
 
-		// ── Build dependency depth map ────────────────────────────────────────
-		// Build a fast ID→unit map for depth calculation
+		// -- Build dependency depth map ----------------------------------------
+		// Build a fast ID->unit map for depth calculation
 		const unitMap = new Map<string, IKnowledgeUnit>(eligible.map(u => [u.id, u]));
 		const depthMap = buildDepthMap(eligible, unitMap);
 
-		// ── Build scored queue ────────────────────────────────────────────────
+		// -- Build scored queue ------------------------------------------------
 		const scheduled: IScheduledUnit[] = eligible.map(u => {
 			const depth    = depthMap.get(u.id) ?? 0;
 			const priority = scoreUnit(u, depth);
@@ -127,7 +127,7 @@ export class TranslationScheduler {
 		return new TranslationScheduler(scheduled);
 	}
 
-	// ── Queue API ─────────────────────────────────────────────────────────────
+	// -- Queue API -------------------------------------------------------------
 
 	/** Total number of units in this schedule */
 	get total(): number { return this._queue.length; }
@@ -189,7 +189,7 @@ export class TranslationScheduler {
 }
 
 
-// ─── Eligibility check ────────────────────────────────────────────────────────
+// --- Eligibility check --------------------------------------------------------
 
 function isEligible(
 	unit: IKnowledgeUnit,
@@ -202,7 +202,7 @@ function isEligible(
 	if (skipIfDepsUnresolved && unit.dependsOn.length > 0) {
 		// The caller (TranslationEngineServiceImpl) passes units with resolved deps,
 		// but if this flag is set we only schedule units whose deps are all done.
-		// We use the 'dependsOn' list as a proxy — if any dep is listed it may not
+		// We use the 'dependsOn' list as a proxy -- if any dep is listed it may not
 		// be translated yet. The loop can pass a pre-filtered list to be stricter.
 		return false;
 	}
@@ -210,7 +210,7 @@ function isEligible(
 }
 
 
-// ─── Depth calculation ────────────────────────────────────────────────────────
+// --- Depth calculation --------------------------------------------------------
 
 /**
  * Calculate the topological depth of each unit.
@@ -227,7 +227,7 @@ function buildDepthMap(
 
 	function depth(unitId: string, visiting: Set<string>): number {
 		if (memo.has(unitId)) { return memo.get(unitId)!; }
-		if (visiting.has(unitId)) { return 0; } // Cycle guard — treat cycles as depth 0
+		if (visiting.has(unitId)) { return 0; } // Cycle guard -- treat cycles as depth 0
 
 		const unit = unitMap.get(unitId);
 		if (!unit || unit.dependsOn.length === 0) {
@@ -256,15 +256,15 @@ function buildDepthMap(
 }
 
 
-// ─── Priority scoring ─────────────────────────────────────────────────────────
+// --- Priority scoring ---------------------------------------------------------
 
 /**
  * Compute a priority score for a unit.
  * Higher score = higher priority within its depth tier.
  *
  * Score components:
- *   - Risk level:      0–40 (critical=40, high=30, medium=20, low=10)
- *   - Dependent count: 0–9 (capped at 9, to keep risk dominant)
+ *   - Risk level:      0-40 (critical=40, high=30, medium=20, low=10)
+ *   - Dependent count: 0-9 (capped at 9, to keep risk dominant)
  */
 function scoreUnit(unit: IKnowledgeUnit, _depth: number): number {
 	const riskScore  = (RISK_SCORE[unit.riskLevel] ?? 1) * 10;
@@ -273,7 +273,7 @@ function scoreUnit(unit: IKnowledgeUnit, _depth: number): number {
 }
 
 
-// ─── Utility exports ──────────────────────────────────────────────────────────
+// --- Utility exports ----------------------------------------------------------
 
 /**
  * Return the ordered list of risk levels from highest to lowest priority.

@@ -4,10 +4,10 @@
  *--------------------------------------------------------------------------------------------*/
 
 /**
- * # ISourceResolutionService — Public Interface
+ * # ISourceResolutionService -- Public Interface
  *
- * The Source Resolution Service solves the **COBOL wall problem** — and its equivalent
- * in every other legacy language — by expanding all external dependency references
+ * The Source Resolution Service solves the **COBOL wall problem** -- and its equivalent
+ * in every other legacy language -- by expanding all external dependency references
  * inline before the AI ever sees the code.
  *
  * ## The COBOL Wall Problem (and why it matters for every language)
@@ -32,25 +32,25 @@
  *   The AI sees one unified source with all fields defined.
  *
  * For languages with structured type systems (Java, TypeScript, PL/SQL packages):
- *   Interface context comments are injected — showing method signatures, purpose,
- *   risk level, and translation status — without producing invalid code.
+ *   Interface context comments are injected -- showing method signatures, purpose,
+ *   risk level, and translation status -- without producing invalid code.
  *
  * ## Lifecycle
  *
  * ```
  * Discovery (Phase 0)
- *     └─► KB unit created with status='pending', sourceText set, resolvedSource=''
+ *     +-> KB unit created with status='pending', sourceText set, resolvedSource=''
  *
- * Resolution (Phase 1) ← This service
- *     └─► batchResolve() → resolveUnit() per unit → kb.resolveUnitSource()
- *         └─► KB unit.resolvedSource filled, status transitions pending→ready
+ * Resolution (Phase 1) <- This service
+ *     +-> batchResolve() -> resolveUnit() per unit -> kb.resolveUnitSource()
+ *         +-> KB unit.resolvedSource filled, status transitions pending->ready
  *
  * Fingerprinting (Phase 3)
- *     └─► FingerprintService reads unit.resolvedSource (the expanded source)
- *         └─► L1 + L2 extraction on the complete, self-contained text
+ *     +-> FingerprintService reads unit.resolvedSource (the expanded source)
+ *         +-> L1 + L2 extraction on the complete, self-contained text
  *
  * Translation (Phase 4)
- *     └─► Translation agent reads unit.resolvedSource via kb.getResolvedContext()
+ *     +-> Translation agent reads unit.resolvedSource via kb.getResolvedContext()
  * ```
  *
  * ## Usage
@@ -76,12 +76,12 @@ import { IUnitResolutionResult, IBatchResolutionSummary, IResolutionOptions } fr
 import { IResolutionMetricsSnapshot } from './impl/resolutionMetrics.js';
 
 
-// ─── DI Decorator ─────────────────────────────────────────────────────────────
+// --- DI Decorator -------------------------------------------------------------
 
 export const ISourceResolutionService = createDecorator<ISourceResolutionService>('sourceResolutionService');
 
 
-// ─── Events ───────────────────────────────────────────────────────────────────
+// --- Events -------------------------------------------------------------------
 
 export interface IResolutionUnitCompleteEvent {
 	unitId: string;
@@ -98,7 +98,7 @@ export interface IResolutionBatchProgressEvent {
 	total: number;
 	inFlight: number;
 	percentComplete: number;
-	/** Running resolution rate across completed units (0–100) */
+	/** Running resolution rate across completed units (0-100) */
 	resolutionRate: number;
 }
 
@@ -107,12 +107,12 @@ export interface IResolutionBatchCompleteEvent {
 }
 
 
-// ─── Service Interface ────────────────────────────────────────────────────────
+// --- Service Interface --------------------------------------------------------
 
 export interface ISourceResolutionService {
 	readonly _serviceBrand: undefined;
 
-	// ── Events ─────────────────────────────────────────────────────────────
+	// -- Events -------------------------------------------------------------
 
 	/**
 	 * Fires when a single unit's resolution completes (success, partial, or failure).
@@ -127,11 +127,11 @@ export interface ISourceResolutionService {
 	readonly onDidBatchProgress: Event<IResolutionBatchProgressEvent>;
 
 	/**
-	 * Fires when a batch run finishes — either naturally or after cancel().
+	 * Fires when a batch run finishes -- either naturally or after cancel().
 	 */
 	readonly onDidCompleteBatch: Event<IResolutionBatchCompleteEvent>;
 
-	// ── Single Unit ────────────────────────────────────────────────────────
+	// -- Single Unit --------------------------------------------------------
 
 	/**
 	 * Resolve a single KB unit's dependencies by ID.
@@ -141,7 +141,7 @@ export interface ISourceResolutionService {
 	 * 2. Routes to the correct language inliner via resolutionRouter
 	 * 3. On success (resolved or partial): calls `kb.resolveUnitSource(unitId, resolvedSource)`
 	 *    which transitions the unit from 'pending' to 'ready'
-	 * 4. On failure (unresolvable, cycle, error): logs the result and returns — the unit
+	 * 4. On failure (unresolvable, cycle, error): logs the result and returns -- the unit
 	 *    remains in 'pending' status and can be retried later
 	 *
 	 * @param unitId  The ID of the KB unit to resolve
@@ -156,7 +156,7 @@ export interface ISourceResolutionService {
 	 * Resolve all pending (unresolved) units in the active KB session.
 	 *
 	 * Resolution order (via ResolutionScheduler):
-	 * 1. Leaf nodes first — units with no outbound project dependencies are processed
+	 * 1. Leaf nodes first -- units with no outbound project dependencies are processed
 	 *    first so they populate the file content cache before programs that reference them
 	 * 2. Higher risk within the same dependency tier (critical > high > medium > low)
 	 * 3. More dependents within the same risk tier (shared libraries resolved before one-offs)
@@ -167,7 +167,7 @@ export interface ISourceResolutionService {
 	 * Monitor progress via `onDidResolveUnit` and `onDidBatchProgress`.
 	 * Cancel via `cancelBatch()`.
 	 *
-	 * @param options Optional batch options — overrides defaults
+	 * @param options Optional batch options -- overrides defaults
 	 */
 	batchResolve(options?: Partial<IResolutionOptions>): Promise<IBatchResolutionSummary>;
 
@@ -180,7 +180,7 @@ export interface ISourceResolutionService {
 	 */
 	cancelBatch(): void;
 
-	// ── Metrics & Diagnostics ──────────────────────────────────────────────
+	// -- Metrics & Diagnostics ----------------------------------------------
 
 	/**
 	 * Get cumulative resolution metrics across all runs since the service started
@@ -200,7 +200,7 @@ export interface ISourceResolutionService {
 	 */
 	resetMetrics(): void;
 
-	// ── Status ─────────────────────────────────────────────────────────────
+	// -- Status -------------------------------------------------------------
 
 	/**
 	 * Whether a batch resolve is currently running.

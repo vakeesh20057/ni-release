@@ -10,7 +10,7 @@
  *
  *   $(combine) Modernising  [1/5 Discovery]
  *
- * Clickable — focuses the Compliance Center aux window.
+ * Clickable -- focuses the Compliance Center aux window.
  * Hidden when no session is active.
  */
 
@@ -68,8 +68,8 @@ export class ModernisationStatusContribution extends Disposable implements IWork
 
 		this._entry.value = this._statusbar.addEntry({
 			name:      'NeuralInverse Modernisation',
-			text:      `$(combine) Modernising  \u00b7  ${stageLabel}`,
-			ariaLabel: `Modernisation active: ${sourceNames} → ${targetNames}, stage: ${stageLabel}`,
+			text:      `$(combine) Modernising  .  ${stageLabel}`,
+			ariaLabel: `Modernisation active: ${sourceNames} -> ${targetNames}, stage: ${stageLabel}`,
 			tooltip:   `NeuralInverse Modernisation Mode\nSources: ${sourceNames}\nTargets: ${targetNames}\nStage: ${stageLabel}\n\nClick to open Compliance Center`,
 			command:   'neuralInverse.focusModernisationComplianceCenter',
 			kind:      'prominent',
@@ -90,12 +90,12 @@ export class ModernisationStatusContribution extends Disposable implements IWork
 		            : state === 'error'    ? '$(error)'
 		            : '$(sync)';
 
-		const label = state === 'running'  ? `Autonomy  \u00b7  ${processed} processed`
-		            : state === 'paused'   ? `Autonomy  \u00b7  Paused`
-		            : state === 'pausing'  ? `Autonomy  \u00b7  Pausing\u2026`
-		            : state === 'stopping' ? `Autonomy  \u00b7  Stopping\u2026`
-		            : state === 'error'    ? `Autonomy  \u00b7  Error`
-		            : `Autonomy  \u00b7  ${state}`;
+		const label = state === 'running'  ? `Autonomy  .  ${processed} processed`
+		            : state === 'paused'   ? `Autonomy  .  Paused`
+		            : state === 'pausing'  ? `Autonomy  .  Pausing...`
+		            : state === 'stopping' ? `Autonomy  .  Stopping...`
+		            : state === 'error'    ? `Autonomy  .  Error`
+		            : `Autonomy  .  ${state}`;
 
 		this._batchEntry.value = this._statusbar.addEntry({
 			name:      'NeuralInverse Autonomy Batch',

@@ -6,10 +6,10 @@
 /**
  * # Autonomy Service
  *
- * The DI-registered façade for Phase 12 — Agent Autonomy.
+ * The DI-registered facade for Phase 12 -- Agent Autonomy.
  *
  * Drives the full modernisation pipeline without requiring human input per unit:
- *   Resolve → Translate → [Auto-approve?] → Validate → Commit
+ *   Resolve -> Translate -> [Auto-approve?] -> Validate -> Commit
  *
  * ## DI token
  *
@@ -46,7 +46,7 @@
  *
  * ## Batch lifecycle
  *
- *   idle → running → (pausing) → paused → running → stopping → completed | error
+ *   idle -> running -> (pausing) -> paused -> running -> stopping -> completed | error
  *
  * ## Thread safety
  *
@@ -73,12 +73,12 @@ import {
 } from './impl/autonomyTypes.js';
 
 
-// ─── DI token ─────────────────────────────────────────────────────────────────
+// --- DI token -----------------------------------------------------------------
 
 export const IAutonomyService = createDecorator<IAutonomyService>('autonomyService');
 
 
-// ─── Single-unit options ──────────────────────────────────────────────────────
+// --- Single-unit options ------------------------------------------------------
 
 export interface IRunSingleUnitOptions {
 	/** Force this stage regardless of unit status. Default: inferred from status. */
@@ -90,12 +90,12 @@ export interface IRunSingleUnitOptions {
 }
 
 
-// ─── Service interface ────────────────────────────────────────────────────────
+// --- Service interface --------------------------------------------------------
 
 export interface IAutonomyService {
 	readonly _serviceBrand: undefined;
 
-	// ── State ─────────────────────────────────────────────────────────────────
+	// -- State -----------------------------------------------------------------
 
 	/** True while a batch is actively processing units. */
 	readonly isRunning:     boolean;
@@ -115,7 +115,7 @@ export interface IAutonomyService {
 	/** All units currently awaiting a human decision. */
 	readonly escalatedUnits: IEscalatedUnit[];
 
-	// ── Events ────────────────────────────────────────────────────────────────
+	// -- Events ----------------------------------------------------------------
 
 	/** Fires for unit-started, unit-completed, and batch-completed events. */
 	readonly onProgress:           Event<IAutonomyProgress>;
@@ -126,18 +126,18 @@ export interface IAutonomyService {
 	/** Fires each time a human resolves an escalation. */
 	readonly onEscalationResolved: Event<IEscalationResolution>;
 
-	/** Fires on every batch state transition (idle→running, running→paused, etc.). */
+	/** Fires on every batch state transition (idle->running, running->paused, etc.). */
 	readonly onBatchStateChanged:  Event<IBatchStateChange>;
 
-	// ── Batch control ─────────────────────────────────────────────────────────
+	// -- Batch control ---------------------------------------------------------
 
 	/**
 	 * Start the autonomy batch.
 	 *
 	 * Drives all eligible units through the requested pipeline stages:
-	 *   pending→ready (resolve), ready→review (translate),
-	 *   review→approved (policy/auto-approve), approved→validated (validate),
-	 *   validated→committed (commit)
+	 *   pending->ready (resolve), ready->review (translate),
+	 *   review->approved (policy/auto-approve), approved->validated (validate),
+	 *   validated->committed (commit)
 	 *
 	 * High-risk and regulated-domain units always escalate regardless of autoApprove.
 	 *
@@ -152,7 +152,7 @@ export interface IAutonomyService {
 	 *
 	 * In-flight unit jobs drain to completion before the pause takes effect.
 	 * The batch can be resumed from where it left off with `resumeBatch()`.
-	 * Units remain at their current status — no rollback.
+	 * Units remain at their current status -- no rollback.
 	 *
 	 * No-op if no batch is running.
 	 */
@@ -173,18 +173,18 @@ export interface IAutonomyService {
 	 * Stop (abort) the running batch.
 	 *
 	 * In-flight unit jobs drain gracefully before the stop takes effect.
-	 * Processed unit IDs are NOT persisted — resuming is not possible after `stopBatch()`.
+	 * Processed unit IDs are NOT persisted -- resuming is not possible after `stopBatch()`.
 	 * Use `pauseBatch()` if you want to resume later.
 	 *
 	 * No-op if no batch is running.
 	 */
 	stopBatch(): void;
 
-	// ── Single-unit API ────────────────────────────────────────────────────────
+	// -- Single-unit API --------------------------------------------------------
 
 	/**
 	 * Execute the next pipeline step for a single unit immediately.
-	 * Bypasses the scheduler — useful for targeted retry or human-driven progression.
+	 * Bypasses the scheduler -- useful for targeted retry or human-driven progression.
 	 *
 	 * Safe to call while a batch is running; the autonomy loop handles concurrent
 	 * lock conflicts gracefully (returns 'skipped' if locked).
@@ -194,7 +194,7 @@ export interface IAutonomyService {
 	 */
 	runSingleUnit(unitId: string, opts?: IRunSingleUnitOptions): Promise<IAutonomyUnitResult>;
 
-	// ── Escalation management ──────────────────────────────────────────────────
+	// -- Escalation management --------------------------------------------------
 
 	/**
 	 * Record a human decision for an escalated unit and apply it to the KB.
@@ -228,7 +228,7 @@ export interface IAutonomyService {
 	 */
 	clearEscalations(): void;
 
-	// ── Schedule preview ───────────────────────────────────────────────────────
+	// -- Schedule preview -------------------------------------------------------
 
 	/**
 	 * Preview the autonomy schedule without executing any pipeline stages.
@@ -238,7 +238,7 @@ export interface IAutonomyService {
 	 */
 	previewSchedule(options?: IAutonomyOptions): IAutonomySchedulePreview;
 
-	// ── History ────────────────────────────────────────────────────────────────
+	// -- History ----------------------------------------------------------------
 
 	/**
 	 * Return the history of completed batch runs, most recent first.
@@ -253,7 +253,7 @@ export interface IAutonomyService {
 }
 
 
-// ─── Error types ──────────────────────────────────────────────────────────────
+// --- Error types --------------------------------------------------------------
 
 export class AutonomyBatchAlreadyRunningError extends Error {
 	constructor() {

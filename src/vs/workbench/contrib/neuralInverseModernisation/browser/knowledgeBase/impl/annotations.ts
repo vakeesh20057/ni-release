@@ -21,12 +21,12 @@ import {
 } from '../../../common/knowledgeBaseTypes.js';
 import { makeId } from './helpers.js';
 
-// ─── Annotation store ─────────────────────────────────────────────────────────
+// --- Annotation store ---------------------------------------------------------
 
 export interface IAnnotationStore {
-	annotations: Map<string, IUnitAnnotation>; // annotationId → annotation
-	tags:        Map<string, IUnitTag>;        // tagId → tag
-	unitTags:    Map<string, Set<string>>;     // unitId → Set<tagId>
+	annotations: Map<string, IUnitAnnotation>; // annotationId -> annotation
+	tags:        Map<string, IUnitTag>;        // tagId -> tag
+	unitTags:    Map<string, Set<string>>;     // unitId -> Set<tagId>
 }
 
 export function createAnnotationStore(): IAnnotationStore {
@@ -37,7 +37,7 @@ export function createAnnotationStore(): IAnnotationStore {
 	};
 }
 
-// ─── Annotations ─────────────────────────────────────────────────────────────
+// --- Annotations -------------------------------------------------------------
 
 export function addAnnotation(
 	store: IAnnotationStore,
@@ -102,7 +102,7 @@ export function getContextAnnotations(
 	return result.sort((a, b) => a.createdAt - b.createdAt);
 }
 
-// ─── Tags ─────────────────────────────────────────────────────────────────────
+// --- Tags ---------------------------------------------------------------------
 
 export function createTag(
 	store: IAnnotationStore,
@@ -178,7 +178,7 @@ export function getUnitsByTag(
 	return unitIds;
 }
 
-// ─── Serialisation helpers ────────────────────────────────────────────────────
+// --- Serialisation helpers ----------------------------------------------------
 
 /** Convert annotation store to plain objects for KB serialisation */
 export function annotationStoreToExt(

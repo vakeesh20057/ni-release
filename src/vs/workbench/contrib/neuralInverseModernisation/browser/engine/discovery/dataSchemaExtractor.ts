@@ -8,7 +8,7 @@
  *
  * Extracts data structure definitions across every supported language and ORM.
  * Identifies tables, entities, models, interfaces, and records that carry
- * persistent or regulated data — critical for migration because each schema
+ * persistent or regulated data -- critical for migration because each schema
  * must be faithfully reproduced in the target technology.
  *
  * ## Coverage
@@ -42,7 +42,7 @@
 
 import { IDataSchema, DataSchemaKind } from './discoveryTypes.js';
 
-// ─── Regulated field detection ────────────────────────────────────────────────
+// --- Regulated field detection ------------------------------------------------
 
 /** Field name patterns that suggest regulated / PII data. */
 const REGULATED_FIELD_PATTERNS: Array<[RegExp, string]> = [
@@ -71,7 +71,7 @@ function isFieldRegulated(name: string): { isRegulated: boolean; reason?: string
 }
 
 
-// ─── Public API ───────────────────────────────────────────────────────────────
+// --- Public API ---------------------------------------------------------------
 
 /**
  * Extract data schemas from a unit's source content.
@@ -159,7 +159,7 @@ export function extractDataSchemas(
 }
 
 
-// ─── COBOL FD / Working-Storage ───────────────────────────────────────────────
+// --- COBOL FD / Working-Storage -----------------------------------------------
 
 function extractCobolSchemas(content: string, unitId: string, out: IDataSchema[]): void {
 	const lines = content.split('\n');
@@ -220,7 +220,7 @@ function extractCobolSchemas(content: string, unitId: string, out: IDataSchema[]
 }
 
 
-// ─── SQL DDL (all dialects) ───────────────────────────────────────────────────
+// --- SQL DDL (all dialects) ---------------------------------------------------
 
 function extractSQLSchemas(content: string, unitId: string, out: IDataSchema[]): void {
 	const lines = content.split('\n');
@@ -285,7 +285,7 @@ function extractSQLSchemas(content: string, unitId: string, out: IDataSchema[]):
 }
 
 
-// ─── Protocol Buffers ─────────────────────────────────────────────────────────
+// --- Protocol Buffers ---------------------------------------------------------
 
 function extractProtoSchemas(content: string, unitId: string, out: IDataSchema[]): void {
 	const lines = content.split('\n');
@@ -332,7 +332,7 @@ function extractProtoSchemas(content: string, unitId: string, out: IDataSchema[]
 }
 
 
-// ─── JVM JPA / Hibernate / Spring Data / Room ─────────────────────────────────
+// --- JVM JPA / Hibernate / Spring Data / Room ---------------------------------
 
 function extractJVMEntitySchemas(content: string, unitId: string, lang: string, out: IDataSchema[]): void {
 	// Check if this is an @Entity class
@@ -350,7 +350,7 @@ function extractJVMEntitySchemas(content: string, unitId: string, lang: string, 
 
 	const schema = makeSchema(unitId, 'jpa-entity', classMat[1], 1);
 
-	// For @Column fields — scan each field/property
+	// For @Column fields -- scan each field/property
 	const lines = content.split('\n');
 	let pendingColumn = false;
 	let isPrimary = false;
@@ -397,7 +397,7 @@ function extractJVMEntitySchemas(content: string, unitId: string, lang: string, 
 }
 
 
-// ─── Scala (case classes, Slick Tables) ───────────────────────────────────────
+// --- Scala (case classes, Slick Tables) ---------------------------------------
 
 function extractScalaSchemas(content: string, unitId: string, out: IDataSchema[]): void {
 	// Case classes (common DTO/entity pattern in Scala)
@@ -442,7 +442,7 @@ function extractScalaSchemas(content: string, unitId: string, out: IDataSchema[]
 }
 
 
-// ─── C# (EF Core / Dapper / ADO.NET) ─────────────────────────────────────────
+// --- C# (EF Core / Dapper / ADO.NET) -----------------------------------------
 
 function extractCSharpSchemas(content: string, unitId: string, out: IDataSchema[]): void {
 	// Check for EF attributes
@@ -479,7 +479,7 @@ function extractCSharpSchemas(content: string, unitId: string, out: IDataSchema[
 }
 
 
-// ─── Python: Django / SQLAlchemy / Pydantic / dataclass ───────────────────────
+// --- Python: Django / SQLAlchemy / Pydantic / dataclass -----------------------
 
 function extractPythonSchemas(content: string, unitId: string, out: IDataSchema[]): void {
 	const lines = content.split('\n');
@@ -510,7 +510,7 @@ function extractPythonSchemas(content: string, unitId: string, out: IDataSchema[
 			continue;
 		}
 
-		// New top-level def / class → end previous class
+		// New top-level def / class -> end previous class
 		if (/^\S/.test(line) && trimmed !== '' && !trimmed.startsWith('#')) {
 			if (currentSchema) { finishSchema(currentSchema, out); currentSchema = null; }
 			currentClass = null;
@@ -518,7 +518,7 @@ function extractPythonSchemas(content: string, unitId: string, out: IDataSchema[
 
 		if (!currentSchema || !currentClass) { continue; }
 
-		// ── Django field: field_name = models.CharField(...) ──────────────
+		// -- Django field: field_name = models.CharField(...) --------------
 		if (currentSchema.kind === 'django-model') {
 			const dfm = /^\s+(\w+)\s*=\s*models\.([\w]+)\s*\(([^)]*)\)/.exec(line);
 			if (dfm) {
@@ -537,7 +537,7 @@ function extractPythonSchemas(content: string, unitId: string, out: IDataSchema[
 			}
 		}
 
-		// ── SQLAlchemy: field_name = Column(Type, ...) ────────────────────
+		// -- SQLAlchemy: field_name = Column(Type, ...) --------------------
 		if (currentSchema.kind === 'sqlalchemy-model') {
 			const sam = /^\s+(\w+)\s*(?::\s*Mapped\[([^\]]+)\])?\s*=\s*(?:mapped_column|Column)\s*\(([^)]*)\)/.exec(line);
 			if (sam) {
@@ -556,7 +556,7 @@ function extractPythonSchemas(content: string, unitId: string, out: IDataSchema[
 			}
 		}
 
-		// ── Pydantic: field_name: Type = Field(...) / field_name: Type ────
+		// -- Pydantic: field_name: Type = Field(...) / field_name: Type ----
 		if (currentSchema.kind === 'pydantic-model' || currentSchema.kind === 'typescript-interface') {
 			const pym = /^\s+(\w+)\s*:\s*([\w\[\]| ,?Optional]+?)(?:\s*=.*)?$/.exec(line);
 			if (pym && pym[1] !== 'class' && pym[1] !== 'def' && !pym[1].startsWith('__')) {
@@ -575,7 +575,7 @@ function extractPythonSchemas(content: string, unitId: string, out: IDataSchema[
 }
 
 
-// ─── TypeScript / JavaScript (interfaces, TypeORM, Mongoose, Sequelize, Drizzle) ──
+// --- TypeScript / JavaScript (interfaces, TypeORM, Mongoose, Sequelize, Drizzle) --
 
 function extractNodeSchemas(content: string, unitId: string, lang: string, fileName: string, out: IDataSchema[]): void {
 	// TypeScript interfaces
@@ -699,7 +699,7 @@ function extractSequelizeSchemas(content: string, unitId: string, out: IDataSche
 }
 
 
-// ─── Go Structs (with GORM/db tags) ──────────────────────────────────────────
+// --- Go Structs (with GORM/db tags) ------------------------------------------
 
 function extractGoSchemas(content: string, unitId: string, out: IDataSchema[]): void {
 	const structRe = /type\s+(\w+)\s+struct\s*\{/g;
@@ -730,7 +730,7 @@ function extractGoSchemas(content: string, unitId: string, out: IDataSchema[]): 
 }
 
 
-// ─── Rust (Diesel / SeaORM / SQLx structs) ────────────────────────────────────
+// --- Rust (Diesel / SeaORM / SQLx structs) ------------------------------------
 
 function extractRustSchemas(content: string, unitId: string, out: IDataSchema[]): void {
 	// Structs with #[derive(...)] annotations that suggest DB entities
@@ -776,7 +776,7 @@ function extractRustSchemas(content: string, unitId: string, out: IDataSchema[])
 }
 
 
-// ─── Ruby ActiveRecord ────────────────────────────────────────────────────────
+// --- Ruby ActiveRecord --------------------------------------------------------
 
 function extractRubySchemas(content: string, unitId: string, out: IDataSchema[]): void {
 	// Rails migrations: create_table :users do |t|  t.string :name
@@ -820,7 +820,7 @@ function extractRubySchemas(content: string, unitId: string, out: IDataSchema[])
 }
 
 
-// ─── PHP Doctrine ─────────────────────────────────────────────────────────────
+// --- PHP Doctrine -------------------------------------------------------------
 
 function extractPhpSchemas(content: string, unitId: string, out: IDataSchema[]): void {
 	if (!/@ORM\\Entity|#\[ORM\\Entity\]|@Entity/.test(content)) { return; }
@@ -848,7 +848,7 @@ function extractPhpSchemas(content: string, unitId: string, out: IDataSchema[]):
 }
 
 
-// ─── Elixir Ecto ──────────────────────────────────────────────────────────────
+// --- Elixir Ecto --------------------------------------------------------------
 
 function extractElixirSchemas(content: string, unitId: string, out: IDataSchema[]): void {
 	// schema "table_name" do ... field :name, :type ... end
@@ -873,7 +873,7 @@ function extractElixirSchemas(content: string, unitId: string, out: IDataSchema[
 }
 
 
-// ─── Haskell Persistent ───────────────────────────────────────────────────────
+// --- Haskell Persistent -------------------------------------------------------
 
 function extractHaskellSchemas(content: string, unitId: string, out: IDataSchema[]): void {
 	// Persistent QuasiQuote: [persistLowerCase| User  name Text  age Int  |]
@@ -907,7 +907,7 @@ function extractHaskellSchemas(content: string, unitId: string, out: IDataSchema
 }
 
 
-// ─── Prisma Schema ────────────────────────────────────────────────────────────
+// --- Prisma Schema ------------------------------------------------------------
 
 function extractPrismaSchemas(content: string, unitId: string, out: IDataSchema[]): void {
 	const modelRe = /^model\s+(\w+)\s*\{/gm;
@@ -935,7 +935,7 @@ function extractPrismaSchemas(content: string, unitId: string, out: IDataSchema[
 }
 
 
-// ─── Avro Schema ──────────────────────────────────────────────────────────────
+// --- Avro Schema --------------------------------------------------------------
 
 function extractAvroSchemas(content: string, unitId: string, out: IDataSchema[]): void {
 	try {
@@ -959,11 +959,11 @@ function extractAvroSchemas(content: string, unitId: string, out: IDataSchema[])
 			}
 			if (schema.fields.length > 0) { out.push(schema); }
 		}
-	} catch { /* not valid JSON — skip */ }
+	} catch { /* not valid JSON -- skip */ }
 }
 
 
-// ─── JSON Schema ──────────────────────────────────────────────────────────────
+// --- JSON Schema --------------------------------------------------------------
 
 function extractJsonSchemas(content: string, unitId: string, out: IDataSchema[]): void {
 	try {
@@ -987,7 +987,7 @@ function extractJsonSchemas(content: string, unitId: string, out: IDataSchema[])
 }
 
 
-// ─── Hibernate XML ────────────────────────────────────────────────────────────
+// --- Hibernate XML ------------------------------------------------------------
 
 function extractHibernateXMLSchemas(content: string, unitId: string, out: IDataSchema[]): void {
 	const classRe = /<class\s[^>]*name="([^"]+)"/g;
@@ -1011,7 +1011,7 @@ function extractHibernateXMLSchemas(content: string, unitId: string, out: IDataS
 }
 
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
+// --- Helpers ------------------------------------------------------------------
 
 function makeSchema(unitId: string, kind: DataSchemaKind, name: string, lineNumber: number): IDataSchema {
 	return { unitId, kind, name, fields: [], hasRegulatedFields: false, lineNumber };

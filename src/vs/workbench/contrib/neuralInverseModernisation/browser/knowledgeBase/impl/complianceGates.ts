@@ -8,7 +8,7 @@
  *
  * Before a unit can be moved to 'approved' in regulated domains, it must pass a
  * set of compliance requirements. Each requirement is either:
- *   - auto-checkable  (e.g. "fingerprint comparison passed", "test coverage ≥ 80%")
+ *   - auto-checkable  (e.g. "fingerprint comparison passed", "test coverage >= 80%")
  *   - human-required  (e.g. "sign-off by compliance officer", "legal review")
  *
  * The gate result is cached in ext and re-evaluated on every call.
@@ -22,18 +22,18 @@ import {
 	IBusinessDomain,
 } from '../../../common/knowledgeBaseTypes.js';
 
-// ─── Gate store ───────────────────────────────────────────────────────────────
+// --- Gate store ---------------------------------------------------------------
 
 export interface IGateStore {
 	/** Most recent gate result per unit */
-	gateResults: Map<string, IComplianceGateResult>; // unitId → result
+	gateResults: Map<string, IComplianceGateResult>; // unitId -> result
 }
 
 export function createGateStore(): IGateStore {
 	return { gateResults: new Map() };
 }
 
-// ─── Default requirements builder ─────────────────────────────────────────────
+// --- Default requirements builder ---------------------------------------------
 
 /**
  * Build the default compliance requirements for a unit based on its domain.
@@ -447,7 +447,7 @@ function buildRequirementsFor(
 	return reqs;
 }
 
-// ─── Gate evaluation ──────────────────────────────────────────────────────────
+// --- Gate evaluation ----------------------------------------------------------
 
 export function checkComplianceGate(
 	store: IGateStore,
@@ -486,7 +486,7 @@ export function checkComplianceGate(
 	return result;
 }
 
-// ─── Manual approval recording ────────────────────────────────────────────────
+// --- Manual approval recording ------------------------------------------------
 
 /**
  * Record a human compliance approval for a specific requirement.
@@ -535,11 +535,11 @@ export function recordComplianceApproval(
 	});
 }
 
-// ─── Waiver ───────────────────────────────────────────────────────────────────
+// --- Waiver -------------------------------------------------------------------
 
 /**
  * Waive a specific compliance requirement for a unit.
- * A waived requirement does not count as failed — the gate can still pass.
+ * A waived requirement does not count as failed -- the gate can still pass.
  * Use for requirements that are known to be inapplicable or formally exempted.
  */
 export function waiveComplianceRequirement(
@@ -561,7 +561,7 @@ export function waiveComplianceRequirement(
 		};
 	});
 
-	// Recompute overall — waived requirements do not count as failed
+	// Recompute overall -- waived requirements do not count as failed
 	const failed  = updatedReqs.filter(r => r.status === 'fail');
 	const pending = updatedReqs.filter(r => r.status === 'pending');
 	const passed  = updatedReqs.filter(r => r.status === 'pass');
@@ -586,7 +586,7 @@ export function waiveComplianceRequirement(
 }
 
 
-// ─── Queries ──────────────────────────────────────────────────────────────────
+// --- Queries ------------------------------------------------------------------
 
 export function getComplianceGateFailures(
 	store: IGateStore,

@@ -20,7 +20,7 @@
  *
  * ### Per-language-pair stats
  *   - Success/error/blocked counts
- *   - Average confidence score (0–3 scale, aggregated from `CONFIDENCE_SCORE`)
+ *   - Average confidence score (0-3 scale, aggregated from `CONFIDENCE_SCORE`)
  *   - Average tokens per unit
  *   - Average duration per unit (ms)
  *
@@ -38,13 +38,13 @@
 import { ITranslationResult, TranslationOutcome, TranslationConfidence, CONFIDENCE_SCORE } from './translationTypes.js';
 
 
-// ─── Metric types ─────────────────────────────────────────────────────────────
+// --- Metric types -------------------------------------------------------------
 
-/** Stats for a single source→target language pair */
+/** Stats for a single source->target language pair */
 export interface ILanguagePairMetrics {
 	sourceLang: string;
 	targetLang: string;
-	/** Language pair label (e.g. 'COBOL → Java') */
+	/** Language pair label (e.g. 'COBOL -> Java') */
 	label: string;
 	attempted:   number;
 	succeeded:   number;
@@ -81,7 +81,7 @@ export interface ITranslationBatchMetrics {
 	skipped:        number;
 
 	// Quality
-	/** Average confidence across succeeded+partial units (0.0–3.0 scale) */
+	/** Average confidence across succeeded+partial units (0.0-3.0 scale) */
 	averageConfidence: number;
 	/** Number of units with at least one decision raised */
 	unitsWithDecisions: number;
@@ -108,7 +108,7 @@ export interface ITranslationBatchMetrics {
 }
 
 
-// ─── Collector ────────────────────────────────────────────────────────────────
+// --- Collector ----------------------------------------------------------------
 
 export class TranslationMetricsCollector {
 
@@ -149,7 +149,7 @@ export class TranslationMetricsCollector {
 		this._totalUnits = totalUnits;
 	}
 
-	// ── Recording ─────────────────────────────────────────────────────────────
+	// -- Recording -------------------------------------------------------------
 
 	/**
 	 * Record one unit's completed result.
@@ -202,7 +202,7 @@ export class TranslationMetricsCollector {
 		pair.skipped++;
 	}
 
-	// ── Snapshot ──────────────────────────────────────────────────────────────
+	// -- Snapshot --------------------------------------------------------------
 
 	/**
 	 * Return a point-in-time snapshot of all collected metrics.
@@ -266,7 +266,7 @@ export class TranslationMetricsCollector {
 	}
 
 
-	// ── Private helpers ───────────────────────────────────────────────────────
+	// -- Private helpers -------------------------------------------------------
 
 	private _recordPair(result: ITranslationResult): void {
 		this._touchPair(result.sourceLang, result.targetLang);
@@ -297,7 +297,7 @@ export class TranslationMetricsCollector {
 			this._pairs.set(key, {
 				sourceLang,
 				targetLang,
-				label:           `${sourceLang.toUpperCase()} → ${targetLang.toUpperCase()}`,
+				label:           `${sourceLang.toUpperCase()} -> ${targetLang.toUpperCase()}`,
 				attempted:       0,
 				succeeded:       0,
 				partial:         0,
@@ -318,14 +318,14 @@ export class TranslationMetricsCollector {
 }
 
 
-// ─── Utility ──────────────────────────────────────────────────────────────────
+// --- Utility ------------------------------------------------------------------
 
 function pairKey(source: string, target: string): string {
-	return `${source.toLowerCase()}→${target.toLowerCase()}`;
+	return `${source.toLowerCase()}->${target.toLowerCase()}`;
 }
 
 /**
- * Format a confidence score (0.0–3.0) as a human-readable label with percentage.
+ * Format a confidence score (0.0-3.0) as a human-readable label with percentage.
  * Used in console UI and reporting.
  */
 export function formatConfidenceScore(score: number): string {
@@ -337,7 +337,7 @@ export function formatConfidenceScore(score: number): string {
 }
 
 /**
- * Convert a `TranslationConfidence` string to the 0–3 numeric score.
+ * Convert a `TranslationConfidence` string to the 0-3 numeric score.
  */
 export function confidenceToScore(confidence: TranslationConfidence): number {
 	return CONFIDENCE_SCORE[confidence] ?? 0;

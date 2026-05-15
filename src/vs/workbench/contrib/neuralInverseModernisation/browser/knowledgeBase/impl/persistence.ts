@@ -9,7 +9,7 @@
  * Handles:
  *   - Loading a KB from workspace storage on init
  *   - Saving (debounced) on every mutation
- *   - Session index (lightweight registry of all sessions — no full KB load required)
+ *   - Session index (lightweight registry of all sessions -- no full KB load required)
  *   - Schema migration when the version is outdated
  *   - Graceful handling of corrupted storage
  */
@@ -19,7 +19,7 @@ import { IModernisationKnowledgeBase, KNOWLEDGE_BASE_VERSION } from '../../../co
 import { serialiseKB, deserialiseKB, newKnowledgeBase } from './helpers.js';
 import { IKnowledgeBaseSessionIndex } from '../types.js';
 
-// ─── Storage keys ─────────────────────────────────────────────────────────────
+// --- Storage keys -------------------------------------------------------------
 
 const KB_KEY_PREFIX   = 'neuralInverse.knowledgeBase.';
 const INDEX_KEY       = 'neuralInverse.knowledgeBase._index';
@@ -29,7 +29,7 @@ export const MAX_AUDIT_LOG    = 20_000;
 export const AUDIT_LOG_TRIM   = 2_000; // entries removed when cap is exceeded
 
 
-// ─── Load / Create ────────────────────────────────────────────────────────────
+// --- Load / Create ------------------------------------------------------------
 
 /**
  * Load an existing KB from storage, or create a fresh one.
@@ -54,7 +54,7 @@ export function loadOrCreate(
 }
 
 
-// ─── Save ─────────────────────────────────────────────────────────────────────
+// --- Save ---------------------------------------------------------------------
 
 export function flush(kb: IModernisationKnowledgeBase, storage: IStorageService): void {
 	const key = KB_KEY_PREFIX + kb.sessionId;
@@ -70,7 +70,7 @@ export function deleteFromStorage(sessionId: string, storage: IStorageService): 
 }
 
 
-// ─── Session index ────────────────────────────────────────────────────────────
+// --- Session index ------------------------------------------------------------
 
 export function loadSessionIndex(storage: IStorageService): IKnowledgeBaseSessionIndex {
 	try {
@@ -110,7 +110,7 @@ export function removeSessionFromIndex(sessionId: string, storage: IStorageServi
 }
 
 
-// ─── Schema migration ─────────────────────────────────────────────────────────
+// --- Schema migration ---------------------------------------------------------
 
 /**
  * Mutates the KB in place to bring it up to the current schema version.
@@ -119,7 +119,7 @@ export function removeSessionFromIndex(sessionId: string, storage: IStorageServi
 export function migrateSchema(kb: IModernisationKnowledgeBase): void {
 	if (kb.version >= KNOWLEDGE_BASE_VERSION) { return; }
 
-	// v0 → v1: no structural changes; just ensure new optional fields exist
+	// v0 -> v1: no structural changes; just ensure new optional fields exist
 	if (kb.version < 1) {
 		if (!kb.decisions.exclusions)     { (kb.decisions as any).exclusions = []; }
 		if (!kb.decisions.patternOverrides) { (kb.decisions as any).patternOverrides = []; }

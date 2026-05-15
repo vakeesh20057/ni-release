@@ -9,7 +9,7 @@
  * Computes and maintains the IProgressState stored inside the knowledge base.
  * Also generates IKnowledgeBaseStats for UI consumption.
  *
- * All functions are pure computations over the KB — no side effects.
+ * All functions are pure computations over the KB -- no side effects.
  */
 
 import {
@@ -31,7 +31,7 @@ import {
 } from './helpers.js';
 
 
-// ─── Progress update ──────────────────────────────────────────────────────────
+// --- Progress update ----------------------------------------------------------
 
 /**
  * Recompute all progress counters from scratch.
@@ -55,7 +55,7 @@ export function updateProgress(kb: IModernisationKnowledgeBase): void {
 }
 
 
-// ─── Phase progress ───────────────────────────────────────────────────────────
+// --- Phase progress -----------------------------------------------------------
 
 /**
  * Recompute progress for a single phase.
@@ -109,7 +109,7 @@ export function phasesToProgress(phases: IMigrationPhase[]): IPhaseProgress[] {
 }
 
 
-// ─── Statistics ───────────────────────────────────────────────────────────────
+// --- Statistics ---------------------------------------------------------------
 
 export function computeStats(
 	kb: IModernisationKnowledgeBase,

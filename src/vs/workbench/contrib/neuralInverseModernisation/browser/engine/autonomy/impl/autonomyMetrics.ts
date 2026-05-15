@@ -32,7 +32,7 @@ import {
 } from './autonomyTypes.js';
 
 
-// ─── Collector ────────────────────────────────────────────────────────────────
+// --- Collector ----------------------------------------------------------------
 
 export class AutonomyMetricsCollector {
 
@@ -53,10 +53,10 @@ export class AutonomyMetricsCollector {
 	private readonly _stageMinMs: Record<AutonomyStage, number>   = { resolve: Infinity, translate: Infinity, validate: Infinity, commit: Infinity };
 	private readonly _stageMaxMs: Record<AutonomyStage, number>   = { resolve: 0, translate: 0, validate: 0, commit: 0 };
 
-	// Domain breakdown (domain → advanced count)
+	// Domain breakdown (domain -> advanced count)
 	private readonly _byDomain: Record<string, number> = {};
 
-	// Risk breakdown (riskLevel → advanced count)
+	// Risk breakdown (riskLevel -> advanced count)
 	private readonly _byRisk: Record<string, number> = {};
 
 	// Error category counts
@@ -74,13 +74,13 @@ export class AutonomyMetricsCollector {
 		this._startedAt  = startedAt;
 	}
 
-	// ── Recording ─────────────────────────────────────────────────────────────
+	// -- Recording -------------------------------------------------------------
 
 	/**
 	 * Record a completed unit result.
 	 * Call this after every unit, success or failure.
 	 * Pass the KB unit (if available) to populate domain and risk breakdowns.
-	 * NOT thread-safe — must be called serially.
+	 * NOT thread-safe -- must be called serially.
 	 */
 	record(result: IAutonomyUnitResult, kbUnit?: IKnowledgeUnit): void {
 		this._totalProcessed++;
@@ -102,7 +102,7 @@ export class AutonomyMetricsCollector {
 			if (ms > this._stageMaxMs[s]) { this._stageMaxMs[s] = ms; }
 		}
 
-		// Domain and risk breakdowns — count all non-skipped outcomes
+		// Domain and risk breakdowns -- count all non-skipped outcomes
 		if (result.outcome !== 'skipped' && kbUnit) {
 			const domain    = kbUnit.domain;
 			const riskLevel = kbUnit.riskLevel;
@@ -137,11 +137,11 @@ export class AutonomyMetricsCollector {
 		return this._buildMetrics(wasAborted);
 	}
 
-	// ── Summary ────────────────────────────────────────────────────────────────
+	// -- Summary ----------------------------------------------------------------
 
 	/**
 	 * Human-readable summary line for logging.
-	 * e.g. "Advanced 42/100 — 3 escalated, 1 error, 12 skipped | 2.1 units/min"
+	 * e.g. "Advanced 42/100 -- 3 escalated, 1 error, 12 skipped | 2.1 units/min"
 	 */
 	summaryLine(): string {
 		const s     = this.snapshot();
@@ -149,7 +149,7 @@ export class AutonomyMetricsCollector {
 		if (s.escalated > 0) { parts.push(`${s.escalated} escalated`); }
 		if (s.errors    > 0) { parts.push(`${s.errors} error(s)`);     }
 		if (s.skipped   > 0) { parts.push(`${s.skipped} skipped`);     }
-		const summary = parts.join(' — ');
+		const summary = parts.join(' -- ');
 		const upm = s.unitsPerMinute > 0 ? ` | ${s.unitsPerMinute} units/min` : '';
 		const eta = s.estimatedRemainingMs != null
 			? ` | ETA ${_formatDuration(s.estimatedRemainingMs)}`
@@ -158,7 +158,7 @@ export class AutonomyMetricsCollector {
 	}
 
 
-	// ── Private ───────────────────────────────────────────────────────────────
+	// -- Private ---------------------------------------------------------------
 
 	private _buildMetrics(wasAborted: boolean): IAutonomyBatchMetrics {
 		const now       = Date.now();
@@ -219,7 +219,7 @@ export class AutonomyMetricsCollector {
 }
 
 
-// ─── Utility ──────────────────────────────────────────────────────────────────
+// --- Utility ------------------------------------------------------------------
 
 function _formatDuration(ms: number): string {
 	const secs  = Math.round(ms / 1000);

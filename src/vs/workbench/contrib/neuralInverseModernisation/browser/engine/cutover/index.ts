@@ -4,7 +4,7 @@
  *--------------------------------------------------------------------------------------------*/
 
 /**
- * # Cutover Engine — Public Exports & DI Registration
+ * # Cutover Engine -- Public Exports & DI Registration
  *
  * Import this file as a side-effect to register the CutoverService in the DI container:
  *
@@ -15,7 +15,7 @@
  * All external consumers should import from this file, not from internal modules.
  */
 
-// ── Public service interface ──────────────────────────────────────────────────
+// -- Public service interface --------------------------------------------------
 export {
 	ICutoverService,
 	CommitBatchAlreadyRunningError,
@@ -25,7 +25,7 @@ export type {
 	ICommitProgress,
 } from './service.js';
 
-// ── Audit bundle ──────────────────────────────────────────────────────────────
+// -- Audit bundle --------------------------------------------------------------
 export type {
 	IAuditBundle,
 	IAuditBundleOptions,
@@ -35,7 +35,7 @@ export type {
 	IAuditBundleIntegrity,
 } from './impl/auditExporter.js';
 
-// ── Commit batch ──────────────────────────────────────────────────────────────
+// -- Commit batch --------------------------------------------------------------
 export type {
 	ICommitBatchOptions,
 	ICommitBatchResult,
@@ -43,18 +43,18 @@ export type {
 } from './impl/commitWriter.js';
 export { DEFAULT_COMMIT_OPTIONS } from './impl/commitWriter.js';
 
-// ── Cutover gate ──────────────────────────────────────────────────────────────
+// -- Cutover gate --------------------------------------------------------------
 export type {
 	ICutoverReadinessReport,
 	ICutoverReadinessCheck,
 	CutoverCheckSeverity,
 } from './impl/cutoverGate.js';
 
-// ── Metrics ───────────────────────────────────────────────────────────────────
+// -- Metrics -------------------------------------------------------------------
 export type { ICutoverMetrics } from './impl/cutoverMetrics.js';
 
 
-// ── DI registration ───────────────────────────────────────────────────────────
+// -- DI registration -----------------------------------------------------------
 import { registerSingleton, InstantiationType } from '../../../../../../platform/instantiation/common/extensions.js';
 import { ICutoverService as _ICutoverService } from './service.js';
 import { CutoverServiceImpl } from './CutoverServiceImpl.js';

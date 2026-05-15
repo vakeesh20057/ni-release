@@ -14,7 +14,7 @@
  *   - Translatable unit filter (units whose deps are all done)
  *   - Next unit selection (dependency-ordered + risk-ordered)
  *
- * All functions are pure — they take the KB's unit map as input.
+ * All functions are pure -- they take the KB's unit map as input.
  * No side effects, no DI.
  */
 
@@ -23,7 +23,7 @@ import { IDependencyNode } from '../types.js';
 import { DONE_STATUSES, RISK_ORDER } from './helpers.js';
 
 
-// ─── Direct relationships ──────────────────────────────────────────────────────
+// --- Direct relationships ------------------------------------------------------
 
 export function getDependencies(
 	unitId: string,
@@ -48,7 +48,7 @@ export function getDependents(
 }
 
 
-// ─── Transitive traversal ─────────────────────────────────────────────────────
+// --- Transitive traversal -----------------------------------------------------
 
 /**
  * Get all transitive dependencies of a unit (all ancestors in the dependency DAG).
@@ -105,7 +105,7 @@ export function getImpactChain(
 }
 
 
-// ─── Dependency tree ──────────────────────────────────────────────────────────
+// --- Dependency tree ----------------------------------------------------------
 
 /**
  * Build a nested dependency tree for a unit.
@@ -135,7 +135,7 @@ export function getDependencyTree(
 }
 
 
-// ─── Topological sort ─────────────────────────────────────────────────────────
+// --- Topological sort ---------------------------------------------------------
 
 /**
  * Return all units in topological order (dependency-first).
@@ -160,7 +160,7 @@ export function getTopologicalOrder(units: Map<string, IKnowledgeUnit>): IKnowle
 }
 
 
-// ─── Translatable units ───────────────────────────────────────────────────────
+// --- Translatable units -------------------------------------------------------
 
 /**
  * Units that are in 'ready' status AND all their dependencies are done.
@@ -194,7 +194,7 @@ export function getUnblockedDependencies(
 }
 
 
-// ─── Next unit selection ──────────────────────────────────────────────────────
+// --- Next unit selection ------------------------------------------------------
 
 /**
  * Pick the best unit for an agent to work on next:

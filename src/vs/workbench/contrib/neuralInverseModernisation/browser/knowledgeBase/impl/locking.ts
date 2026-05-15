@@ -4,11 +4,11 @@
  *--------------------------------------------------------------------------------------------*/
 
 /**
- * Unit locking — multi-agent concurrency control.
+ * Unit locking -- multi-agent concurrency control.
  *
  * Locks are purely in-memory (not persisted). They are short-lived TTL leases
  * granted to agents so two agents never translate the same unit simultaneously.
- * On process restart all locks vanish, which is intentional — stale locks from a
+ * On process restart all locks vanish, which is intentional -- stale locks from a
  * crashed agent are automatically cleared on next startup.
  */
 
@@ -17,25 +17,25 @@ import { makeId } from './helpers.js';
 
 export const DEFAULT_LOCK_TTL_MS = 5 * 60 * 1000; // 5 minutes
 
-// ─── Lock store ───────────────────────────────────────────────────────────────
+// --- Lock store ---------------------------------------------------------------
 
 /** Mutable in-memory lock store injected by KnowledgeBaseImpl */
 export interface ILockStore {
-	locks: Map<string, IUnitLock>; // unitId → lock
+	locks: Map<string, IUnitLock>; // unitId -> lock
 }
 
 export function createLockStore(): ILockStore {
 	return { locks: new Map() };
 }
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
+// --- Helpers ------------------------------------------------------------------
 
 function isExpired(lock: IUnitLock): boolean {
 	if (lock.ttlMs === 0) { return false; } // indefinite
 	return Date.now() > lock.acquiredAt + lock.ttlMs;
 }
 
-// ─── Acquire ──────────────────────────────────────────────────────────────────
+// --- Acquire ------------------------------------------------------------------
 
 /**
  * Attempt to acquire an exclusive lock on unitId for ownerId.
@@ -54,7 +54,7 @@ export function lockUnit(
 
 	if (existing) {
 		if (isExpired(existing)) {
-			// Expired lock — evict and proceed
+			// Expired lock -- evict and proceed
 			store.locks.delete(unitId);
 		} else if (existing.ownerId === ownerId) {
 			// Re-entrant: refresh TTL
@@ -78,7 +78,7 @@ export function lockUnit(
 	return lock;
 }
 
-// ─── Release ──────────────────────────────────────────────────────────────────
+// --- Release ------------------------------------------------------------------
 
 /**
  * Release the lock on unitId.
@@ -100,7 +100,7 @@ export function forceUnlockUnit(store: ILockStore, unitId: string): void {
 	store.locks.delete(unitId);
 }
 
-// ─── Queries ──────────────────────────────────────────────────────────────────
+// --- Queries ------------------------------------------------------------------
 
 export function getLock(store: ILockStore, unitId: string): IUnitLock | undefined {
 	const lock = store.locks.get(unitId);

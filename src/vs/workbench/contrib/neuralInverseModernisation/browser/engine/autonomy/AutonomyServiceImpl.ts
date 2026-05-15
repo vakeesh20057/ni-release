@@ -6,11 +6,11 @@
 /**
  * # Autonomy Service Implementation
  *
- * Production implementation of `IAutonomyService` for Phase 12 — Agent Autonomy.
+ * Production implementation of `IAutonomyService` for Phase 12 -- Agent Autonomy.
  *
  * ## Lifecycle
  *
- *   idle → running → (pausing) → paused → running → stopping → completed | error
+ *   idle -> running -> (pausing) -> paused -> running -> stopping -> completed | error
  *
  * ## Pause / Resume
  *
@@ -23,15 +23,15 @@
  *
  *   Both call `_currentController.abort()`. The `_pauseRequested` flag distinguishes
  *   the two paths when `_startBatchInternal` awaits the engine:
- *     - `_pauseRequested = true` → transition to 'paused', preserve processedIds
- *     - `_pauseRequested = false` → transition to 'completed' (wasAborted=true), clear state
+ *     - `_pauseRequested = true` -> transition to 'paused', preserve processedIds
+ *     - `_pauseRequested = false` -> transition to 'completed' (wasAborted=true), clear state
  *
  * ## Run History
  *
  *   Completed (and error) run records are persisted to `IStorageService` under
  *   `HISTORY_STORAGE_KEY` (workspace scope). At most `MAX_RUN_HISTORY` records
  *   are kept (oldest are discarded). Paused runs are NOT persisted (they are
- *   considered in-progress) — they are saved only when they eventually complete.
+ *   considered in-progress) -- they are saved only when they eventually complete.
  *
  * ## Zombie lock cleanup
  *
@@ -96,12 +96,12 @@ import {
 } from './impl/autonomyTypes.js';
 
 
-// ─── Constants ────────────────────────────────────────────────────────────────
+// --- Constants ----------------------------------------------------------------
 
 /** Key under which the run history array is stored in `IStorageService`. */
 const HISTORY_STORAGE_KEY = 'neuralInverse:autonomy:run-history';
 
-/** Lock owner token — matches the constant in batchAutonomyEngine.ts. */
+/** Lock owner token -- matches the constant in batchAutonomyEngine.ts. */
 const LOCK_OWNER = 'autonomy-engine';
 
 /**
@@ -121,13 +121,13 @@ const STAGE_TO_INPUT_STATUS: Record<AutonomyStage, string> = {
 };
 
 
-// ─── Implementation ───────────────────────────────────────────────────────────
+// --- Implementation -----------------------------------------------------------
 
 export class AutonomyServiceImpl extends Disposable implements IAutonomyService {
 	readonly _serviceBrand: undefined;
 
 
-	// ── Events ────────────────────────────────────────────────────────────────
+	// -- Events ----------------------------------------------------------------
 
 	private readonly _onProgress           = this._register(new Emitter<IAutonomyProgress>());
 	private readonly _onUnitEscalated      = this._register(new Emitter<IEscalatedUnit>());
@@ -140,7 +140,7 @@ export class AutonomyServiceImpl extends Disposable implements IAutonomyService 
 	readonly onBatchStateChanged:  Event<IBatchStateChange>       = this._onBatchStateChanged.event;
 
 
-	// ── Core batch state ──────────────────────────────────────────────────────
+	// -- Core batch state ------------------------------------------------------
 
 	private _batchState:        BatchState           = 'idle';
 	private _currentRunId:      string | null        = null;
@@ -155,7 +155,7 @@ export class AutonomyServiceImpl extends Disposable implements IAutonomyService 
 	 */
 	private _pauseRequested = false;
 
-	// ── Pause / resume state ──────────────────────────────────────────────────
+	// -- Pause / resume state --------------------------------------------------
 
 	/**
 	 * Options used in the batch that was paused.
@@ -169,7 +169,7 @@ export class AutonomyServiceImpl extends Disposable implements IAutonomyService 
 	 */
 	private _pausedProcessedIds: Set<string> | null = null;
 
-	// ── In-progress tracking ──────────────────────────────────────────────────
+	// -- In-progress tracking --------------------------------------------------
 
 	/**
 	 * Unit IDs processed in the current (or most recently started) run.
@@ -178,7 +178,7 @@ export class AutonomyServiceImpl extends Disposable implements IAutonomyService 
 	 */
 	private _currentRunProcessedIds: Set<string> = new Set();
 
-	// ── Escalation state ──────────────────────────────────────────────────────
+	// -- Escalation state ------------------------------------------------------
 
 	/** All units currently awaiting a human decision. */
 	private _escalatedUnits: IEscalatedUnit[] = [];
@@ -195,7 +195,7 @@ export class AutonomyServiceImpl extends Disposable implements IAutonomyService 
 	 */
 	private _currentRunResolutions: IEscalationResolution[] = [];
 
-	// ── Run history (in-memory mirror of persisted storage) ───────────────────
+	// -- Run history (in-memory mirror of persisted storage) -------------------
 
 	/**
 	 * Completed batch run records, most recent first.
@@ -204,7 +204,7 @@ export class AutonomyServiceImpl extends Disposable implements IAutonomyService 
 	private _runHistory: IAutonomyBatchRun[] = [];
 
 
-	// ── DI constructor ────────────────────────────────────────────────────────
+	// -- DI constructor --------------------------------------------------------
 
 	constructor(
 		@IKnowledgeBaseService        private readonly _kb:         IKnowledgeBaseService,
@@ -220,7 +220,7 @@ export class AutonomyServiceImpl extends Disposable implements IAutonomyService 
 	}
 
 
-	// ── IAutonomyService — state getters ──────────────────────────────────────
+	// -- IAutonomyService -- state getters --------------------------------------
 
 	/**
 	 * True while a batch is actively processing or draining (running / pausing / stopping).
@@ -243,7 +243,7 @@ export class AutonomyServiceImpl extends Disposable implements IAutonomyService 
 	get escalatedUnits():   IEscalatedUnit[]               { return [...this._escalatedUnits]; }
 
 
-	// ── IAutonomyService — batch control ─────────────────────────────────────
+	// -- IAutonomyService -- batch control -------------------------------------
 
 	/**
 	 * Start the autonomy batch from scratch.
@@ -259,7 +259,7 @@ export class AutonomyServiceImpl extends Disposable implements IAutonomyService 
 			throw new AutonomyBatchAlreadyRunningError();
 		}
 
-		// Discard any paused run — the caller wants a completely fresh batch.
+		// Discard any paused run -- the caller wants a completely fresh batch.
 		this._clearPausedState();
 
 		return this._startBatchInternal(options, new Set());
@@ -314,7 +314,7 @@ export class AutonomyServiceImpl extends Disposable implements IAutonomyService 
 	 * Stop (abort) a running batch.
 	 *
 	 * Signals the engine to stop dispatching new units and drain in-flight jobs.
-	 * Processed unit IDs are NOT preserved — resuming is not possible after `stopBatch()`.
+	 * Processed unit IDs are NOT preserved -- resuming is not possible after `stopBatch()`.
 	 *
 	 * No-op if no batch is running.
 	 */
@@ -328,7 +328,7 @@ export class AutonomyServiceImpl extends Disposable implements IAutonomyService 
 	}
 
 
-	// ── IAutonomyService — single-unit API ────────────────────────────────────
+	// -- IAutonomyService -- single-unit API ------------------------------------
 
 	/**
 	 * Execute the next pipeline step for a single unit immediately.
@@ -338,7 +338,7 @@ export class AutonomyServiceImpl extends Disposable implements IAutonomyService 
 	 * This allows targeted retry of any specific stage regardless of the unit's
 	 * current status.
 	 *
-	 * Safe to call while a batch is running — the loop handles concurrent lock
+	 * Safe to call while a batch is running -- the loop handles concurrent lock
 	 * conflicts by returning outcome='skipped'.
 	 *
 	 * @param unitId  KB unit ID to advance
@@ -350,7 +350,7 @@ export class AutonomyServiceImpl extends Disposable implements IAutonomyService 
 	): Promise<IAutonomyUnitResult> {
 		const unit = this._kb.getUnit(unitId);
 		if (!unit) {
-			// Return a synthetic skipped result — the unit doesn't exist.
+			// Return a synthetic skipped result -- the unit doesn't exist.
 			return {
 				unitId,
 				unitName:       unitId,
@@ -362,7 +362,7 @@ export class AutonomyServiceImpl extends Disposable implements IAutonomyService 
 			};
 		}
 
-		// ── Force stage ──────────────────────────────────────────────────────────
+		// -- Force stage ----------------------------------------------------------
 		// If forceStage is requested, set the unit to the correct "input" status
 		// for that stage so the loop picks it up deterministically.
 		if (opts?.forceStage) {
@@ -379,8 +379,8 @@ export class AutonomyServiceImpl extends Disposable implements IAutonomyService 
 			}
 		}
 
-		// ── Build merged options ─────────────────────────────────────────────────
-		// Merge: global defaults → current batch options → per-unit overrides.
+		// -- Build merged options -------------------------------------------------
+		// Merge: global defaults -> current batch options -> per-unit overrides.
 		const mergedOptions: IAutonomyOptions = {
 			...DEFAULT_AUTONOMY_OPTIONS,
 			...(this._currentOptions ?? {}),
@@ -427,16 +427,16 @@ export class AutonomyServiceImpl extends Disposable implements IAutonomyService 
 	}
 
 
-	// ── IAutonomyService — escalation management ──────────────────────────────
+	// -- IAutonomyService -- escalation management ------------------------------
 
 	/**
 	 * Record a human decision for an escalated unit and apply it to the KB.
 	 *
 	 * KB transitions applied per decision:
-	 *   - 'approve'           → setUnitStatus('approved')
-	 *   - 'skip'              → setUnitStatus('skipped')
-	 *   - 'revert-to-pending' → revertUnit() (clears all translation artefacts)
-	 *   - 'block'             → setUnitStatus('blocked')
+	 *   - 'approve'           -> setUnitStatus('approved')
+	 *   - 'skip'              -> setUnitStatus('skipped')
+	 *   - 'revert-to-pending' -> revertUnit() (clears all translation artefacts)
+	 *   - 'block'             -> setUnitStatus('blocked')
 	 *
 	 * @throws `MissingEscalationReasonError` if 'approve' or 'block' are called without a reason.
 	 */
@@ -454,7 +454,7 @@ export class AutonomyServiceImpl extends Disposable implements IAutonomyService 
 		const unit = this._kb.getUnit(unitId);
 		const unitName = unit?.name ?? unitId;
 
-		// ── Apply KB status transition ────────────────────────────────────────────
+		// -- Apply KB status transition --------------------------------------------
 		switch (decision) {
 			case 'approve':
 				this._kb.setUnitStatus(
@@ -491,7 +491,7 @@ export class AutonomyServiceImpl extends Disposable implements IAutonomyService 
 				break;
 		}
 
-		// ── Build resolution record ───────────────────────────────────────────────
+		// -- Build resolution record -----------------------------------------------
 		const resolution: IEscalationResolution = {
 			unitId,
 			unitName,
@@ -501,26 +501,26 @@ export class AutonomyServiceImpl extends Disposable implements IAutonomyService 
 			reason,
 		};
 
-		// ── Remove from live escalated list ───────────────────────────────────────
+		// -- Remove from live escalated list ---------------------------------------
 		this._escalatedUnits = this._escalatedUnits.filter(u => u.unitId !== unitId);
 
-		// ── Accumulate for run history ────────────────────────────────────────────
+		// -- Accumulate for run history --------------------------------------------
 		this._currentRunResolutions.push(resolution);
 
-		// ── Fire event ────────────────────────────────────────────────────────────
+		// -- Fire event ------------------------------------------------------------
 		this._onEscalationResolved.fire(resolution);
 	}
 
 	/**
 	 * Remove all escalated units from the live list without resolving them.
-	 * Units remain at their current KB status — no transition is applied.
+	 * Units remain at their current KB status -- no transition is applied.
 	 */
 	clearEscalations(): void {
 		this._escalatedUnits = [];
 	}
 
 
-	// ── IAutonomyService — schedule preview ───────────────────────────────────
+	// -- IAutonomyService -- schedule preview -----------------------------------
 
 	/**
 	 * Preview the autonomy schedule without executing any pipeline stages.
@@ -538,7 +538,7 @@ export class AutonomyServiceImpl extends Disposable implements IAutonomyService 
 	}
 
 
-	// ── IAutonomyService — run history ────────────────────────────────────────
+	// -- IAutonomyService -- run history ----------------------------------------
 
 	/**
 	 * Return the history of completed batch runs, most recent first.
@@ -556,7 +556,7 @@ export class AutonomyServiceImpl extends Disposable implements IAutonomyService 
 	}
 
 
-	// ── Dispose ───────────────────────────────────────────────────────────────
+	// -- Dispose ---------------------------------------------------------------
 
 	override dispose(): void {
 		// Abort any running batch gracefully before tearing down.
@@ -568,18 +568,18 @@ export class AutonomyServiceImpl extends Disposable implements IAutonomyService 
 		try {
 			this._kb.releaseAllLocksFor(LOCK_OWNER);
 		} catch {
-			// KB may already be disposed — ignore.
+			// KB may already be disposed -- ignore.
 		}
 		super.dispose();
 	}
 
 
-	// ── Internal — batch orchestration ───────────────────────────────────────
+	// -- Internal -- batch orchestration ---------------------------------------
 
 	/**
 	 * Core batch execution logic shared by `startBatch()` and `resumeBatch()`.
 	 *
-	 * Never throws in the success path — errors transition state to 'error' and
+	 * Never throws in the success path -- errors transition state to 'error' and
 	 * re-throw for callers who care (though most callers will `.catch()` and log).
 	 *
 	 * @param options       Batch options for this run.
@@ -592,7 +592,7 @@ export class AutonomyServiceImpl extends Disposable implements IAutonomyService 
 		const runId     = _generateRunId();
 		const startedAt = Date.now();
 
-		// ── Initialise per-run state ───────────────────────────────────────────
+		// -- Initialise per-run state -------------------------------------------
 		this._currentRunId          = runId;
 		this._currentOptions        = options;
 		this._currentRunProcessedIds = new Set();
@@ -603,13 +603,13 @@ export class AutonomyServiceImpl extends Disposable implements IAutonomyService 
 
 		this._setBatchState('running');
 
-		// ── Release zombie locks from any prior interrupted run ───────────────
+		// -- Release zombie locks from any prior interrupted run ---------------
 		// Units stuck in 'resolving' / 'translating' / 'validating' status with
 		// orphaned locks will be unlocked here and picked up by the scheduler.
 		try {
 			this._kb.releaseAllLocksFor(LOCK_OWNER);
 		} catch {
-			// KB may not be initialised yet in edge cases — non-fatal.
+			// KB may not be initialised yet in edge cases -- non-fatal.
 		}
 
 		const { sourceRoot, targetRoot } = this._getRoots();
@@ -634,13 +634,13 @@ export class AutonomyServiceImpl extends Disposable implements IAutonomyService 
 
 			this._lastBatchMetrics = metrics;
 
-			// ── Transition state based on pause vs stop ────────────────────────
+			// -- Transition state based on pause vs stop ------------------------
 			if (this._pauseRequested) {
-				// Batch was paused — preserve processedIds and options for resume.
+				// Batch was paused -- preserve processedIds and options for resume.
 				this._pausedOptions      = options;
 				this._pausedProcessedIds = new Set(this._currentRunProcessedIds);
 				this._setBatchState('paused');
-				// DO NOT persist a run record for paused runs — they are incomplete.
+				// DO NOT persist a run record for paused runs -- they are incomplete.
 				// The record will be written when the run eventually completes.
 				// Keep _currentRunId set so callers can identify the paused run.
 			} else {
@@ -669,7 +669,7 @@ export class AutonomyServiceImpl extends Disposable implements IAutonomyService 
 	}
 
 
-	// ── Internal — event routing ──────────────────────────────────────────────
+	// -- Internal -- event routing ----------------------------------------------
 
 	/**
 	 * Handle a progress event from the batch engine.
@@ -705,7 +705,7 @@ export class AutonomyServiceImpl extends Disposable implements IAutonomyService 
 	}
 
 
-	// ── Internal — batch state management ────────────────────────────────────
+	// -- Internal -- batch state management ------------------------------------
 
 	/**
 	 * Transition the batch state, firing `onBatchStateChanged` on every transition.
@@ -731,13 +731,13 @@ export class AutonomyServiceImpl extends Disposable implements IAutonomyService 
 	}
 
 
-	// ── Internal — run history ────────────────────────────────────────────────
+	// -- Internal -- run history ------------------------------------------------
 
 	/**
 	 * Persist a completed or errored batch run to storage.
 	 * Prepends the record (most-recent-first) and trims to `MAX_RUN_HISTORY`.
 	 *
-	 * Storage failures are non-fatal — history is an audit convenience, not
+	 * Storage failures are non-fatal -- history is an audit convenience, not
 	 * a correctness requirement.
 	 */
 	private _persistRunRecord(
@@ -769,13 +769,13 @@ export class AutonomyServiceImpl extends Disposable implements IAutonomyService 
 				StorageTarget.MACHINE,
 			);
 		} catch {
-			// Storage failure is non-fatal — silently drop.
+			// Storage failure is non-fatal -- silently drop.
 		}
 	}
 
 	/**
 	 * Load run history from storage into `_runHistory` on construction.
-	 * Validates the structure defensively — corrupted storage starts fresh.
+	 * Validates the structure defensively -- corrupted storage starts fresh.
 	 */
 	private _loadRunHistory(): void {
 		try {
@@ -797,19 +797,19 @@ export class AutonomyServiceImpl extends Disposable implements IAutonomyService 
 				}
 			}
 		} catch {
-			// Corrupted or unparseable storage — start fresh.
+			// Corrupted or unparseable storage -- start fresh.
 			this._runHistory = [];
 		}
 	}
 
 
-	// ── Internal — utility ────────────────────────────────────────────────────
+	// -- Internal -- utility ----------------------------------------------------
 
 	/**
 	 * Derive source and target root file-system paths from the active session.
 	 *
 	 * Uses the first entry of `session.sources` and `session.targets`.
-	 * Returns empty strings if no session is active or no roots are configured —
+	 * Returns empty strings if no session is active or no roots are configured --
 	 * the loop will produce 'missing-source' errors for affected units, which
 	 * is the correct behaviour and will trigger escalation.
 	 */
@@ -825,7 +825,7 @@ export class AutonomyServiceImpl extends Disposable implements IAutonomyService 
 }
 
 
-// ─── Utility ──────────────────────────────────────────────────────────────────
+// --- Utility ------------------------------------------------------------------
 
 /**
  * Generate a unique, sortable run ID.

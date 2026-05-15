@@ -4,7 +4,7 @@
  *--------------------------------------------------------------------------------------------*/
 
 /**
- * # FingerprintService — Public Exports & DI Registration
+ * # FingerprintService -- Public Exports & DI Registration
  *
  * Import this file as a side-effect to register the FingerprintService in the DI container:
  *
@@ -15,7 +15,7 @@
  * Consumers should import from this file, not from internal modules directly.
  */
 
-// ── Public interface ──────────────────────────────────────────────────────────
+// -- Public interface ----------------------------------------------------------
 export { IFingerprintService } from './service.js';
 export type {
 	IBatchFingerprintOptions,
@@ -23,14 +23,14 @@ export type {
 	IFingerprintSourceResult,
 } from './service.js';
 
-// ── Progress event payloads ───────────────────────────────────────────────────
+// -- Progress event payloads ---------------------------------------------------
 export type {
 	IFingerprintUnitEvent,
 	IFingerprintBatchProgressEvent,
 	IFingerprintBatchCompleteEvent,
 } from './impl/progressEmitter.js';
 
-// ── Language registry (for external consumers) ────────────────────────────────
+// -- Language registry (for external consumers) --------------------------------
 export type { ILanguageProfile, ILanguageTerminology } from './impl/languageRegistry.js';
 export {
 	resolveLanguageProfile,
@@ -39,19 +39,19 @@ export {
 	getLanguageDisplayName,
 } from './impl/languageRegistry.js';
 
-// ── Schema versioning (for tooling & diagnostics) ─────────────────────────────
+// -- Schema versioning (for tooling & diagnostics) -----------------------------
 export { FINGERPRINT_SCHEMA_VERSION, isFingerprintStale } from './impl/fingerprintVersioning.js';
 
-// ── Fingerprint utilities ─────────────────────────────────────────────────────
+// -- Fingerprint utilities -----------------------------------------------------
 export { hasFingerprintContent, fingerprintSummary } from './impl/fingerprintAssembler.js';
 export { fnv1a32, buildCacheKey } from './impl/fingerprintCache.js';
 
-// ── DI registration (side-effect) ─────────────────────────────────────────────
+// -- DI registration (side-effect) ---------------------------------------------
 import { registerSingleton, InstantiationType } from '../../../../../../platform/instantiation/common/extensions.js';
 import { IFingerprintService } from './service.js';
 import { FingerprintServiceImpl } from './FingerprintServiceImpl.js';
 
-// LLM semantic extractor is registered in its own file — imported here for side-effect
+// LLM semantic extractor is registered in its own file -- imported here for side-effect
 import './llmSemanticExtractor.js';
 
 registerSingleton(IFingerprintService, FingerprintServiceImpl, InstantiationType.Delayed);

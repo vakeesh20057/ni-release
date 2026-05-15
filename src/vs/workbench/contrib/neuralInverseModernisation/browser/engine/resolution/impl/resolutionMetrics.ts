@@ -18,7 +18,7 @@
 import { IUnitResolutionResult } from './resolutionTypes.js';
 
 
-// ─── Metric Types ─────────────────────────────────────────────────────────────
+// --- Metric Types -------------------------------------------------------------
 
 export interface IResolutionLanguageStats {
 	language: string;
@@ -26,7 +26,7 @@ export interface IResolutionLanguageStats {
 	fullyResolved: number;
 	partiallyResolved: number;
 	unresolvable: number;
-	resolutionRate: number;   // 0–100
+	resolutionRate: number;   // 0-100
 }
 
 export interface IMissingDependency {
@@ -45,7 +45,7 @@ export interface IResolutionMetricsSnapshot {
 	unresolvable: number;
 	cyclesDetected: number;
 	failed: number;
-	overallResolutionRate: number;   // 0–100
+	overallResolutionRate: number;   // 0-100
 	byLanguage: IResolutionLanguageStats[];
 	/** Top 20 most-referenced missing dependencies */
 	topMissingDeps: IMissingDependency[];
@@ -54,10 +54,10 @@ export interface IResolutionMetricsSnapshot {
 }
 
 
-// ─── Collector ────────────────────────────────────────────────────────────────
+// --- Collector ----------------------------------------------------------------
 
 /**
- * ResolutionMetricsCollector — accumulates results during a batch run.
+ * ResolutionMetricsCollector -- accumulates results during a batch run.
  * Call snapshot() at any point to get the current state.
  */
 export class ResolutionMetricsCollector {
@@ -120,7 +120,7 @@ export class ResolutionMetricsCollector {
 		this._byLanguage.clear();
 	}
 
-	// ── Private ───────────────────────────────────────────────────────────────
+	// -- Private ---------------------------------------------------------------
 
 	private _updateLanguageStats(result: IUnitResolutionResult): void {
 		let stats = this._byLanguage.get(result.language);

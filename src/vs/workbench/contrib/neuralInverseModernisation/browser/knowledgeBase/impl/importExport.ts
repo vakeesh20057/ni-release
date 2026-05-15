@@ -11,7 +11,7 @@
  *
  * Decision export/import: portable JSON carrying only the decision log. Allows
  * decisions established in one project to be re-used in a related project
- * (e.g. a company-wide COBOL→Java naming standard).
+ * (e.g. a company-wide COBOL->Java naming standard).
  */
 
 import {
@@ -20,7 +20,7 @@ import {
 } from '../../../common/knowledgeBaseTypes.js';
 import { serialiseKB, deserialiseKB } from './helpers.js';
 
-// ─── Full export ──────────────────────────────────────────────────────────────
+// --- Full export --------------------------------------------------------------
 
 /**
  * Export the entire KB as a JSON string.
@@ -39,7 +39,7 @@ export function importKB(json: string): IModernisationKnowledgeBase {
 	return deserialiseKB(json);
 }
 
-// ─── Decision portability ─────────────────────────────────────────────────────
+// --- Decision portability -----------------------------------------------------
 
 interface IDecisionExport {
 	version:   1;
@@ -100,12 +100,12 @@ export function mergeDecisionsFrom(
 		_mergeDecisionArrays(kb.decisions.exclusions,       importedKB.decisions.exclusions,       d => d.id);
 		_mergeDecisionArrays(kb.decisions.patternOverrides, importedKB.decisions.patternOverrides, d => d.id);
 		return;
-	} catch { /* Not a full KB — try decision export format */ }
+	} catch { /* Not a full KB -- try decision export format */ }
 
 	importDecisions(kb, json);
 }
 
-// ─── Internal helpers ─────────────────────────────────────────────────────────
+// --- Internal helpers ---------------------------------------------------------
 
 function _mergeDecisionArrays<T>(
 	target: T[],

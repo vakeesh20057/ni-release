@@ -4,7 +4,7 @@
  *--------------------------------------------------------------------------------------------*/
 
 /**
- * # Source Resolution Engine — Public Exports & DI Registration
+ * # Source Resolution Engine -- Public Exports & DI Registration
  *
  * Import this file as a side-effect to register the SourceResolutionService in the
  * DI container:
@@ -17,7 +17,7 @@
  *
  * ## What gets registered
  *
- * - `ISourceResolutionService` → `SourceResolutionServiceImpl` (Delayed singleton)
+ * - `ISourceResolutionService` -> `SourceResolutionServiceImpl` (Delayed singleton)
  *
  * ## What gets exported
  *
@@ -28,7 +28,7 @@
  * - Metrics snapshot type (for diagnostics panel)
  */
 
-// ── Public service interface ──────────────────────────────────────────────────
+// -- Public service interface --------------------------------------------------
 export { ISourceResolutionService } from './service.js';
 export type {
 	IResolutionUnitCompleteEvent,
@@ -36,7 +36,7 @@ export type {
 	IResolutionBatchCompleteEvent,
 } from './service.js';
 
-// ── Resolution result types ───────────────────────────────────────────────────
+// -- Resolution result types ---------------------------------------------------
 export type {
 	IUnitResolutionResult,
 	IBatchResolutionSummary,
@@ -48,7 +48,7 @@ export type {
 	ResolutionOutcome,
 } from './impl/resolutionTypes.js';
 
-// ── Metrics ───────────────────────────────────────────────────────────────────
+// -- Metrics -------------------------------------------------------------------
 export type {
 	IResolutionMetricsSnapshot,
 	IResolutionLanguageStats,
@@ -56,7 +56,7 @@ export type {
 } from './impl/resolutionMetrics.js';
 
 
-// ── DI Registration (side-effect) ─────────────────────────────────────────────
+// -- DI Registration (side-effect) ---------------------------------------------
 import { registerSingleton, InstantiationType } from '../../../../../../platform/instantiation/common/extensions.js';
 import { ISourceResolutionService } from './service.js';
 import { SourceResolutionServiceImpl } from './SourceResolutionServiceImpl.js';

@@ -9,9 +9,9 @@
  * Assembles the `IBuiltTranslationContext` that `translationPromptBuilder` needs
  * to produce an LLM prompt. All inputs come from:
  *
- *   - `IKnowledgeBaseService.getResolvedContext(unitId)` — pre-assembled KB context
- *   - `ILanguagePairProfile`  — idiom map + conventions from the language pair registry
- *   - `ITranslationOptions`   — target language, budget, framework overrides
+ *   - `IKnowledgeBaseService.getResolvedContext(unitId)` -- pre-assembled KB context
+ *   - `ILanguagePairProfile`  -- idiom map + conventions from the language pair registry
+ *   - `ITranslationOptions`   -- target language, budget, framework overrides
  *
  * ## Budget Management
  *
@@ -48,9 +48,9 @@ import { ITechDebtItem } from '../../discovery/discoveryTypes.js';
 import { getSectorProfile } from '../../sectorRegistry.js';
 
 
-// ─── Token budget constants ───────────────────────────────────────────────────
+// --- Token budget constants ---------------------------------------------------
 
-/** Conservative: 1 token ≈ 4 characters */
+/** Conservative: 1 token ~ 4 characters */
 const CHARS_PER_TOKEN = 4;
 
 /** Minimum source characters to keep even under extreme budget pressure */
@@ -60,7 +60,7 @@ const MIN_SOURCE_CHARS = 2_000;
 const OUTPUT_BUDGET_TOKENS = 4_000;
 
 
-// ─── Main entry point ─────────────────────────────────────────────────────────
+// --- Main entry point ---------------------------------------------------------
 
 /**
  * Build the full context package for a translation prompt.
@@ -105,7 +105,7 @@ export function buildTranslationContext(
 		? getSectorProfile(migrationPatternId)?.aiGuidance
 		: undefined;
 
-	// ── Format all context sections into strings ──────────────────────────────
+	// -- Format all context sections into strings ------------------------------
 
 	const typeMappingContext      = formatTypeMappings(resolvedCtx.applicableTypeMappings);
 	const namingContext           = formatNamingDecisions(resolvedCtx.applicableNamingDecisions);
@@ -119,7 +119,7 @@ export function buildTranslationContext(
 	const conventionNotes         = formatBulletList(effectiveProfile.conventionNotes);
 	const warningPatternNotes     = formatBulletList(effectiveProfile.warningPatterns);
 
-	// ── Budget management ──────────────────────────────────────────────────────
+	// -- Budget management ------------------------------------------------------
 
 	// Token budget available for context (subtract output budget)
 	const contextBudgetTokens = options.maxTokensPerUnit - OUTPUT_BUDGET_TOKENS;
@@ -139,7 +139,7 @@ export function buildTranslationContext(
 	// Trim sections in reverse-priority order until we fit
 	const sections: Array<{ name: string; content: string; mutable: true } |
 	                       { name: string; content: string; mutable: false }> = [
-		// Priority 1 — always preserved (source may be truncated but not dropped)
+		// Priority 1 -- always preserved (source may be truncated but not dropped)
 		{ name: 'source',              content: resolvedCtx.resolvedSource,    mutable: true  },
 		// Priority 2
 		{ name: 'type-mappings',       content: typeMappingContext,            mutable: true  },
@@ -152,7 +152,7 @@ export function buildTranslationContext(
 		// Priority 5
 		{ name: 'business-rules',      content: businessRulesContext,          mutable: true  },
 		{ name: 'glossary',            content: glossaryContext,               mutable: true  },
-		// Priority 6 — trimmed first
+		// Priority 6 -- trimmed first
 		{ name: 'annotations',         content: annotationContext,             mutable: true  },
 	];
 
@@ -185,7 +185,7 @@ export function buildTranslationContext(
 	const sourceSection = sections.find(s => s.name === 'source')!;
 	if (sourceSection.content.length < MIN_SOURCE_CHARS && resolvedCtx.resolvedSource.length >= MIN_SOURCE_CHARS) {
 		sourceSection.content = resolvedCtx.resolvedSource.slice(0, MIN_SOURCE_CHARS) +
-			'\n... [source truncated — file too large for token budget] ...';
+			'\n... [source truncated -- file too large for token budget] ...';
 	}
 
 	const contentMap = Object.fromEntries(sections.map(s => [s.name, s.content]));
@@ -243,12 +243,12 @@ export function buildTranslationContext(
 }
 
 
-// ─── Section formatters ───────────────────────────────────────────────────────
+// --- Section formatters -------------------------------------------------------
 
 function formatTypeMappings(decisions: ITypeMappingDecision[]): string {
 	if (decisions.length === 0) { return ''; }
 	const lines = decisions.map(d =>
-		`  ${d.sourceType} → ${d.targetType}${d.rationale ? `  // ${d.rationale}` : ''}`
+		`  ${d.sourceType} -> ${d.targetType}${d.rationale ? `  // ${d.rationale}` : ''}`
 	);
 	return `## Established Type Mappings\n${lines.join('\n')}\n`;
 }
@@ -256,7 +256,7 @@ function formatTypeMappings(decisions: ITypeMappingDecision[]): string {
 function formatNamingDecisions(decisions: INamingDecision[]): string {
 	if (decisions.length === 0) { return ''; }
 	const lines = decisions.map(d =>
-		`  ${d.sourceName} → ${d.targetName}${d.domain ? `  // domain: ${d.domain}` : ''}`
+		`  ${d.sourceName} -> ${d.targetName}${d.domain ? `  // domain: ${d.domain}` : ''}`
 	);
 	return `## Established Naming Decisions\n${lines.join('\n')}\n`;
 }
@@ -265,7 +265,7 @@ function formatRuleInterpretations(interpretations: IRuleInterpretation[]): stri
 	if (interpretations.length === 0) { return ''; }
 	const lines = interpretations.map(d =>
 		`  [${d.id}] ${d.meaning}` +
-		(d.sourceText ? `\n    → in: ${d.sourceText.slice(0, 80)}` : '')
+		(d.sourceText ? `\n    -> in: ${d.sourceText.slice(0, 80)}` : '')
 	);
 	return `## Rule Interpretations\n${lines.join('\n')}\n`;
 }
@@ -274,7 +274,7 @@ function formatPatternOverrides(overrides: IPatternOverride[]): string {
 	if (overrides.length === 0) { return ''; }
 	const lines = overrides.map(d =>
 		`  ${d.pattern}: ${d.value}` +
-		(d.rationale ? `  — ${d.rationale}` : '')
+		(d.rationale ? `  -- ${d.rationale}` : '')
 	);
 	return `## Pattern Overrides\n${lines.join('\n')}\n`;
 }
@@ -319,7 +319,7 @@ function formatAnnotations(annotations: IUnitAnnotation[]): string {
 function formatIdiomMap(profile: ILanguagePairProfile): string {
 	if (profile.idiomMap.length === 0) { return ''; }
 	const lines = profile.idiomMap.map(m =>
-		`  ${m.sourceConstruct}\n    → ${m.targetConstruct}` +
+		`  ${m.sourceConstruct}\n    -> ${m.targetConstruct}` +
 		(m.notes ? `\n      Note: ${m.notes}` : '')
 	);
 	return `## Key Construct Mappings (${profile.label})\n${lines.join('\n')}\n`;
@@ -327,13 +327,13 @@ function formatIdiomMap(profile: ILanguagePairProfile): string {
 
 function formatBulletList(items: string[]): string {
 	if (items.length === 0) { return ''; }
-	return items.map(s => `  • ${s}`).join('\n');
+	return items.map(s => `  * ${s}`).join('\n');
 }
 
 const GENERIC_PERSONA = 'You are an expert software migration engineer with deep knowledge of both the source and target programming languages.';
 
 
-// ─── Enrichment formatters ───────────────────────────────────────────────────
+// --- Enrichment formatters ---------------------------------------------------
 
 function formatTechDebt(items: ITechDebtItem[]): string {
 	if (items.length === 0) { return ''; }

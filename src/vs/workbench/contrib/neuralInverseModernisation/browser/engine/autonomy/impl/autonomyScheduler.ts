@@ -13,32 +13,32 @@
  *
  * Units are ordered by a priority score combining three signals:
  *
- *  1. **Topological depth** — leaf nodes (no unresolved deps) first.
+ *  1. **Topological depth** -- leaf nodes (no unresolved deps) first.
  *     A unit at depth N has at least one dependency at depth N-1.
  *     Processing leaves first maximises the chance that dependencies
  *     reach 'validated'/'committed' before dependents need them.
  *
- *  2. **Risk level** — within the same depth tier, critical > high > medium > low.
+ *  2. **Risk level** -- within the same depth tier, critical > high > medium > low.
  *     High-risk units surface escalations early, giving humans maximum lead time.
  *
- *  3. **Dependent count** — units with more callers are processed before those
+ *  3. **Dependent count** -- units with more callers are processed before those
  *     with fewer callers (tiebreaker within the same depth + risk tier).
  *
  * ## Stage-aware eligibility
  *
  * The scheduler only queues units whose current `status` maps to a stage
- * included in `options.stages`. Status → stage mapping:
+ * included in `options.stages`. Status -> stage mapping:
  *
- *   pending   → resolve
- *   ready     → translate
- *   review    → (policy evaluation — always included)
- *   approved  → validate
- *   validated → commit
- *   flagged   → (escalation — always included)
+ *   pending   -> resolve
+ *   ready     -> translate
+ *   review    -> (policy evaluation -- always included)
+ *   approved  -> validate
+ *   validated -> commit
+ *   flagged   -> (escalation -- always included)
  *
- * In-flight statuses (resolving, translating, validating) are excluded —
+ * In-flight statuses (resolving, translating, validating) are excluded --
  * another process already owns those units.
- * Terminal statuses (committed, complete, skipped, blocked) are excluded —
+ * Terminal statuses (committed, complete, skipped, blocked) are excluded --
  * there is nothing to do.
  *
  * ## Immutability
@@ -66,7 +66,7 @@ import {
 } from './autonomyTypes.js';
 
 
-// ─── Constants ────────────────────────────────────────────────────────────────
+// --- Constants ----------------------------------------------------------------
 
 const RISK_SCORE: Record<RiskLevel, number> = {
 	critical: 4,
@@ -86,7 +86,7 @@ const TERMINAL_STATUSES = new Set<string>([
 ]);
 
 
-// ─── Scheduled unit entry ─────────────────────────────────────────────────────
+// --- Scheduled unit entry -----------------------------------------------------
 
 export interface IScheduledAutonomyUnit {
 	/** The full KB unit record */
@@ -100,7 +100,7 @@ export interface IScheduledAutonomyUnit {
 }
 
 
-// ─── Scheduler ────────────────────────────────────────────────────────────────
+// --- Scheduler ----------------------------------------------------------------
 
 export class AutonomyScheduler {
 
@@ -111,7 +111,7 @@ export class AutonomyScheduler {
 		this._queue = queue;
 	}
 
-	// ── Factory ───────────────────────────────────────────────────────────────
+	// -- Factory ---------------------------------------------------------------
 
 	/**
 	 * Build a prioritised autonomy schedule from the provided units.
@@ -184,7 +184,7 @@ export class AutonomyScheduler {
 		return new AutonomyScheduler(scheduled);
 	}
 
-	// ── Queue API ─────────────────────────────────────────────────────────────
+	// -- Queue API -------------------------------------------------------------
 
 	/** Total units in this schedule. */
 	get total(): number { return this._queue.length; }
@@ -253,7 +253,7 @@ export class AutonomyScheduler {
 		return counts;
 	}
 
-	// ── Preview ───────────────────────────────────────────────────────────────
+	// -- Preview ---------------------------------------------------------------
 
 	/**
 	 * Build a rich schedule preview without consuming the cursor.
@@ -267,7 +267,7 @@ export class AutonomyScheduler {
 
 		for (const item of this._queue) {
 			// Stage counts (policy and escalate don't map 1:1 to a stage)
-			if (item.nextStage === 'policy')  { byStage['translate']++; } // review→approve is part of translate flow
+			if (item.nextStage === 'policy')  { byStage['translate']++; } // review->approve is part of translate flow
 			else if (item.nextStage !== 'escalate') { byStage[item.nextStage]++; }
 
 			// Risk
@@ -308,7 +308,7 @@ export class AutonomyScheduler {
 }
 
 
-// ─── Eligibility helpers ──────────────────────────────────────────────────────
+// --- Eligibility helpers ------------------------------------------------------
 
 function _buildEligibleStatuses(stages: AutonomyStage[]): Set<string> {
 	const set = new Set<string>();
@@ -338,7 +338,7 @@ function _nextStage(
 }
 
 
-// ─── Topological depth calculation ───────────────────────────────────────────
+// --- Topological depth calculation -------------------------------------------
 
 /**
  * Calculate the topological depth of each unit.
@@ -382,12 +382,12 @@ function _buildDepthMap(
 }
 
 
-// ─── Priority scoring ─────────────────────────────────────────────────────────
+// --- Priority scoring ---------------------------------------------------------
 
 /**
  * Score components:
- *   Risk level:      0–40 (critical=40, high=30, medium=20, low=10)
- *   Dependent count: 0–9  (capped — risk dominates)
+ *   Risk level:      0-40 (critical=40, high=30, medium=20, low=10)
+ *   Dependent count: 0-9  (capped -- risk dominates)
  */
 function _scoreUnit(unit: IKnowledgeUnit, _depth: number): number {
 	const riskScore = (RISK_SCORE[unit.riskLevel] ?? 1) * 10;

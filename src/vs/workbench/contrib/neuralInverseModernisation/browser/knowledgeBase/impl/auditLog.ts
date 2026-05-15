@@ -19,7 +19,7 @@ import { hashAuditEntry, makeId } from './helpers.js';
 import { MAX_AUDIT_LOG, AUDIT_LOG_TRIM } from './persistence.js';
 
 
-// ─── Append ───────────────────────────────────────────────────────────────────
+// --- Append -------------------------------------------------------------------
 
 /**
  * Append a new entry to the audit log, linking it to the previous entry via hash.
@@ -35,14 +35,14 @@ export function appendAuditEntry(
 
 	log.push(entry);
 
-	// Rolling cap — trim oldest when limit exceeded
+	// Rolling cap -- trim oldest when limit exceeded
 	if (log.length > MAX_AUDIT_LOG) {
 		log.splice(0, AUDIT_LOG_TRIM);
 	}
 }
 
 
-// ─── Factory ──────────────────────────────────────────────────────────────────
+// --- Factory ------------------------------------------------------------------
 
 export function makeAuditEntry(
 	type: KnowledgeAuditEventType,
@@ -64,7 +64,7 @@ export function makeAuditEntry(
 }
 
 
-// ─── Query helpers ────────────────────────────────────────────────────────────
+// --- Query helpers ------------------------------------------------------------
 
 export function queryAuditLog(
 	log: IKnowledgeAuditEntry[],
@@ -84,7 +84,7 @@ export function queryAuditLog(
 }
 
 
-// ─── Integrity verification ───────────────────────────────────────────────────
+// --- Integrity verification ---------------------------------------------------
 
 /**
  * Verify the hash chain integrity of the audit log.

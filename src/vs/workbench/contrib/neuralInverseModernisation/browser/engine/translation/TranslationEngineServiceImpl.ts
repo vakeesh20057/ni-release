@@ -30,12 +30,12 @@ import { recordTranslationResult } from './impl/translationRecorder.js';
 export class TranslationEngineServiceImpl extends Disposable implements ITranslationEngineService {
 	readonly _serviceBrand: undefined;
 
-	// ── Events ────────────────────────────────────────────────────────────────
+	// -- Events ----------------------------------------------------------------
 
 	private readonly _onProgress = this._register(new Emitter<ITranslationBatchProgress>());
 	readonly onProgress: Event<ITranslationBatchProgress> = this._onProgress.event;
 
-	// ── State ─────────────────────────────────────────────────────────────────
+	// -- State -----------------------------------------------------------------
 
 	private _isRunning                             = false;
 	private _currentController: AbortController | null = null;
@@ -53,7 +53,7 @@ export class TranslationEngineServiceImpl extends Disposable implements ITransla
 		super();
 	}
 
-	// ── Batch API ─────────────────────────────────────────────────────────────
+	// -- Batch API -------------------------------------------------------------
 
 	async translateBatch(batchOptions: IBatchTranslationOptions): Promise<ITranslationBatchMetrics> {
 		if (this._isRunning) {
@@ -118,7 +118,7 @@ export class TranslationEngineServiceImpl extends Disposable implements ITransla
 		this._currentController?.abort();
 	}
 
-	// ── Schedule preview ──────────────────────────────────────────────────────
+	// -- Schedule preview ------------------------------------------------------
 
 	previewSchedule(options: ITranslationOptions): ITranslationSchedulePreview {
 		const allUnits  = this._kb.getAllUnits();
@@ -152,7 +152,7 @@ export class TranslationEngineServiceImpl extends Disposable implements ITransla
 }
 
 
-// ─── Utility ──────────────────────────────────────────────────────────────────
+// --- Utility ------------------------------------------------------------------
 
 function buildEmptyMetrics(): ITranslationBatchMetrics {
 	return {

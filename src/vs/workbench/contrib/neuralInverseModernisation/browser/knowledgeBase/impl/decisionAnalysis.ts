@@ -22,17 +22,17 @@ import {
 import { IDecisionImpactResult } from '../types.js';
 import { makeId, DONE_STATUSES } from './helpers.js';
 
-// ─── Conflict store ───────────────────────────────────────────────────────────
+// --- Conflict store -----------------------------------------------------------
 
 export interface IConflictStore {
-	conflicts: Map<string, IDecisionConflict>; // conflictId → conflict
+	conflicts: Map<string, IDecisionConflict>; // conflictId -> conflict
 }
 
 export function createConflictStore(): IConflictStore {
 	return { conflicts: new Map() };
 }
 
-// ─── Conflict detection ───────────────────────────────────────────────────────
+// --- Conflict detection -------------------------------------------------------
 
 /**
  * Scan the full decision log for conflicts and update the conflict store.
@@ -43,7 +43,7 @@ export function detectDecisionConflicts(
 	decisions: IDecisionLog,
 ): IDecisionConflict[] {
 
-	// ── Type-mapping conflicts ──────────────────────────────────────────────
+	// -- Type-mapping conflicts ----------------------------------------------
 	// Group by sourceType
 	const typeMappingBySource = new Map<string, typeof decisions.typeMapping>();
 	for (const tm of decisions.typeMapping) {
@@ -52,7 +52,7 @@ export function detectDecisionConflicts(
 		typeMappingBySource.get(key)!.push(tm);
 	}
 
-	// ── Naming conflicts ────────────────────────────────────────────────────
+	// -- Naming conflicts ----------------------------------------------------
 	const namingBySource = new Map<string, typeof decisions.naming>();
 	for (const nm of decisions.naming) {
 		const key = nm.sourceName.toLowerCase();
@@ -67,7 +67,7 @@ export function detectDecisionConflicts(
 		if (group.length < 2) { continue; }
 		// Find distinct targetTypes
 		const targets = new Set(group.map(d => d.targetType));
-		if (targets.size < 2) { continue; } // All agree — no conflict
+		if (targets.size < 2) { continue; } // All agree -- no conflict
 
 		const conflict = _upsertConflict(store, {
 			decisionType:        'type-mapping',
@@ -138,7 +138,7 @@ function _upsertConflict(
 	return conflict;
 }
 
-// ─── Queries ──────────────────────────────────────────────────────────────────
+// --- Queries ------------------------------------------------------------------
 
 export function getDecisionConflict(
 	store: IConflictStore,
@@ -155,7 +155,7 @@ export function getDecisionConflicts(
 	return unresolvedOnly ? all.filter(c => !c.resolvedAt) : all;
 }
 
-// ─── Resolution ───────────────────────────────────────────────────────────────
+// --- Resolution ---------------------------------------------------------------
 
 export function resolveDecisionConflict(
 	store: IConflictStore,
@@ -173,7 +173,7 @@ export function resolveDecisionConflict(
 	});
 }
 
-// ─── Impact analysis ──────────────────────────────────────────────────────────
+// --- Impact analysis ----------------------------------------------------------
 
 /**
  * Determine which units are affected if a decision is changed or removed.
@@ -247,7 +247,7 @@ export function getDecisionImpact(
 	};
 }
 
-// ─── Cycle detection ──────────────────────────────────────────────────────────
+// --- Cycle detection ----------------------------------------------------------
 
 /**
  * Detect all strongly-connected components (cycles) in the unit dependency graph.
@@ -263,7 +263,7 @@ export function findDependencyCycles(units: Map<string, IKnowledgeUnit>): string
 
 	function dfs(unitId: string): void {
 		if (recStack.has(unitId)) {
-			// Found a cycle — extract it from the current path
+			// Found a cycle -- extract it from the current path
 			const cycleStart = path.indexOf(unitId);
 			if (cycleStart !== -1) {
 				cycles.push([...path.slice(cycleStart), unitId]);

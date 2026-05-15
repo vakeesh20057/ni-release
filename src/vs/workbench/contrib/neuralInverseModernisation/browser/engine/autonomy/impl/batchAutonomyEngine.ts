@@ -42,9 +42,9 @@
  * ## Events
  *
  * Fires three event types through the `onProgress` callback:
- *   - `unit-started`    — unit entered the loop; includes index + total + stage
- *   - `unit-completed`  — unit produced a result; includes live metrics snapshot
- *   - `batch-completed` — all units processed; includes final metrics + wasAborted
+ *   - `unit-started`    -- unit entered the loop; includes index + total + stage
+ *   - `unit-completed`  -- unit produced a result; includes live metrics snapshot
+ *   - `batch-completed` -- all units processed; includes final metrics + wasAborted
  */
 
 import { IKnowledgeBaseService } from '../../../knowledgeBase/service.js';
@@ -65,7 +65,7 @@ import {
 } from './autonomyTypes.js';
 
 
-// ─── Constants ────────────────────────────────────────────────────────────────
+// --- Constants ----------------------------------------------------------------
 
 /**
  * After this many consecutive error outcomes from the engine (not the loop's
@@ -87,7 +87,7 @@ const ADAPTIVE_ERROR_THRESHOLD = 0.4;
 const LOCK_OWNER = 'autonomy-engine';
 
 
-// ─── Engine options ───────────────────────────────────────────────────────────
+// --- Engine options -----------------------------------------------------------
 
 export interface IBatchAutonomyEngineOptions {
 	readonly kb:          IKnowledgeBaseService;
@@ -99,7 +99,7 @@ export interface IBatchAutonomyEngineOptions {
 	readonly targetRoot:  string;
 	readonly options:     IAutonomyOptions;
 	readonly runId:       string;
-	/** Abort controller — call `.abort()` to stop or pause the batch. */
+	/** Abort controller -- call `.abort()` to stop or pause the batch. */
 	readonly controller:  AbortController;
 	readonly onProgress:  (event: IAutonomyProgress) => void;
 	readonly onEscalated: (unit: IEscalatedUnit) => void;
@@ -111,7 +111,7 @@ export interface IBatchAutonomyEngineOptions {
 }
 
 
-// ─── Engine ───────────────────────────────────────────────────────────────────
+// --- Engine -------------------------------------------------------------------
 
 /**
  * Run the autonomy batch.
@@ -135,7 +135,7 @@ export async function runBatchAutonomyEngine(
 	const maxConcurrency = Math.max(1, options.maxConcurrency ?? DEFAULT_AUTONOMY_OPTIONS.maxConcurrency);
 	const startedAt      = Date.now();
 
-	// ── Build schedule ────────────────────────────────────────────────────────
+	// -- Build schedule --------------------------------------------------------
 	const scheduler  = AutonomyScheduler.build(kb.getAllUnits(), options, processedIds);
 	const totalUnits = scheduler.total;
 
@@ -152,12 +152,12 @@ export async function runBatchAutonomyEngine(
 		sourceRoot, targetRoot, targetLanguage,
 	};
 
-	// ── Per-unit engine-level failure tracking ────────────────────────────────
-	// Separate from the loop's own retry annotation — tracks consecutive engine
+	// -- Per-unit engine-level failure tracking --------------------------------
+	// Separate from the loop's own retry annotation -- tracks consecutive engine
 	// errors to detect permanently-stuck units.
 	const engineFailureCount = new Map<string, number>();
 
-	// ── Adaptive concurrency state ────────────────────────────────────────────
+	// -- Adaptive concurrency state --------------------------------------------
 	// Rolling window of recent outcomes (true = error, false = success/skip)
 	const recentOutcomes: boolean[] = [];
 	let effectiveConcurrency = maxConcurrency;
@@ -179,7 +179,7 @@ export async function runBatchAutonomyEngine(
 		}
 	}
 
-	// ── Pool-of-promises dispatch ─────────────────────────────────────────────
+	// -- Pool-of-promises dispatch ---------------------------------------------
 	const inFlight     = new Set<Promise<void>>();
 	let   dispatchedIdx = 0;
 
@@ -270,15 +270,15 @@ export async function runBatchAutonomyEngine(
 		}
 	};
 
-	// ── Kick off initial pool ─────────────────────────────────────────────────
+	// -- Kick off initial pool -------------------------------------------------
 	dispatchNext();
 
-	// ── Wait for pool to drain ────────────────────────────────────────────────
+	// -- Wait for pool to drain ------------------------------------------------
 	while (inFlight.size > 0) {
 		await Promise.race(inFlight);
 	}
 
-	// ── Cleanup zombie locks ──────────────────────────────────────────────────
+	// -- Cleanup zombie locks --------------------------------------------------
 	kb.releaseAllLocksFor(LOCK_OWNER);
 
 	const finalMetrics = collector.finalize(signal.aborted);

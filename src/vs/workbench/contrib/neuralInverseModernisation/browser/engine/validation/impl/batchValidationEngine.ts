@@ -29,9 +29,9 @@
  * ## Progress events
  *
  * Three event types emitted via onProgress callback:
- *   - unit-started    — unit just entered the validation loop
- *   - unit-completed  — unit produced a result (any outcome)
- *   - batch-completed — all units processed
+ *   - unit-started    -- unit just entered the validation loop
+ *   - unit-completed  -- unit produced a result (any outcome)
+ *   - batch-completed -- all units processed
  *
  * ## Abort
  *
@@ -58,13 +58,13 @@ import { recordValidationResult } from './validationRecorder.js';
 import { ValidationMetricsCollector } from './validationMetrics.js';
 
 
-// ─── Constants ─────────────────────────────────────────────────────────────────
+// --- Constants -----------------------------------------------------------------
 
 /** After this many consecutive error outcomes, permanently block the unit */
 const MAX_UNIT_ERRORS_BEFORE_BLOCK = 2;
 
 
-// ─── Batch engine ─────────────────────────────────────────────────────────────
+// --- Batch engine -------------------------------------------------------------
 
 export class BatchValidationEngine {
 
@@ -152,7 +152,7 @@ export class BatchValidationEngine {
 	}
 
 
-	// ── Per-unit runner ──────────────────────────────────────────────────────
+	// -- Per-unit runner ------------------------------------------------------
 
 	private async _runUnit(
 		unitId:   string,
@@ -177,7 +177,7 @@ export class BatchValidationEngine {
 					`Validation engine failed ${next} consecutive times: ${result.error ?? 'unknown error'}. Permanently blocked to prevent retry loop.`,
 					'validation-engine',
 				);
-				// Don't call recordValidationResult — status is now 'blocked'
+				// Don't call recordValidationResult -- status is now 'blocked'
 				return result;
 			}
 		} else {
@@ -193,7 +193,7 @@ export class BatchValidationEngine {
 }
 
 
-// ─── Factory helper ────────────────────────────────────────────────────────────
+// --- Factory helper ------------------------------------------------------------
 
 /**
  * Build the scheduler and immediately run the batch.

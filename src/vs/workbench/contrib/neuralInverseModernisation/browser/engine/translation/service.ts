@@ -6,7 +6,7 @@
 /**
  * # Translation Engine Service
  *
- * The DI-registered façade for Phase 4 of the Neural Inverse Modernisation pipeline.
+ * The DI-registered facade for Phase 4 of the Neural Inverse Modernisation pipeline.
  * Exposes a high-level API for translating knowledge units in the KB.
  *
  * ## Lifecycle
@@ -37,17 +37,17 @@ import {
 } from './impl/batchTranslationEngine.js';
 
 
-// ─── DI token ─────────────────────────────────────────────────────────────────
+// --- DI token -----------------------------------------------------------------
 
 export const ITranslationEngineService = createDecorator<ITranslationEngineService>('translationEngineService');
 
 
-// ─── Service interface ────────────────────────────────────────────────────────
+// --- Service interface --------------------------------------------------------
 
 export interface ITranslationEngineService {
 	readonly _serviceBrand: undefined;
 
-	// ── State ─────────────────────────────────────────────────────────────────
+	// -- State -----------------------------------------------------------------
 
 	/** True while a batch is actively running */
 	readonly isRunning: boolean;
@@ -55,12 +55,12 @@ export interface ITranslationEngineService {
 	/** Metrics snapshot from the most recently completed (or still-running) batch */
 	readonly lastBatchMetrics: ITranslationBatchMetrics | null;
 
-	// ── Events ────────────────────────────────────────────────────────────────
+	// -- Events ----------------------------------------------------------------
 
 	/** Fires for every unit-started, unit-completed, and batch-completed event */
 	readonly onProgress: Event<ITranslationBatchProgress>;
 
-	// ── Batch API ─────────────────────────────────────────────────────────────
+	// -- Batch API -------------------------------------------------------------
 
 	/**
 	 * Translate all eligible units in the KB.
@@ -80,7 +80,7 @@ export interface ITranslationEngineService {
 
 	/**
 	 * Translate a single unit by ID.
-	 * Bypasses the scheduler — immediately starts translation regardless of status.
+	 * Bypasses the scheduler -- immediately starts translation regardless of status.
 	 * Still respects the model selection and token budget from `options`.
 	 *
 	 * @param unitId    KB unit ID
@@ -100,11 +100,11 @@ export interface ITranslationEngineService {
 	 * Cancel the currently running batch.
 	 * In-flight LLM calls are aborted. Units mid-translation are returned to
 	 * 'ready' status for future retry.
-	 * Resolves immediately — the batch `run()` promise will complete shortly after.
+	 * Resolves immediately -- the batch `run()` promise will complete shortly after.
 	 */
 	cancelBatch(): void;
 
-	// ── Schedule preview ──────────────────────────────────────────────────────
+	// -- Schedule preview ------------------------------------------------------
 
 	/**
 	 * Preview the translation schedule without executing it.
@@ -117,7 +117,7 @@ export interface ITranslationEngineService {
 }
 
 
-// ─── Preview type ─────────────────────────────────────────────────────────────
+// --- Preview type -------------------------------------------------------------
 
 export interface ITranslationSchedulePreviewEntry {
 	unitId:       string;
@@ -143,7 +143,7 @@ export interface ITranslationSchedulePreview {
 }
 
 
-// ─── Error types ──────────────────────────────────────────────────────────────
+// --- Error types --------------------------------------------------------------
 
 export class BatchAlreadyRunningError extends Error {
 	constructor() {

@@ -4,15 +4,15 @@
  *--------------------------------------------------------------------------------------------*/
 
 /**
- * Modernisation Mode UI — HTML/CSS for the two-window analysis panel.
+ * Modernisation Mode UI -- HTML/CSS for the two-window analysis panel.
  *
  * Layout:
- *   ┌─ Top Bar ────────────────────────────────────────────────────────┐
- *   ├─ Split Editor ────────────────────┬─────────────────────────────┤
- *   │  LEGACY  (COBOL / read-side)      │  MODERN  (target / draft)   │
- *   │                                   │                             │
- *   ├───────────────────────────────────┴─────────────────────────────┤
- *   └─ Compliance Strip ────────────────────────────────────────────  ┘
+ *   +- Top Bar --------------------------------------------------------+
+ *   +- Split Editor --------------------+-----------------------------+
+ *   |  LEGACY  (COBOL / read-side)      |  MODERN  (target / draft)   |
+ *   |                                   |                             |
+ *   +-----------------------------------+-----------------------------+
+ *   +- Compliance Strip --------------------------------------------  +
  */
 
 export const SAMPLE_COBOL = `       IDENTIFICATION DIVISION.
@@ -92,7 +92,7 @@ body {
 	height: 100vh;
 }
 
-/* ── Top Bar ─────────────────────────────────────────── */
+/* -- Top Bar ------------------------------------------- */
 .topbar {
 	display: flex;
 	align-items: center;
@@ -172,7 +172,7 @@ body {
 	color: #7a8a9e;
 }
 
-/* ── Split Editor ────────────────────────────────────── */
+/* -- Split Editor -------------------------------------- */
 .editors {
 	display: flex;
 	flex: 1;
@@ -252,7 +252,7 @@ body {
 }
 .draft-banner.visible { display: flex; }
 
-/* ── Compliance Strip ────────────────────────────────── */
+/* -- Compliance Strip ---------------------------------- */
 .compliance-strip {
 	min-height: 120px;
 	max-height: 200px;
@@ -377,7 +377,7 @@ body {
   <div class="topbar">
     <div class="topbar-left">
       <span class="brand">NeuralInverse Modernisation</span>
-      <span class="stage-badge">Stage 3 · Migration</span>
+      <span class="stage-badge">Stage 3 . Migration</span>
     </div>
     <div class="topbar-right">
       <input class="unit-input" id="unitName" placeholder="Unit name (e.g. CALC-LATE-FEE)" value="CALC-LATE-FEE" />
@@ -398,22 +398,22 @@ body {
     <div class="pane pane-legacy">
       <div class="pane-header">
         <span class="pane-title">Legacy</span>
-        <span class="pane-lang" id="legacyLang">COBOL · Read-only source of truth</span>
+        <span class="pane-lang" id="legacyLang">COBOL . Read-only source of truth</span>
       </div>
       <textarea class="pane-editor legacy" id="legacyEditor" spellcheck="false"
-        placeholder="Paste legacy COBOL source here…"></textarea>
+        placeholder="Paste legacy COBOL source here..."></textarea>
     </div>
 
     <!-- Modern Pane -->
     <div class="pane pane-modern">
       <div class="pane-header">
         <span class="pane-title">Modern</span>
-        <span class="pane-lang">TypeScript · Draft buffer</span>
+        <span class="pane-lang">TypeScript . Draft buffer</span>
       </div>
       <textarea class="pane-editor modern" id="modernEditor" spellcheck="false"
-        placeholder="Paste or write modern translation here…"></textarea>
+        placeholder="Paste or write modern translation here..."></textarea>
       <div class="draft-banner" id="draftBanner">
-        PENDING APPROVAL — awaiting compliance analysis
+        PENDING APPROVAL -- awaiting compliance analysis
       </div>
     </div>
 
@@ -423,17 +423,17 @@ body {
   <div class="compliance-strip">
     <div class="strip-header">
       <span class="strip-label">Compliance Fingerprint</span>
-      <span class="match-pct badge-idle" id="matchPct">—</span>
+      <span class="match-pct badge-idle" id="matchPct">--</span>
       <span class="result-badge badge-idle" id="resultBadge">AWAITING ANALYSIS</span>
       <span class="strip-hint" id="stripHint">Paste code in both panes and click Run Analysis</span>
     </div>
     <div class="strip-body" id="stripBody">
       <div class="idle-state" id="idleState">
-        No analysis run yet · Enter legacy and modern code above then click Run Analysis
+        No analysis run yet . Enter legacy and modern code above then click Run Analysis
       </div>
       <div class="analysing-state" id="analysingState" style="display:none">
-        <span class="pulse">▶</span>
-        <span id="analysingMsg">Extracting compliance fingerprint…</span>
+        <span class="pulse">></span>
+        <span id="analysingMsg">Extracting compliance fingerprint...</span>
       </div>
       <div class="divergence-list" id="divergenceList" style="display:none"></div>
     </div>
@@ -461,7 +461,7 @@ body {
 			return;
 		}
 
-		setAnalysing(true, 'Extracting compliance fingerprint…');
+		setAnalysing(true, 'Extracting compliance fingerprint...');
 		document.getElementById('draftBanner').classList.add('visible');
 
 		if (vscode) {
@@ -481,7 +481,7 @@ body {
 		if (!msg) return;
 
 		if (msg.type === 'analysing') {
-			setAnalysing(true, msg.message || 'Analysing…');
+			setAnalysing(true, msg.message || 'Analysing...');
 		} else if (msg.type === 'result') {
 			setAnalysing(false);
 			renderResult(msg.comparison);
@@ -499,7 +499,7 @@ body {
 	}
 
 	function resetStrip() {
-		document.getElementById('matchPct').textContent = '—';
+		document.getElementById('matchPct').textContent = '--';
 		document.getElementById('matchPct').className = 'match-pct badge-idle';
 		document.getElementById('resultBadge').textContent = 'AWAITING ANALYSIS';
 		document.getElementById('resultBadge').className = 'result-badge badge-idle';
@@ -516,7 +516,7 @@ body {
 		const dl = document.getElementById('divergenceList');
 		dl.style.display = 'flex';
 		dl.innerHTML = '<div class="divergence-item div-' + level + '">' +
-			'<span class="div-icon">' + (level === 'block' ? '⛔' : '⚠') + '</span>' +
+			'<span class="div-icon">' + (level === 'block' ? '[BLOCKED]' : '[!]') + '</span>' +
 			'<span class="div-text">' + escapeHtml(msg) + '</span>' +
 			'</div>';
 	}
@@ -553,7 +553,7 @@ body {
 
 		if (totalDivs === 0) {
 			dl.innerHTML = '<div class="divergence-item div-info">' +
-				'<span class="div-icon">✓</span>' +
+				'<span class="div-icon">v</span>' +
 				'<span class="div-text" style="color:#56c2a0">Compliance fingerprint matches. All regulated fields, semantic rules, and domains are preserved.</span>' +
 				'</div>';
 			return;
@@ -561,7 +561,7 @@ body {
 
 		for (const div of (comparison.divergences || [])) {
 			const cls = div.severity === 'blocking' ? 'div-blocking' : div.severity === 'warning' ? 'div-warning' : 'div-info';
-			const icon = div.severity === 'blocking' ? '⛔' : div.severity === 'warning' ? '⚠' : 'ℹ';
+			const icon = div.severity === 'blocking' ? '[BLOCKED]' : div.severity === 'warning' ? '[!]' : '[i]';
 			const el = document.createElement('div');
 			el.className = 'divergence-item ' + cls;
 			el.innerHTML =

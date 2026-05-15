@@ -25,7 +25,7 @@ import {
 import { makeId, makeAuditEntry } from './helpers.js';
 import { appendAuditEntry } from './auditLog.js';
 
-// ─── Split ────────────────────────────────────────────────────────────────────
+// --- Split --------------------------------------------------------------------
 
 /**
  * Split `unitId` into N sub-units.
@@ -89,7 +89,7 @@ export function splitUnit(
 	return newIds;
 }
 
-// ─── Merge ────────────────────────────────────────────────────────────────────
+// --- Merge --------------------------------------------------------------------
 
 /**
  * Merge several `unitIds` into one.

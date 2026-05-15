@@ -13,31 +13,31 @@
  *
  * The engine applies two complementary layers to assess semantic equivalence:
  *
- *   Layer 1 — Static structural checks (deterministic, no LLM)
+ *   Layer 1 -- Static structural checks (deterministic, no LLM)
  *     Fast heuristic analysis: line-count ratio, branch coverage,
  *     API surface matching, data-field coverage, control-flow coverage.
  *     These run first and can short-circuit if the translation is obviously broken.
  *
- *   Layer 2 — LLM semantic equivalence analysis
+ *   Layer 2 -- LLM semantic equivalence analysis
  *     The LLM is shown both the source and target side-by-side and asked to:
  *       a) Generate concrete test cases with representative inputs
  *       b) Determine whether target would produce equivalent outputs
  *       c) Identify any output divergences with typed classification
  *     Structured XML output is parsed into IValidationTestCase[].
  *
- * ## Outcome → KB status mapping
+ * ## Outcome -> KB status mapping
  *
- *   'validated'  → kb.setUnitStatus(unitId, 'validated')   → all good
- *   'partial'    → kb.setUnitStatus(unitId, 'review')      → needs human look
- *   'failed'     → kb.setUnitStatus(unitId, 'flagged')     → divergences found
- *   'error'      → kb.setUnitStatus(unitId, 'review')      → engine error, retry
- *   'skipped'    → no status change                         → locked/not eligible
+ *   'validated'  -> kb.setUnitStatus(unitId, 'validated')   -> all good
+ *   'partial'    -> kb.setUnitStatus(unitId, 'review')      -> needs human look
+ *   'failed'     -> kb.setUnitStatus(unitId, 'flagged')     -> divergences found
+ *   'error'      -> kb.setUnitStatus(unitId, 'review')      -> engine error, retry
+ *   'skipped'    -> no status change                         -> locked/not eligible
  */
 
 import { OutputDivergenceType } from '../../../../common/modernisationTypes.js';
 
 
-// ─── Option types ─────────────────────────────────────────────────────────────
+// --- Option types -------------------------------------------------------------
 
 export interface IValidationOptions {
 	/**
@@ -48,7 +48,7 @@ export interface IValidationOptions {
 
 	/**
 	 * Maximum concurrent validation jobs (default 3).
-	 * Validation is LLM-heavy — lower than translation to avoid token flooding.
+	 * Validation is LLM-heavy -- lower than translation to avoid token flooding.
 	 */
 	maxConcurrency?: number;
 
@@ -94,7 +94,7 @@ export const DEFAULT_VALIDATION_OPTIONS: Required<Omit<IValidationOptions, 'targ
 };
 
 
-// ─── Static check types ───────────────────────────────────────────────────────
+// --- Static check types -------------------------------------------------------
 
 export type StaticCheckStatus = 'pass' | 'warn' | 'fail';
 
@@ -113,7 +113,7 @@ export interface IStaticCheckResult {
 }
 
 
-// ─── LLM test case types ──────────────────────────────────────────────────────
+// --- LLM test case types ------------------------------------------------------
 
 /**
  * A single semantic test case generated and assessed by the LLM.
@@ -152,12 +152,12 @@ export interface IValidationParseResult {
 }
 
 
-// ─── Result types ─────────────────────────────────────────────────────────────
+// --- Result types -------------------------------------------------------------
 
 export type ValidationOutcome =
 	| 'validated'   // All test cases pass, static checks pass
-	| 'partial'     // Some warnings or low confidence — needs human review
-	| 'failed'      // Divergences found — unit should be flagged for re-translation
+	| 'partial'     // Some warnings or low confidence -- needs human review
+	| 'failed'      // Divergences found -- unit should be flagged for re-translation
 	| 'error'       // Engine error (LLM unreachable, parse failure, etc.)
 	| 'skipped';    // Unit locked, not eligible, or no source/target available
 
@@ -188,7 +188,7 @@ export interface IValidationResult {
 }
 
 
-// ─── Batch event types ────────────────────────────────────────────────────────
+// --- Batch event types --------------------------------------------------------
 
 export interface IValidationBatchProgress {
 	type: 'unit-started' | 'unit-completed' | 'batch-completed';

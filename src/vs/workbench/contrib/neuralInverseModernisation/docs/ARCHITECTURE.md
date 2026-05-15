@@ -1,20 +1,21 @@
-# NeuralInverse Modernisation — Architecture
+# NeuralInverse Modernisation -- Architecture
 
 ## Overview
 
-`neuralInverseModernisation` is a **compliance-governed legacy modernisation workflow engine** embedded in the Neural Inverse IDE. It orchestrates the full 12–24 month migration lifecycle for regulated enterprises — from legacy codebase discovery through to audited production cutover.
+`neuralInverseModernisation` is a **compliance-governed legacy modernisation workflow engine** embedded in the Neural Inverse IDE. It orchestrates the full migration lifecycle for regulated codebases -- from legacy discovery through to audited production cutover.
 
 It does not replace the existing platform components. It is the workflow layer that connects them.
 
 ```
 neuralInverseModernisation
-        │
-        ├── orchestrates ──► neuralInverse (agents: explorer, editor, verifier)
-        ├── gates via ──────► neuralInverseChecks (GRC fingerprint comparison)
-        ├── protects via ───► neuralInverseEnclave (legacy source before LLM)
-        ├── translates via ─► void (LLM)
-        └── runs heavy work via powerMode (batch execution sessions)
+        |
+        +-- orchestrates --> neuralInverse (agents: explorer, editor, verifier)
+        +-- gates via -----> neuralInverseChecks (GRC fingerprint comparison)
+        +-- translates via-> void (LLM)
+        +-- runs heavy work via powerMode (batch execution sessions)
 ```
+
+> Note: Backend sync and compliance dashboard are available in NeuralInverse Enterprise.
 
 ---
 
@@ -22,64 +23,40 @@ neuralInverseModernisation
 
 ```
 neuralInverseModernisation/
-├── docs/                                      # Documentation (you are here)
-│   ├── ARCHITECTURE.md
-│   └── PRODUCT_VISION.md
-│
-├── common/
-│   ├── modernisationTypes.ts                  # Core types (see below)
-│   ├── modernisationConfigTypes.ts            # .neuralinversemodernisation config schema
-│   └── legacyPatternRegistry.ts               # Known legacy patterns (COBOL, Java EE, etc.)
-│
-├── browser/
-│   ├── neuralInverseModernisation.contribution.ts   # DI registration + commands + keybindings
-│   │
-│   ├── stage1-discovery/
-│   │   ├── legacyAnalysisService.ts           # Codebase mapping, dependency graph
-│   │   ├── businessLogicExtractor.ts          # LLM-powered plain-English extraction
-│   │   └── complianceBaselineService.ts       # Runs initial GRC scan, stores baseline fingerprint
-│   │
-│   ├── stage2-planning/
-│   │   ├── modernisationRoadmapService.ts     # Generates + sequences the migration backlog
-│   │   ├── riskScoringService.ts              # Scores each unit: Low/Medium/High/Critical
-│   │   └── approvalQueueService.ts            # Manages plan approval before migration starts
-│   │
-│   ├── stage3-migration/
-│   │   ├── modernisationEngineService.ts      # Core orchestration: unit-by-unit translation
-│   │   ├── fingerprintComparisonService.ts    # Compares legacy vs. modern compliance fingerprint
-│   │   ├── translationApprovalQueue.ts        # Approval workflow for flagged translations
-│   │   └── draftBufferService.ts              # Manages modern code as pending-approval draft
-│   │
-│   ├── stage4-validation/
-│   │   ├── outputEquivalenceService.ts        # Runs legacy + modern against same inputs
-│   │   └── equivalenceReportService.ts        # Generates test evidence for audit package
-│   │
-│   ├── stage5-cutover/
-│   │   ├── complianceReportGenerator.ts       # Full audit package: changes, approvals, tests
-│   │   ├── parallelRunMonitor.ts              # Monitors divergence in production parallel run
-│   │   └── rollbackService.ts                 # Automatic rollback on production divergence
-│   │
-│   ├── engine/
-│   │   ├── fingerprint/
-│   │   │   ├── deterministicExtractor.ts      # Structural extraction of regulated attributes
-│   │   │   └── llmSemanticExtractor.ts        # LLM-powered business rule extraction
-│   │   │
-│   │   └── parsers/
-│   │       ├── cobolParser.ts                 # COBOL (IBM z/OS dialect) parser
-│   │       ├── copyBookResolver.ts            # Resolves COBOL copybooks before parsing
-│   │       ├── jclParser.ts                   # JCL job chain parser
-│   │       └── parserRegistry.ts              # Maps language → parser
-│   │
-│   ├── ui/
-│   │   ├── modernisationSessionEditorInput.ts # Two-window custom editor input
-│   │   ├── legacyEditorPane.ts                # Left pane: read-only legacy view
-│   │   ├── modernEditorPane.ts                # Right pane: draft buffer editor
-│   │   ├── complianceStripWidget.ts           # Bottom strip: fingerprint match + approvals
-│   │   ├── unitNavigator.ts                   # Left rail: migration unit list + status
-│   │   └── modernisationDashboard.ts          # Enterprise migration dashboard panel
-│   │
-│   └── audit/
-│       └── modernisationAuditService.ts       # Immutable audit trail for all migration events
++-- docs/                                      # Documentation (you are here)
+|   +-- ARCHITECTURE.md
+|   +-- PRODUCT_VISION.md
+|   +-- MODERNISATION_PLATFORM_PLAN.md
+|   +-- phase-12-autonomy.md
+|
++-- common/
+|   +-- modernisationTypes.ts                  # Core types (see below)
+|   +-- modernisationConfigTypes.ts            # .neuralinversemodernisation config schema
+|   +-- legacyPatternRegistry.ts               # Known legacy patterns (COBOL, Java EE, etc.)
+|
++-- browser/
+    +-- neuralInverseModernisation.contribution.ts   # DI registration + commands + keybindings
+    |
+    +-- engine/
+    |   +-- discovery/                         # Stage 1: codebase scanning and unit decomposition
+    |   +-- planning/                          # Stage 2: roadmap generation and compliance ordering
+    |   +-- resolution/                        # Source resolution and dependency inlining
+    |   +-- translation/                       # Stage 3: LLM-driven unit translation
+    |   +-- fingerprint/                       # Compliance fingerprint extraction and comparison
+    |   +-- cutover/                           # Stage 5: audit export and file commit
+    |   +-- autonomy/                          # Phase 12: autonomous migration loop
+    |
+    +-- knowledgeBase/                         # Persistent KB: units, decisions, glossary, audit log
+    |
+    +-- ui/
+    |   +-- modernisationConsole.ts            # Main console shell
+    |   +-- modernisationPart.ts               # Aux-window entry point
+    |   +-- views/                             # Unit index, decision log, progress views
+    |   +-- editor/                            # Two-window per-unit translation editor
+    |
+    +-- modernisationSessionService.ts         # Session lifecycle (active session, stage, plan)
+    +-- modernisationSyncService.ts            # CE stub -- backend sync is an Enterprise feature
+    +-- modernisationAuditService.ts           # Immutable audit trail for all migration events
 ```
 
 ---
@@ -115,7 +92,7 @@ type MigrationUnitStatus =
     | 'validated'        // Output equivalence test passed
     | 'complete';        // All stages done
 
-// The compliance fingerprint — structured regulatory intent, not a hash
+// The compliance fingerprint -- structured regulatory intent, not a hash
 interface IComplianceFingerprint {
     unitId: string;
     extractedAt: number;
@@ -148,7 +125,7 @@ interface IFingerprintComparison {
     unitId: string;
     legacyFingerprint: IComplianceFingerprint;
     modernFingerprint: IComplianceFingerprint;
-    matchPercentage: number;    // 0–100
+    matchPercentage: number;    // 0-100
     divergences: IFingerprintDivergence[];
     overallResult: 'pass' | 'warning' | 'blocked';
 }
@@ -162,7 +139,7 @@ interface IFingerprintDivergence {
     requiresComplianceApproval: boolean;
 }
 
-// Approval record — part of the immutable audit trail
+// Approval record -- part of the immutable audit trail
 interface IApprovalRecord {
     id: string;
     unitId: string;
@@ -199,22 +176,17 @@ interface IOutputDivergence {
 
 | Service | DI ID | Stage | Purpose |
 |---------|-------|-------|---------|
-| `ILegacyAnalysisService` | `modernisationLegacyAnalysis` | 1 | Codebase mapping, dependency graph |
-| `IBusinessLogicExtractor` | `modernisationBusinessLogic` | 1 | LLM-powered plain-English extraction |
-| `IComplianceBaselineService` | `modernisationComplianceBaseline` | 1 | Initial GRC scan + baseline fingerprint |
-| `IModernisationRoadmapService` | `modernisationRoadmap` | 2 | Generate + sequence migration backlog |
-| `IRiskScoringService` | `modernisationRiskScoring` | 2 | Score each unit: Low/Medium/High/Critical |
-| `IApprovalQueueService` | `modernisationApprovalQueue` | 2 + 3 | Plan and translation approval workflow |
-| `IModernisationEngineService` | `modernisationEngine` | 3 | Core unit-by-unit translation orchestration |
-| `IFingerprintComparisonService` | `modernisationFingerprintComparison` | 3 | Compare legacy vs. modern fingerprints |
-| `IDraftBufferService` | `modernisationDraftBuffer` | 3 | Manage modern code as pending draft |
-| `IOutputEquivalenceService` | `modernisationOutputEquivalence` | 4 | Run legacy + modern against identical inputs |
-| `IEquivalenceReportService` | `modernisationEquivalenceReport` | 4 | Generate test evidence for audit package |
-| `IComplianceReportGenerator` | `modernisationComplianceReport` | 5 | Full audit package generation |
-| `IParallelRunMonitor` | `modernisationParallelRunMonitor` | 5 | Production divergence monitoring |
-| `IRollbackService` | `modernisationRollback` | 5 | Automatic rollback on divergence |
+| `IModernisationSessionService` | `modernisationSessionService` | All | Session lifecycle, stage transitions |
+| `IKnowledgeBaseService` | `knowledgeBaseService` | All | Persistent KB: units, decisions, glossary |
+| `IDiscoveryService` | `discoveryService` | 1 | Codebase scanning and unit decomposition |
+| `IMigrationPlannerService` | `migrationPlannerService` | 2 | Roadmap generation and compliance ordering |
+| `ISourceResolutionService` | `sourceResolutionService` | 2-3 | Dependency inlining for all source languages |
+| `ITranslationEngineService` | `translationEngineService` | 3 | LLM-driven unit translation |
+| `IFingerprintService` | `fingerprintService` | 3 | Compliance fingerprint extraction and comparison |
+| `ICutoverService` | `cutoverService` | 5 | Audit export and file commit |
+| `IAutonomyService` | `autonomyService` | 12 | Autonomous migration loop controller |
+| `IModernisationSyncService` | `modernisationSyncService` | All | CE stub -- no-op (Enterprise feature) |
 | `IModernisationAuditService` | `modernisationAudit` | All | Immutable audit trail |
-| `IModernisationContextService` | `modernisationContext` | All | Shared context for two-window model |
 
 ---
 
@@ -226,18 +198,12 @@ interface IOutputDivergence {
 - `IContractReasonService` used for LLM-powered fingerprint semantic extraction
 - Blocking violations from Checks halt migration steps automatically
 
-### neuralInverseEnclave
-- All legacy source content passes through `IEnclaveGatekeeperService.inspect()` before reaching the LLM
-- Sensitive fields (credentials, account numbers, hardcoded constants) are intercepted and stored in a secure local redaction map
-- After translation, redacted values are reinjected into the modern output before the developer sees it
-- Provenance log records every file that was inspected: `IEnclaveProvenanceService.logAccess()`
-
 ### neuralInverse (Agent Bus)
 - Stage 3 uses the sub-agent model:
   - `explorer` sub-agent: reads legacy unit, builds context
   - `editor` sub-agent: performs translation to target language
   - `verifier` sub-agent: runs tests, GRC checks, equivalence validation
-- Orchestrated via `IWorkflowOrchestrator` with the modernisation workflow definition
+- Phase 12 autonomy loop drives independent units in parallel via `INeuralInverseSubAgentService`
 
 ### void (LLM Layer)
 - Business logic extraction (Stage 1): one-shot query per unit
@@ -251,21 +217,21 @@ interface IOutputDivergence {
 
 ---
 
-## The Two-Window Editor (`ModernisationSessionEditorInput`)
+## The Two-Window Editor (`ModernisationUnitEditorInput`)
 
 A custom editor input that owns both panes and the compliance strip as a single managed session.
 
 ```
-ModernisationSessionEditorInput
-├── legacyEditorPane        (IEditorPane, read-only, COBOL/legacy source)
-├── modernEditorPane        (IEditorPane, draft buffer, target language)
-├── complianceStripWidget   (custom widget, fingerprint comparison + approval actions)
-└── unitNavigator           (left rail, migration unit list, risk badges, status)
+ModernisationUnitEditorInput
++-- legacyEditorPane        (IEditorPane, read-only, COBOL/legacy source)
++-- modernEditorPane        (IEditorPane, draft buffer, target language)
++-- complianceStripWidget   (custom widget, fingerprint comparison + approval actions)
++-- unitNavigator           (left rail, migration unit list, risk badges, status)
 ```
 
 **Why custom input, not two separate editor groups:**
 - Semantic scroll sync requires coordinating both panes from one controller
-- The compliance strip is structurally part of the session — it cannot exist independently
+- The compliance strip is structurally part of the session -- it cannot exist independently
 - The draft buffer state (pending/approved) is session-level, not file-level
 - The user cannot accidentally close one pane without ending the session
 
@@ -274,7 +240,7 @@ Sync unit is the migration unit, not the line number. When the developer navigat
 
 **Draft buffer visual treatment:**
 - Modern pane background: distinct muted tone (not standard editor white/dark)
-- Top banner: "PENDING APPROVAL — Unit 14 of 67 — [Approve] [Skip] [Block]"
+- Top banner: "PENDING APPROVAL -- Unit 14 of 67 -- [Approve] [Skip] [Block]"
 - Once approved: background normalises, banner clears, file is written to disk
 
 ---
@@ -284,30 +250,30 @@ Sync unit is the migration unit, not the line number. When the developer navigat
 Two-layer extraction running on every unit:
 
 ```
-Legacy Unit (post-Enclave redaction)
-            │
-    ┌───────┴────────────────────────┐
-    │                                │
-    ▼                                ▼
-Deterministic Extractor          LLM Semantic Extractor
-(no LLM, fast)                   (via void, structured output)
-    │                                │
-    ▼                                ▼
-IRegulatedField[]                ISemanticRule[]
-ILogicalInvariant[]              IComplianceDomain[]
-    │                                │
-    └───────────────┬────────────────┘
-                    │
+Legacy Unit
+    |
+    +-------------------------------+
+    |                               |
+    v                               v
+Deterministic Extractor         LLM Semantic Extractor
+(no LLM, fast)                  (via void, structured output)
+    |                               |
+    v                               v
+IRegulatedField[]               ISemanticRule[]
+ILogicalInvariant[]             IComplianceDomain[]
+    |                               |
+    +---------------+---------------+
+                    |
              IComplianceFingerprint
-                    │
-          ┌─────────┴──────────┐
-          │ (for modern unit)  │
-          ▼                    ▼
+                    |
+          +---------+---------+
+          |                   |
+          v                   v
   IComplianceFingerprint   compared via
-  (modern)                 IFingerprintComparisonService
-                                │
+  (modern)                 IFingerprintService
+                                |
                           IFingerprintComparison
-                          matchPercentage: 0–100
+                          matchPercentage: 0-100
                           divergences[]
                           overallResult: pass | warning | blocked
 ```
@@ -339,13 +305,13 @@ Every migration event writes an immutable audit record via `IModernisationAuditS
 | Cutover approved | Compliance report ref, parallel run start time |
 | Production divergence | Divergence details, rollback triggered, timestamp |
 
-The audit trail is the primary deliverable handed to regulators. It must be tamper-evident. Implementation mirrors `auditTrailService.ts` in neuralInverseChecks (hash-chained records).
+The audit trail is the primary deliverable for regulatory review. It is tamper-evident (hash-chained records, same pattern as `auditTrailService.ts` in neuralInverseChecks).
 
 ---
 
 ## Build Phases
 
-### Phase 0 — Proof of Concept (Before Any UI)
+### Phase 0 -- Proof of Concept (Before Any UI)
 Validate the fingerprint extractor before committing to the full build.
 
 | Step | What | Service / File |
@@ -354,13 +320,13 @@ Validate the fingerprint extractor before committing to the full build.
 | 0.2 | Build deterministic extractor for COBOL | `deterministicExtractor.ts` |
 | 0.3 | Build LLM semantic extractor | `llmSemanticExtractor.ts` |
 | 0.4 | Build fingerprint comparison | `fingerprintComparisonService.ts` |
-| 0.5 | Spike: 10 COBOL paragraphs → translate → compare fingerprints | Manual test |
+| 0.5 | Spike: 10 COBOL paragraphs -> translate -> compare fingerprints | Manual test |
 
 **Gate:** Only proceed to Phase 1 if fingerprint comparison correctly identifies deliberate regulatory logic changes and passes cleanly on correct translations.
 
 ---
 
-### Phase 1 — Stage 1: Discovery
+### Phase 1 -- Stage 1: Discovery
 
 | Step | What | Service / File |
 |------|------|----------------|
@@ -373,7 +339,7 @@ Validate the fingerprint extractor before committing to the full build.
 
 ---
 
-### Phase 2 — Stage 2: Planning
+### Phase 2 -- Stage 2: Planning
 
 | Step | What | Service / File |
 |------|------|----------------|
@@ -383,13 +349,13 @@ Validate the fingerprint extractor before committing to the full build.
 
 ---
 
-### Phase 3 — Stage 3: Migration + Two-Window UI
+### Phase 3 -- Stage 3: Migration + Two-Window UI
 
 | Step | What | Service / File |
 |------|------|----------------|
 | 3.1 | Draft buffer service | `draftBufferService.ts` |
 | 3.2 | Modernisation engine (translation orchestration) | `modernisationEngineService.ts` |
-| 3.3 | Two-window custom editor input | `modernisationSessionEditorInput.ts` |
+| 3.3 | Two-window custom editor input | `modernisationUnitEditorInput.ts` |
 | 3.4 | Legacy pane + modern pane | `legacyEditorPane.ts`, `modernEditorPane.ts` |
 | 3.5 | Compliance strip widget | `complianceStripWidget.ts` |
 | 3.6 | Unit navigator | `unitNavigator.ts` |
@@ -397,7 +363,7 @@ Validate the fingerprint extractor before committing to the full build.
 
 ---
 
-### Phase 4 — Stage 4: Validation
+### Phase 4 -- Stage 4: Validation
 
 | Step | What | Service / File |
 |------|------|----------------|
@@ -406,18 +372,17 @@ Validate the fingerprint extractor before committing to the full build.
 
 ---
 
-### Phase 5 — Stage 5: Cutover + Dashboard
+### Phase 5 -- Stage 5: Cutover
 
 | Step | What | Service / File |
 |------|------|----------------|
 | 5.1 | Compliance report generator | `complianceReportGenerator.ts` |
 | 5.2 | Parallel run monitor | `parallelRunMonitor.ts` |
 | 5.3 | Rollback service | `rollbackService.ts` |
-| 5.4 | Enterprise migration dashboard | `modernisationDashboard.ts` |
 
 ---
 
-### Phase 6 — Power Mode Integration
+### Phase 6 -- Power Mode Integration
 
 | Step | What |
 |------|------|
@@ -431,6 +396,7 @@ Validate the fingerprint extractor before committing to the full build.
 
 | Command | Description |
 |---------|-------------|
+| `neuralInverse.openModernisation` | Open the modernisation console (Cmd+Alt+M) |
 | `neuralInverse.modernisation.startDiscovery` | Run Stage 1 discovery on workspace |
 | `neuralInverse.modernisation.openRoadmap` | Open Stage 2 planning view |
 | `neuralInverse.modernisation.openSession` | Open two-window migration session for selected unit |
@@ -438,4 +404,4 @@ Validate the fingerprint extractor before committing to the full build.
 | `neuralInverse.modernisation.blockUnit` | Block unit and flag for compliance review |
 | `neuralInverse.modernisation.runEquivalenceTest` | Trigger Stage 4 output equivalence test |
 | `neuralInverse.modernisation.generateReport` | Generate Stage 5 compliance audit package |
-| `neuralInverse.modernisation.openDashboard` | Open enterprise migration dashboard |
+| `neuralInverse.endModernisationSession` | End the current modernisation session |

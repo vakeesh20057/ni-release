@@ -27,7 +27,7 @@ import { Disposable } from '../../../../../../../base/common/lifecycle.js';
 import { RiskLevel } from '../../../../common/knowledgeBaseTypes.js';
 
 
-// ─── Event Payloads ───────────────────────────────────────────────────────────
+// --- Event Payloads -----------------------------------------------------------
 
 /**
  * Fired when a single unit's fingerprinting completes (whether success or failure).
@@ -37,7 +37,7 @@ export interface IFingerprintUnitEvent {
 	unitName: string;
 	/** The language of the unit that was fingerprinted */
 	language: string;
-	/** Risk level of the unit — determines priority in the scheduler */
+	/** Risk level of the unit -- determines priority in the scheduler */
 	riskLevel: RiskLevel;
 	/** Whether the full two-layer extraction (including LLM) completed */
 	llmExtractionComplete: boolean;
@@ -75,7 +75,7 @@ export interface IFingerprintBatchProgressEvent {
 	layer1Only: number;
 	/** Number that failed entirely */
 	failed: number;
-	/** Estimated completion percentage 0–100 */
+	/** Estimated completion percentage 0-100 */
 	progressPercent: number;
 	/** The unit currently being processed (for UI status messages) */
 	currentUnitId?: string;
@@ -108,10 +108,10 @@ export interface IFingerprintBatchCompleteEvent {
 }
 
 
-// ─── Emitter ─────────────────────────────────────────────────────────────────
+// --- Emitter -----------------------------------------------------------------
 
 /**
- * FingerprintProgressEmitter — manages event emission for batch fingerprint jobs.
+ * FingerprintProgressEmitter -- manages event emission for batch fingerprint jobs.
  *
  * One emitter instance is created per batch job and passed to the
  * BatchFingerprintEngine. The FingerprintServiceImpl exposes the events
@@ -119,19 +119,19 @@ export interface IFingerprintBatchCompleteEvent {
  */
 export class FingerprintProgressEmitter extends Disposable {
 
-	// ── Unit completed ────────────────────────────────────────────────────────
+	// -- Unit completed --------------------------------------------------------
 	private readonly _onDidFingerprintUnit = this._register(new Emitter<IFingerprintUnitEvent>());
 	readonly onDidFingerprintUnit: Event<IFingerprintUnitEvent> = this._onDidFingerprintUnit.event;
 
-	// ── Periodic progress ─────────────────────────────────────────────────────
+	// -- Periodic progress -----------------------------------------------------
 	private readonly _onDidBatchProgress = this._register(new Emitter<IFingerprintBatchProgressEvent>());
 	readonly onDidBatchProgress: Event<IFingerprintBatchProgressEvent> = this._onDidBatchProgress.event;
 
-	// ── Batch complete ────────────────────────────────────────────────────────
+	// -- Batch complete --------------------------------------------------------
 	private readonly _onDidCompleteBatch = this._register(new Emitter<IFingerprintBatchCompleteEvent>());
 	readonly onDidCompleteBatch: Event<IFingerprintBatchCompleteEvent> = this._onDidCompleteBatch.event;
 
-	// ── Counters for in-flight tracking ──────────────────────────────────────
+	// -- Counters for in-flight tracking --------------------------------------
 	private _inFlight = 0;
 	private _completed = 0;
 	private _succeeded = 0;

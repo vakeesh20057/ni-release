@@ -22,7 +22,7 @@
  * ## Concurrency Control
  *
  * At most `maxConcurrency` (default: 3) LLM calls run simultaneously.
- * The deterministic Layer 1 runs inline with no concurrency limit — it's synchronous regex.
+ * The deterministic Layer 1 runs inline with no concurrency limit -- it's synchronous regex.
  *
  * ## Backoff on Failure
  *
@@ -39,7 +39,7 @@
 import { RiskLevel } from '../../../../common/knowledgeBaseTypes.js';
 
 
-// ─── Job Types ────────────────────────────────────────────────────────────────
+// --- Job Types ----------------------------------------------------------------
 
 export type FingerprintJobPriority = 'critical' | 'high' | 'medium' | 'low';
 
@@ -48,7 +48,7 @@ export interface IFingerprintJob {
 	unitName: string;
 	language: string;
 	riskLevel: RiskLevel;
-	/** Number of units that depend on this one — used for tie-breaking within a risk tier */
+	/** Number of units that depend on this one -- used for tie-breaking within a risk tier */
 	dependentCount: number;
 	/** Number of times this job has been retried */
 	retryCount: number;
@@ -60,18 +60,18 @@ export interface IFingerprintJob {
 
 export interface IJobResult {
 	unitId: string;
-	/** true if fingerprinting completed (even if LLM failed — Layer 1 counts as success) */
+	/** true if fingerprinting completed (even if LLM failed -- Layer 1 counts as success) */
 	success: boolean;
 	/** true if the LLM completed successfully */
 	llmSuccess: boolean;
 	/** Error message if success === false */
 	errorMessage?: string;
-	/** Whether to retry (e.g. rate limit — not a permanent failure) */
+	/** Whether to retry (e.g. rate limit -- not a permanent failure) */
 	shouldRetry: boolean;
 }
 
 
-// ─── Scheduler Configuration ──────────────────────────────────────────────────
+// --- Scheduler Configuration --------------------------------------------------
 
 export interface IFingerprintSchedulerOptions {
 	/** Maximum concurrent LLM calls (default: 3) */
@@ -97,12 +97,12 @@ const RISK_PRIORITY: Record<RiskLevel, number> = {
 };
 
 
-// ─── Scheduler ───────────────────────────────────────────────────────────────
+// --- Scheduler ---------------------------------------------------------------
 
 /**
- * FingerprintScheduler — manages the ordered queue of fingerprint extraction jobs.
+ * FingerprintScheduler -- manages the ordered queue of fingerprint extraction jobs.
  *
- * The scheduler itself does NOT execute jobs — it provides the ordering and
+ * The scheduler itself does NOT execute jobs -- it provides the ordering and
  * concurrency contract. The BatchFingerprintEngine is the executor.
  */
 export class FingerprintScheduler {
@@ -115,7 +115,7 @@ export class FingerprintScheduler {
 		this._opts = { ...DEFAULT_OPTIONS, ...options };
 	}
 
-	// ── Queue Management ──────────────────────────────────────────────────────
+	// -- Queue Management ------------------------------------------------------
 
 	/**
 	 * Add a job to the queue.
@@ -131,10 +131,10 @@ export class FingerprintScheduler {
 			const existingPriority = RISK_PRIORITY[existing.riskLevel];
 
 			if (newPriority < existingPriority) {
-				// New job has higher priority — replace
+				// New job has higher priority -- replace
 				this._queue.splice(existingIdx, 1);
 			} else {
-				// Existing job is equal or higher priority — keep existing
+				// Existing job is equal or higher priority -- keep existing
 				return;
 			}
 		}
@@ -247,7 +247,7 @@ export class FingerprintScheduler {
 		return true;
 	}
 
-	// ── Status ────────────────────────────────────────────────────────────────
+	// -- Status ----------------------------------------------------------------
 
 	/** Number of jobs waiting in the queue */
 	get queueLength(): number {
@@ -287,7 +287,7 @@ export class FingerprintScheduler {
 		return earliest;
 	}
 
-	// ── Cancellation ──────────────────────────────────────────────────────────
+	// -- Cancellation ----------------------------------------------------------
 
 	/**
 	 * Cancel the scheduler. No more jobs will be dequeued.
@@ -306,7 +306,7 @@ export class FingerprintScheduler {
 		this._cancelled = false;
 	}
 
-	// ── Internal ──────────────────────────────────────────────────────────────
+	// -- Internal --------------------------------------------------------------
 
 	/**
 	 * Sort the queue by:
@@ -334,7 +334,7 @@ export class FingerprintScheduler {
 }
 
 
-// ─── Job Builder ─────────────────────────────────────────────────────────────
+// --- Job Builder -------------------------------------------------------------
 
 /**
  * Build a fingerprint job from a KB unit record.

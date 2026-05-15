@@ -4,7 +4,7 @@
  *--------------------------------------------------------------------------------------------*/
 
 /**
- * # Translation Engine — Public Exports & DI Registration
+ * # Translation Engine -- Public Exports & DI Registration
  *
  * Import this file as a side-effect to register the TranslationEngineService in the DI container:
  *
@@ -15,7 +15,7 @@
  * All external consumers should import from this file, not from internal modules.
  */
 
-// ── Public service interface ──────────────────────────────────────────────────
+// -- Public service interface --------------------------------------------------
 export {
 	ITranslationEngineService,
 	BatchAlreadyRunningError,
@@ -25,7 +25,7 @@ export type {
 	ITranslationSchedulePreviewEntry,
 } from './service.js';
 
-// ── Translation options & results ─────────────────────────────────────────────
+// -- Translation options & results ---------------------------------------------
 export type {
 	ITranslationOptions,
 	ITranslationResult,
@@ -39,7 +39,7 @@ export {
 	CONFIDENCE_SCORE,
 } from './impl/translationTypes.js';
 
-// ── Batch progress events ─────────────────────────────────────────────────────
+// -- Batch progress events -----------------------------------------------------
 export type {
 	ITranslationBatchProgress,
 	ITranslationUnitStartedEvent,
@@ -50,23 +50,23 @@ export type {
 	IBatchTranslationOptions,
 } from './impl/batchTranslationEngine.js';
 
-// ── Metrics helpers ───────────────────────────────────────────────────────────
+// -- Metrics helpers -----------------------------------------------------------
 export {
 	formatConfidenceScore,
 	outcomeLabel,
 } from './impl/translationMetrics.js';
 
-// ── Target file path suggestion (used by UI to preview output locations) ──────
+// -- Target file path suggestion (used by UI to preview output locations) ------
 export { suggestTargetFilePath } from './impl/translationRecorder.js';
 
-// ── Language pair registry (used by project setup wizard) ────────────────────
+// -- Language pair registry (used by project setup wizard) --------------------
 export {
 	getLanguagePairProfile,
 	getTargetFileExtension,
 	listLanguagePairProfiles,
 } from './impl/languagePairRegistry.js';
 
-// ── Chunker (used by UI to show oversized unit warnings) ─────────────────────
+// -- Chunker (used by UI to show oversized unit warnings) ---------------------
 export type {
 	ISourceChunk,
 	IChunkSplitResult,
@@ -75,11 +75,11 @@ export type {
 } from './impl/translationChunker.js';
 export { splitIntoChunks, stitchChunks, buildChunkContextPrefix } from './impl/translationChunker.js';
 
-// ── Schedule preview utilities ────────────────────────────────────────────────
+// -- Schedule preview utilities ------------------------------------------------
 export { getRiskLevelsInPriorityOrder } from './impl/translationScheduler.js';
 
 
-// ── DI registration ───────────────────────────────────────────────────────────
+// -- DI registration -----------------------------------------------------------
 import { registerSingleton, InstantiationType } from '../../../../../../platform/instantiation/common/extensions.js';
 import { ITranslationEngineService as _ITranslationEngineService } from './service.js';
 import { TranslationEngineServiceImpl } from './TranslationEngineServiceImpl.js';

@@ -14,9 +14,9 @@
  * key = FNV-1a(sourceText) + ':' + schemaVersion
  *
  * This means:
- *   - Source text changes → cache miss → re-extract
- *   - Schema version bumps → cache miss → re-extract
- *   - Neither changes → cache hit → instant return
+ *   - Source text changes -> cache miss -> re-extract
+ *   - Schema version bumps -> cache miss -> re-extract
+ *   - Neither changes -> cache hit -> instant return
  *
  * ## Persistence
  *
@@ -34,13 +34,13 @@ import { IComplianceFingerprint } from '../../../../common/modernisationTypes.js
 import { FINGERPRINT_SCHEMA_VERSION } from './fingerprintVersioning.js';
 
 
-// ─── FNV-1a Hash ──────────────────────────────────────────────────────────────
+// --- FNV-1a Hash --------------------------------------------------------------
 
 /**
  * FNV-1a 32-bit hash.
  *
  * Used for cache keying: fast, low collision probability for typical source text
- * lengths. NOT cryptographic — do not use for security purposes.
+ * lengths. NOT cryptographic -- do not use for security purposes.
  *
  * Returns an 8-character lowercase hex string.
  */
@@ -66,7 +66,7 @@ export function buildCacheKey(sourceText: string, schemaVersion: number = FINGER
 }
 
 
-// ─── LRU Cache Implementation ─────────────────────────────────────────────────
+// --- LRU Cache Implementation -------------------------------------------------
 
 /**
  * A single cache entry with access metadata for LRU eviction.
@@ -99,7 +99,7 @@ export class FingerprintCache {
 		this._capacity = capacity;
 	}
 
-	// ── Read ──────────────────────────────────────────────────────────────────
+	// -- Read ------------------------------------------------------------------
 
 	/**
 	 * Get a fingerprint by cache key.
@@ -126,7 +126,7 @@ export class FingerprintCache {
 		return this.get(key);
 	}
 
-	// ── Write ─────────────────────────────────────────────────────────────────
+	// -- Write -----------------------------------------------------------------
 
 	/**
 	 * Store a fingerprint by cache key.
@@ -163,7 +163,7 @@ export class FingerprintCache {
 		return key;
 	}
 
-	// ── Invalidation ──────────────────────────────────────────────────────────
+	// -- Invalidation ----------------------------------------------------------
 
 	/**
 	 * Remove a specific cache entry by key.
@@ -213,7 +213,7 @@ export class FingerprintCache {
 		this._entries.clear();
 	}
 
-	// ── Statistics ────────────────────────────────────────────────────────────
+	// -- Statistics ------------------------------------------------------------
 
 	/** Number of entries currently in the cache */
 	get size(): number {
@@ -241,7 +241,7 @@ export class FingerprintCache {
 	}
 
 	/**
-	 * Cache hit rate as a percentage 0–100. Returns 0 if no accesses yet.
+	 * Cache hit rate as a percentage 0-100. Returns 0 if no accesses yet.
 	 */
 	get hitRate(): number {
 		const total = this._hitCount + this._missCount;
@@ -251,7 +251,7 @@ export class FingerprintCache {
 		return Math.round((this._hitCount / total) * 100);
 	}
 
-	// ── LRU Eviction ──────────────────────────────────────────────────────────
+	// -- LRU Eviction ----------------------------------------------------------
 
 	private _evictLRU(): void {
 		let oldestKey: string | undefined;

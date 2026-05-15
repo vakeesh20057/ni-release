@@ -12,17 +12,17 @@
  * critical parts of the context until it fits the budget.
  *
  * Truncation priority (drop last to first):
- *   1. relatedRules       — capped first (reduce count)
- *   2. relevantGlossaryTerms — capped second
- *   3. applicableNamingDecisions — trimmed to most specific
- *   4. applicableTypeMappings — trimmed to distinct source types
- *   5. resolvedSource     — hard-truncated with ellipsis marker (last resort)
+ *   1. relatedRules       -- capped first (reduce count)
+ *   2. relevantGlossaryTerms -- capped second
+ *   3. applicableNamingDecisions -- trimmed to most specific
+ *   4. applicableTypeMappings -- trimmed to distinct source types
+ *   5. resolvedSource     -- hard-truncated with ellipsis marker (last resort)
  */
 
 import { IResolvedUnitContext } from '../types.js';
 import { IBudgetedUnitContext } from '../types.js';
 
-// ─── Token estimation ─────────────────────────────────────────────────────────
+// --- Token estimation ---------------------------------------------------------
 
 /** Rough 4-chars-per-token heuristic. Good enough for budget planning. */
 export function estimateTokens(text: string): number {
@@ -35,31 +35,31 @@ function estimateContextTokens(ctx: IResolvedUnitContext): number {
 	// Unit metadata (~200 tokens)
 	total += 200;
 
-	// resolvedSource — largest contributor
+	// resolvedSource -- largest contributor
 	total += estimateTokens(ctx.resolvedSource);
 
-	// Type mappings — ~50 tokens each
+	// Type mappings -- ~50 tokens each
 	total += ctx.applicableTypeMappings.length * 50;
 
-	// Naming decisions — ~40 tokens each
+	// Naming decisions -- ~40 tokens each
 	total += ctx.applicableNamingDecisions.length * 40;
 
-	// Rule interpretations — ~80 tokens each
+	// Rule interpretations -- ~80 tokens each
 	total += ctx.ruleInterpretations.length * 80;
 
-	// Pattern overrides — ~40 tokens each
+	// Pattern overrides -- ~40 tokens each
 	total += ctx.patternOverrides.length * 40;
 
-	// Called interfaces — ~100 tokens each
+	// Called interfaces -- ~100 tokens each
 	total += ctx.calledInterfaces.length * 100;
 
-	// Related rules — ~60 tokens each
+	// Related rules -- ~60 tokens each
 	total += ctx.relatedRules.length * 60;
 
-	// Glossary terms — ~30 tokens each
+	// Glossary terms -- ~30 tokens each
 	total += ctx.relevantGlossaryTerms.length * 30;
 
-	// Context-injection annotations — variable, estimate based on content length
+	// Context-injection annotations -- variable, estimate based on content length
 	for (const ann of (ctx.contextAnnotations ?? [])) {
 		total += estimateTokens(ann.content);
 	}
@@ -67,7 +67,7 @@ function estimateContextTokens(ctx: IResolvedUnitContext): number {
 	return total;
 }
 
-// ─── Budget assembly ──────────────────────────────────────────────────────────
+// --- Budget assembly ----------------------------------------------------------
 
 const SOURCE_TRUNCATION_MARKER = '\n\n[... source truncated to fit context budget ...]\n';
 const CHARS_PER_TOKEN = 4;
@@ -93,12 +93,12 @@ export function assembleWithBudget(
 		};
 	}
 
-	// ── Step 1: Halve relatedRules ──────────────────────────────────────────
+	// -- Step 1: Halve relatedRules ------------------------------------------
 	while (ctx.relatedRules.length > 0 && !fits()) {
 		const before = ctx.relatedRules.length;
 		ctx = { ...ctx, relatedRules: ctx.relatedRules.slice(0, Math.max(0, Math.floor(ctx.relatedRules.length / 2))) };
 		if (ctx.relatedRules.length < before) {
-			truncationLog.push(`relatedRules: ${before} → ${ctx.relatedRules.length}`);
+			truncationLog.push(`relatedRules: ${before} -> ${ctx.relatedRules.length}`);
 		} else {
 			// Can't halve further; clear entirely
 			ctx = { ...ctx, relatedRules: [] };
@@ -109,11 +109,11 @@ export function assembleWithBudget(
 
 	if (fits()) { return _result(ctx, maxTokens, truncationLog); }
 
-	// ── Step 2: Cap glossary terms ─────────────────────────────────────────
+	// -- Step 2: Cap glossary terms -----------------------------------------
 	while (ctx.relevantGlossaryTerms.length > 5 && !fits()) {
 		const before = ctx.relevantGlossaryTerms.length;
 		ctx = { ...ctx, relevantGlossaryTerms: ctx.relevantGlossaryTerms.slice(0, Math.max(5, Math.floor(ctx.relevantGlossaryTerms.length / 2))) };
-		truncationLog.push(`glossaryTerms: ${before} → ${ctx.relevantGlossaryTerms.length}`);
+		truncationLog.push(`glossaryTerms: ${before} -> ${ctx.relevantGlossaryTerms.length}`);
 	}
 	if (!fits()) {
 		ctx = { ...ctx, relevantGlossaryTerms: [] };
@@ -122,7 +122,7 @@ export function assembleWithBudget(
 
 	if (fits()) { return _result(ctx, maxTokens, truncationLog); }
 
-	// ── Step 3: Trim called interfaces to top 3 ────────────────────────────
+	// -- Step 3: Trim called interfaces to top 3 ----------------------------
 	if (ctx.calledInterfaces.length > 3) {
 		ctx = { ...ctx, calledInterfaces: ctx.calledInterfaces.slice(0, 3) };
 		truncationLog.push(`calledInterfaces: trimmed to 3`);
@@ -130,7 +130,7 @@ export function assembleWithBudget(
 
 	if (fits()) { return _result(ctx, maxTokens, truncationLog); }
 
-	// ── Step 4: Trim naming decisions ──────────────────────────────────────
+	// -- Step 4: Trim naming decisions --------------------------------------
 	if (ctx.applicableNamingDecisions.length > 10) {
 		ctx = { ...ctx, applicableNamingDecisions: ctx.applicableNamingDecisions.slice(0, 10) };
 		truncationLog.push('namingDecisions: trimmed to 10');
@@ -138,7 +138,7 @@ export function assembleWithBudget(
 
 	if (fits()) { return _result(ctx, maxTokens, truncationLog); }
 
-	// ── Step 5: Trim type mappings — deduplicate source types ──────────────
+	// -- Step 5: Trim type mappings -- deduplicate source types --------------
 	const seenTypes = new Set<string>();
 	const deduped = ctx.applicableTypeMappings.filter(tm => {
 		if (seenTypes.has(tm.sourceType)) { return false; }
@@ -152,14 +152,14 @@ export function assembleWithBudget(
 
 	if (fits()) { return _result(ctx, maxTokens, truncationLog); }
 
-	// ── Step 6: Truncate resolvedSource (last resort) ──────────────────────
+	// -- Step 6: Truncate resolvedSource (last resort) ----------------------
 	const overhead = estimateContextTokens({ ...ctx, resolvedSource: '' });
 	const budgetForSource = maxTokens - overhead;
 	const maxChars = Math.max(0, budgetForSource * CHARS_PER_TOKEN - SOURCE_TRUNCATION_MARKER.length);
 
 	if (maxChars < ctx.resolvedSource.length) {
 		const truncated = ctx.resolvedSource.slice(0, maxChars) + SOURCE_TRUNCATION_MARKER;
-		truncationLog.push(`resolvedSource: ${ctx.resolvedSource.length} chars → ${truncated.length} chars`);
+		truncationLog.push(`resolvedSource: ${ctx.resolvedSource.length} chars -> ${truncated.length} chars`);
 		ctx = { ...ctx, resolvedSource: truncated };
 	}
 

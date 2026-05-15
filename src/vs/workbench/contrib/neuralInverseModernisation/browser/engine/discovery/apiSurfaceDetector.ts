@@ -32,7 +32,7 @@
 
 import { IAPIEndpoint, APIEndpointKind } from './discoveryTypes.js';
 
-// ─── Public API ───────────────────────────────────────────────────────────────
+// --- Public API ---------------------------------------------------------------
 
 /**
  * Detect all API endpoints in a unit's source content.
@@ -112,13 +112,13 @@ export function detectAPIEndpoints(
 }
 
 
-// ─── COBOL / CICS ─────────────────────────────────────────────────────────────
+// --- COBOL / CICS -------------------------------------------------------------
 
 function detectCICSEndpoints(lines: string[], unitId: string, out: IAPIEndpoint[]): void {
 	for (let i = 0; i < lines.length; i++) {
 		const line = lines[i];
 
-		// EXEC CICS RECEIVE MAP(mapname) — screen entry
+		// EXEC CICS RECEIVE MAP(mapname) -- screen entry
 		let m = /EXEC\s+CICS\s+RECEIVE\s+MAP\s*\(\s*['"]?([\w-]+)['"]?\s*\)/i.exec(line);
 		if (m) {
 			out.push({ unitId, kind: 'cics-transaction', operationName: m[1], lineNumber: i + 1 });
@@ -144,7 +144,7 @@ function detectCICSEndpoints(lines: string[], unitId: string, out: IAPIEndpoint[
 }
 
 
-// ─── JCL ──────────────────────────────────────────────────────────────────────
+// --- JCL ----------------------------------------------------------------------
 
 function detectJCLEntryPoints(lines: string[], unitId: string, out: IAPIEndpoint[]): void {
 	for (let i = 0; i < lines.length; i++) {
@@ -164,7 +164,7 @@ function detectJCLEntryPoints(lines: string[], unitId: string, out: IAPIEndpoint
 }
 
 
-// ─── Stored Procedures (PL/SQL, T-SQL, MySQL, PL/pgSQL) ───────────────────────
+// --- Stored Procedures (PL/SQL, T-SQL, MySQL, PL/pgSQL) -----------------------
 
 function detectStoredProcEndpoints(lines: string[], unitId: string, out: IAPIEndpoint[]): void {
 	for (let i = 0; i < lines.length; i++) {
@@ -177,7 +177,7 @@ function detectStoredProcEndpoints(lines: string[], unitId: string, out: IAPIEnd
 }
 
 
-// ─── gRPC / Protobuf ──────────────────────────────────────────────────────────
+// --- gRPC / Protobuf ----------------------------------------------------------
 
 function detectGrpcEndpoints(lines: string[], unitId: string, out: IAPIEndpoint[]): void {
 	let inService = false;
@@ -204,7 +204,7 @@ function detectGrpcEndpoints(lines: string[], unitId: string, out: IAPIEndpoint[
 }
 
 
-// ─── GraphQL SDL ──────────────────────────────────────────────────────────────
+// --- GraphQL SDL --------------------------------------------------------------
 
 function detectGraphQLEndpoints(lines: string[], unitId: string, out: IAPIEndpoint[]): void {
 	let currentType: 'Query' | 'Mutation' | 'Subscription' | null = null;
@@ -225,7 +225,7 @@ function detectGraphQLEndpoints(lines: string[], unitId: string, out: IAPIEndpoi
 }
 
 
-// ─── JVM (Java / Kotlin / Scala / Groovy) ────────────────────────────────────
+// --- JVM (Java / Kotlin / Scala / Groovy) ------------------------------------
 
 function detectJVMEndpoints(
 	content: string, lines: string[], unitId: string, lang: string, out: IAPIEndpoint[],
@@ -334,7 +334,7 @@ function detectJVMEndpoints(
 }
 
 
-// ─── .NET / C# ────────────────────────────────────────────────────────────────
+// --- .NET / C# ----------------------------------------------------------------
 
 function detectDotNetEndpoints(content: string, lines: string[], unitId: string, out: IAPIEndpoint[]): void {
 	const httpAttrs: Array<[RegExp, APIEndpointKind, 'GET'|'POST'|'PUT'|'PATCH'|'DELETE'|'ANY']> = [
@@ -388,7 +388,7 @@ function detectDotNetEndpoints(content: string, lines: string[], unitId: string,
 }
 
 
-// ─── Python ───────────────────────────────────────────────────────────────────
+// --- Python -------------------------------------------------------------------
 
 function detectPythonEndpoints(content: string, lines: string[], unitId: string, out: IAPIEndpoint[]): void {
 	// Flask / Flask-RESTful / Blueprint
@@ -445,7 +445,7 @@ function detectPythonEndpoints(content: string, lines: string[], unitId: string,
 }
 
 
-// ─── Node.js / TypeScript / JavaScript ────────────────────────────────────────
+// --- Node.js / TypeScript / JavaScript ----------------------------------------
 
 function detectNodeEndpoints(
 	content: string, lines: string[], unitId: string, lang: string, out: IAPIEndpoint[],
@@ -535,7 +535,7 @@ function detectNodeEndpoints(
 }
 
 
-// ─── Go ───────────────────────────────────────────────────────────────────────
+// --- Go -----------------------------------------------------------------------
 
 function detectGoEndpoints(content: string, lines: string[], unitId: string, out: IAPIEndpoint[]): void {
 	// Gin: r.GET("/path", handler)
@@ -573,7 +573,7 @@ function detectGoEndpoints(content: string, lines: string[], unitId: string, out
 }
 
 
-// ─── Rust ─────────────────────────────────────────────────────────────────────
+// --- Rust ---------------------------------------------------------------------
 
 function detectRustEndpoints(content: string, lines: string[], unitId: string, out: IAPIEndpoint[]): void {
 	// Actix-web attributes: #[get("/path")], #[post("/path")], etc.
@@ -617,7 +617,7 @@ function detectRustEndpoints(content: string, lines: string[], unitId: string, o
 }
 
 
-// ─── Ruby ─────────────────────────────────────────────────────────────────────
+// --- Ruby ---------------------------------------------------------------------
 
 function detectRubyEndpoints(content: string, lines: string[], unitId: string, out: IAPIEndpoint[]): void {
 	// Rails routes.rb
@@ -662,7 +662,7 @@ function detectRubyEndpoints(content: string, lines: string[], unitId: string, o
 }
 
 
-// ─── PHP ──────────────────────────────────────────────────────────────────────
+// --- PHP ----------------------------------------------------------------------
 
 function detectPhpEndpoints(content: string, lines: string[], unitId: string, out: IAPIEndpoint[]): void {
 	// Laravel Route::get/post/put/patch/delete
@@ -706,7 +706,7 @@ function detectPhpEndpoints(content: string, lines: string[], unitId: string, ou
 }
 
 
-// ─── Elixir / Phoenix ─────────────────────────────────────────────────────────
+// --- Elixir / Phoenix ---------------------------------------------------------
 
 function detectElixirEndpoints(content: string, lines: string[], unitId: string, out: IAPIEndpoint[]): void {
 	// Phoenix router: get "/path", Controller, :action
@@ -737,7 +737,7 @@ function detectElixirEndpoints(content: string, lines: string[], unitId: string,
 }
 
 
-// ─── Swift / Vapor ────────────────────────────────────────────────────────────
+// --- Swift / Vapor ------------------------------------------------------------
 
 function detectSwiftEndpoints(content: string, lines: string[], unitId: string, out: IAPIEndpoint[]): void {
 	// Vapor: app.get("path") { ... }
@@ -758,7 +758,7 @@ function detectSwiftEndpoints(content: string, lines: string[], unitId: string, 
 }
 
 
-// ─── Dart / Flutter ───────────────────────────────────────────────────────────
+// --- Dart / Flutter -----------------------------------------------------------
 
 function detectDartEndpoints(content: string, lines: string[], unitId: string, out: IAPIEndpoint[]): void {
 	// Shelf / Dart Frog
@@ -779,7 +779,7 @@ function detectDartEndpoints(content: string, lines: string[], unitId: string, o
 }
 
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
+// --- Helpers ------------------------------------------------------------------
 
 /** Return 1-based line number of a character offset in content. */
 function lineOf(content: string, index: number): number {

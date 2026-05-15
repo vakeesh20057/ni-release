@@ -13,14 +13,14 @@ import {
 } from '../agentToolTypes.js';
 
 
-// ─── Tool implementations ─────────────────────────────────────────────────────
+// --- Tool implementations -----------------------------------------------------
 
 export function checkComplianceGate(
 	input: ICheckComplianceGateInput,
 	kb: IKnowledgeBaseService,
 ): IAgentToolCallResult<IComplianceGateResult> {
 	if (!kb.isActive) {
-		return { success: false, error: 'No active knowledge base — open the Modernisation panel (Cmd+Alt+M) to activate the session, then retry.' };
+		return { success: false, error: 'No active knowledge base -- open the Modernisation panel (Cmd+Alt+M) to activate the session, then retry.' };
 	}
 
 	const unit = kb.getUnit(input.unitId);
@@ -30,13 +30,13 @@ export function checkComplianceGate(
 
 	const result = kb.checkComplianceGate(input.unitId);
 
-	const statusEmoji = result.overallStatus === 'pass' ? '✔' :
-		result.overallStatus === 'partial' ? '⚠' : '✖';
+	const statusEmoji = result.overallStatus === 'pass' ? 'v' :
+		result.overallStatus === 'partial' ? '[!]' : 'x';
 
 	return {
 		success: true,
 		data: result,
-		summary: `${statusEmoji} Compliance gate for "${unit.name}": ${result.overallStatus.toUpperCase()} — ` +
+		summary: `${statusEmoji} Compliance gate for "${unit.name}": ${result.overallStatus.toUpperCase()} -- ` +
 			`${result.passedCount} passed, ${result.failedCount} failed, ${result.pendingCount} pending, ${result.waivedCount} waived`,
 	};
 }
@@ -47,7 +47,7 @@ export function recordComplianceApproval(
 	kb: IKnowledgeBaseService,
 ): IAgentToolCallResult<{ unitId: string; requirementId: string; approver: string }> {
 	if (!kb.isActive) {
-		return { success: false, error: 'No active knowledge base — open the Modernisation panel (Cmd+Alt+M) to activate the session, then retry.' };
+		return { success: false, error: 'No active knowledge base -- open the Modernisation panel (Cmd+Alt+M) to activate the session, then retry.' };
 	}
 
 	const unit = kb.getUnit(input.unitId);
@@ -70,7 +70,7 @@ export function waiveComplianceRequirement(
 	kb: IKnowledgeBaseService,
 ): IAgentToolCallResult<{ unitId: string; requirementId: string; waivedBy: string }> {
 	if (!kb.isActive) {
-		return { success: false, error: 'No active knowledge base — open the Modernisation panel (Cmd+Alt+M) to activate the session, then retry.' };
+		return { success: false, error: 'No active knowledge base -- open the Modernisation panel (Cmd+Alt+M) to activate the session, then retry.' };
 	}
 
 	const unit = kb.getUnit(input.unitId);
@@ -95,7 +95,7 @@ export function getComplianceFailures(
 	kb: IKnowledgeBaseService,
 ): IAgentToolCallResult<IComplianceFailureSummary[]> {
 	if (!kb.isActive) {
-		return { success: false, error: 'No active knowledge base — open the Modernisation panel (Cmd+Alt+M) to activate the session, then retry.' };
+		return { success: false, error: 'No active knowledge base -- open the Modernisation panel (Cmd+Alt+M) to activate the session, then retry.' };
 	}
 
 	const failures = kb.getComplianceGateFailures();
@@ -121,6 +121,6 @@ export function getComplianceFailures(
 	return {
 		success: true,
 		data: summaries,
-		summary: `${summaries.length} unit(s) failing compliance gate — ${failCount} FAIL, ${partialCount} PARTIAL`,
+		summary: `${summaries.length} unit(s) failing compliance gate -- ${failCount} FAIL, ${partialCount} PARTIAL`,
 	};
 }

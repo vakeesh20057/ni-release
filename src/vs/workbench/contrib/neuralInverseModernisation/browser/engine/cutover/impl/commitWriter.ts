@@ -35,7 +35,7 @@ import { IKnowledgeBaseService } from '../../../knowledgeBase/service.js';
 import { IKnowledgeUnit } from '../../../../common/knowledgeBaseTypes.js';
 
 
-// ─── Types ────────────────────────────────────────────────────────────────────
+// --- Types --------------------------------------------------------------------
 
 export interface ICommitJobResult {
 	unitId:    string;
@@ -73,7 +73,7 @@ export const DEFAULT_COMMIT_OPTIONS: Required<ICommitBatchOptions> = {
 };
 
 
-// ─── Eligibility helper ───────────────────────────────────────────────────────
+// --- Eligibility helper -------------------------------------------------------
 
 function _isEligible(unit: IKnowledgeUnit, eligibleStatuses: Set<string>): boolean {
 	if (!unit.targetText || !unit.targetFile) { return false; }
@@ -91,7 +91,7 @@ function _isEligible(unit: IKnowledgeUnit, eligibleStatuses: Set<string>): boole
 }
 
 
-// ─── Core writer ─────────────────────────────────────────────────────────────
+// --- Core writer -------------------------------------------------------------
 
 /**
  * Write all eligible translated units to their target files.
@@ -125,20 +125,20 @@ export async function writeCommittedFiles(
 		const targetFile = unit.targetFile!;
 		const targetText = unit.targetText!;
 
-		// ── Optional skip-existing check ─────────────────────────────────────
+		// -- Optional skip-existing check -------------------------------------
 		if (skipExisting) {
 			try {
 				await fileService.stat(URI.file(targetFile));
-				// File exists — skip
+				// File exists -- skip
 				jobs.push({ unitId: unit.id, unitName: unit.name, targetFile, ok: true, errorMsg: 'skipped (file exists)' });
 				skipped++;
 				continue;
 			} catch {
-				// File does not exist — proceed
+				// File does not exist -- proceed
 			}
 		}
 
-		// ── Write ─────────────────────────────────────────────────────────────
+		// -- Write -------------------------------------------------------------
 		try {
 			const content = VSBuffer.fromString(targetText);
 			await fileService.writeFile(URI.file(targetFile), content);

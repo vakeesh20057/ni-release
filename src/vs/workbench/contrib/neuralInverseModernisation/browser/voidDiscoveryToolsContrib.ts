@@ -16,7 +16,7 @@
  *   Always active (any codebase):
  *     - Discovery tools        (scan, explore, detect languages, extract metadata)
  *     - Modernisation tools    (planning, roadmap, session info)
- *     - KB tools               (all 67 — units, decisions, glossary, progress, etc.)
+ *     - KB tools               (all 67 -- units, decisions, glossary, progress, etc.)
  *     - Autonomy default tools (status, preview, escalations, resolve, run-single, history)
  *
  *   Session-active only (when a modernisation session with source+target is open):
@@ -39,7 +39,7 @@ import { buildModernisationPowerTools } from '../../powerMode/browser/tools/mode
 import { IPowerTool, IToolContext } from '../../powerMode/common/powerModeTypes.js';
 
 
-// ─── IPowerTool → IVoidInternalTool adapter ───────────────────────────────────
+// --- IPowerTool -> IVoidInternalTool adapter -----------------------------------
 
 const _dummyCtx: IToolContext = {
 	sessionId: 'void-internal',
@@ -66,7 +66,7 @@ function _adaptPowerTool(tool: IPowerTool): IVoidInternalTool {
 }
 
 
-// ─── IAgentToolDefinition → IVoidInternalTool adapter ────────────────────────
+// --- IAgentToolDefinition -> IVoidInternalTool adapter ------------------------
 
 function _adaptAgentTool(def: IAgentToolDefinition, agentTools: IModernisationAgentToolService): IVoidInternalTool {
 	const props = (def.inputSchema?.properties ?? {}) as Record<string, { description?: string }>;
@@ -85,13 +85,13 @@ function _adaptAgentTool(def: IAgentToolDefinition, agentTools: IModernisationAg
 }
 
 
-// ─── Session-only tool names ──────────────────────────────────────────────────
+// --- Session-only tool names --------------------------------------------------
 
 // Track KB + autonomy tool names for session-based registration/unregistration
 let KB_AND_AUTONOMY_TOOL_NAMES: string[] = [];
 
 
-// ─── Contribution ─────────────────────────────────────────────────────────────
+// --- Contribution -------------------------------------------------------------
 
 export class VoidDiscoveryToolsContrib extends Disposable implements IWorkbenchContribution {
 
@@ -106,9 +106,9 @@ export class VoidDiscoveryToolsContrib extends Disposable implements IWorkbenchC
 	) {
 		super();
 
-		// ── Always-on tools ─────────────────────────────────────────────────
+		// -- Always-on tools -------------------------------------------------
 
-		// Discovery tools (useful for any codebase — scan, explore, detect)
+		// Discovery tools (useful for any codebase -- scan, explore, detect)
 		_internalTools.registerMany(buildDiscoveryTools(discoveryService).map(_adaptPowerTool));
 
 		// Migration planning tools (roadmap, session context)
@@ -116,7 +116,7 @@ export class VoidDiscoveryToolsContrib extends Disposable implements IWorkbenchC
 			buildModernisationPowerTools(discoveryService, plannerService, sessionService).map(_adaptPowerTool),
 		);
 
-		// ── Session-reactive KB + autonomy tools ─────────────────────────────
+		// -- Session-reactive KB + autonomy tools -----------------------------
 
 		// Store tool names for unregistration
 		const kbAndAutonomyTools = _agentTools.getContextualToolDefinitions(true);

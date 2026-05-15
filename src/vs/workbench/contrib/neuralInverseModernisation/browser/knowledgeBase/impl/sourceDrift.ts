@@ -9,7 +9,7 @@
  * After an initial scan we record a baseline (content hash + mtime + size) for
  * every source file. When a translation agent later requests context for a unit,
  * we compare the current disk state to the baseline. If drift is detected we
- * emit an ISourceDriftAlert — the unit status is moved back to 'pending' and the
+ * emit an ISourceDriftAlert -- the unit status is moved back to 'pending' and the
  * human reviewer is notified via a pending decision.
  */
 
@@ -20,13 +20,13 @@ import {
 } from '../../../common/knowledgeBaseTypes.js';
 import { makeId } from './helpers.js';
 
-// ─── Store ────────────────────────────────────────────────────────────────────
+// --- Store --------------------------------------------------------------------
 
 export interface IDriftStore {
 	/** Baseline file versions recorded at scan time */
-	sourceVersions: Map<string, ISourceFileVersion>; // filePath → version
+	sourceVersions: Map<string, ISourceFileVersion>; // filePath -> version
 	/** Active drift alerts (keyed by alertId) */
-	driftAlerts:    Map<string, ISourceDriftAlert>;  // alertId → alert
+	driftAlerts:    Map<string, ISourceDriftAlert>;  // alertId -> alert
 }
 
 export function createDriftStore(): IDriftStore {
@@ -36,7 +36,7 @@ export function createDriftStore(): IDriftStore {
 	};
 }
 
-// ─── Record baseline ──────────────────────────────────────────────────────────
+// --- Record baseline ----------------------------------------------------------
 
 export function recordSourceVersion(
 	store: IDriftStore,
@@ -62,7 +62,7 @@ export function getSourceVersion(
 	return store.sourceVersions.get(filePath);
 }
 
-// ─── Drift check ──────────────────────────────────────────────────────────────
+// --- Drift check --------------------------------------------------------------
 
 /**
  * Compare the current disk state of filePath against the recorded baseline.
@@ -76,14 +76,14 @@ export function checkSourceDrift(
 	currentMtime: number,
 ): ISourceDriftAlert | undefined {
 	const baseline = store.sourceVersions.get(filePath);
-	if (!baseline) { return undefined; } // No baseline — can't detect drift
+	if (!baseline) { return undefined; } // No baseline -- can't detect drift
 
 	if (baseline.contentHash === currentHash) { return undefined; } // Unchanged
 
-	// Drift detected — check if we already have an active alert for this file
+	// Drift detected -- check if we already have an active alert for this file
 	for (const alert of store.driftAlerts.values()) {
 		if (alert.filePath === filePath && !alert.acknowledgedAt) {
-			// Existing unacknowledged alert — update with latest hash
+			// Existing unacknowledged alert -- update with latest hash
 			const updated: ISourceDriftAlert = {
 				...alert,
 				currentHash,
@@ -126,7 +126,7 @@ export function checkAllSourceDrift(
 	return alerts;
 }
 
-// ─── Acknowledgement ──────────────────────────────────────────────────────────
+// --- Acknowledgement ----------------------------------------------------------
 
 export function acknowledgeDriftAlert(
 	store: IDriftStore,
@@ -152,7 +152,7 @@ export function acknowledgeDriftAlert(
 	}
 }
 
-// ─── Queries ──────────────────────────────────────────────────────────────────
+// --- Queries ------------------------------------------------------------------
 
 export function getDriftAlerts(
 	store: IDriftStore,

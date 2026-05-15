@@ -23,7 +23,7 @@ import {
 	emptyExtensions,
 } from '../../../common/knowledgeBaseTypes.js';
 
-// ─── Constants ────────────────────────────────────────────────────────────────
+// --- Constants ----------------------------------------------------------------
 
 export const ALL_STATUSES: UnitStatus[] = [
 	'pending', 'resolving', 'ready', 'translating', 'review', 'flagged',
@@ -51,7 +51,7 @@ export const PRIORITY_ORDER: Record<'low' | 'medium' | 'high' | 'blocking', numb
 };
 
 
-// ─── Empty constructors ───────────────────────────────────────────────────────
+// --- Empty constructors -------------------------------------------------------
 
 export function emptyDecisionLog(): IDecisionLog {
 	return {
@@ -98,7 +98,7 @@ export function newKnowledgeBase(sessionId: string): IModernisationKnowledgeBase
 }
 
 
-// ─── Serialisation ────────────────────────────────────────────────────────────
+// --- Serialisation ------------------------------------------------------------
 
 export function serialiseKB(kb: IModernisationKnowledgeBase): string {
 	const json: IModernisationKnowledgeBaseJSON = {
@@ -115,17 +115,17 @@ export function deserialiseKB(raw: string): IModernisationKnowledgeBase {
 		...json,
 		units: new Map(Object.entries(json.units)),
 		files: new Map(Object.entries(json.files)),
-		// Migration guard: older persisted KBs won't have ext — initialise to empty
+		// Migration guard: older persisted KBs won't have ext -- initialise to empty
 		ext: json.ext ?? emptyExtensions(),
 	};
 }
 
 
-// ─── Hashing ──────────────────────────────────────────────────────────────────
+// --- Hashing ------------------------------------------------------------------
 
 /**
  * FNV-1a 32-bit hash.
- * Fast, deterministic, good distribution — used for tamper-evident audit chaining.
+ * Fast, deterministic, good distribution -- used for tamper-evident audit chaining.
  */
 export function fnv1a32(s: string): string {
 	let h = 0x811c9dc5;
@@ -143,7 +143,7 @@ export function hashAuditEntry(entry: IKnowledgeAuditEntry): string {
 }
 
 
-// ─── ID generation ────────────────────────────────────────────────────────────
+// --- ID generation ------------------------------------------------------------
 
 let _seq = 0;
 
@@ -152,7 +152,7 @@ export function makeId(prefix: string): string {
 }
 
 
-// ─── Audit entry factory ──────────────────────────────────────────────────────
+// --- Audit entry factory ------------------------------------------------------
 
 export function makeAuditEntry(
 	type: KnowledgeAuditEventType,
@@ -174,7 +174,7 @@ export function makeAuditEntry(
 }
 
 
-// ─── Index map utilities ──────────────────────────────────────────────────────
+// --- Index map utilities ------------------------------------------------------
 
 export function addToIndex<K>(map: Map<K, Set<string>>, key: K, id: string): void {
 	if (!map.has(key)) { map.set(key, new Set()); }

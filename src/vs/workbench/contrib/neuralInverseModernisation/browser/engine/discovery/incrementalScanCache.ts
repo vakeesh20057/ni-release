@@ -34,7 +34,7 @@ import { URI } from '../../../../../../base/common/uri.js';
 import { IFileService } from '../../../../../../platform/files/common/files.js';
 import { IFileProcessResult } from './discoveryTypes.js';
 
-// ─── Constants ────────────────────────────────────────────────────────────────
+// --- Constants ----------------------------------------------------------------
 
 const CACHE_DIR        = '.inverse';
 const CACHE_FILE       = 'scan-cache.json';
@@ -43,7 +43,7 @@ const MAX_CACHE_ENTRIES = 5_000;
 const CACHE_VERSION    = 2;
 
 
-// ─── Types ────────────────────────────────────────────────────────────────────
+// --- Types --------------------------------------------------------------------
 
 interface ICacheEntry {
 	contentHash: string;
@@ -58,7 +58,7 @@ interface ICacheFile {
 }
 
 
-// ─── Public API ───────────────────────────────────────────────────────────────
+// --- Public API ---------------------------------------------------------------
 
 export class IncrementalScanCache {
 	private _data: ICacheFile = { version: CACHE_VERSION, entries: {} };
@@ -77,14 +77,14 @@ export class IncrementalScanCache {
 			const buf = await this._fileService.readFile(cacheUri);
 			const raw = JSON.parse(buf.value.toString()) as ICacheFile;
 			if (raw.version !== CACHE_VERSION) {
-				// Version mismatch — discard and start fresh
+				// Version mismatch -- discard and start fresh
 				this._data = { version: CACHE_VERSION, entries: {} };
 			} else {
 				this._data = raw;
 				this._pruneExpired();
 			}
 		} catch {
-			// Cache does not exist yet or parse error — start fresh
+			// Cache does not exist yet or parse error -- start fresh
 			this._data = { version: CACHE_VERSION, entries: {} };
 		}
 		this._loaded = true;
@@ -143,7 +143,7 @@ export class IncrementalScanCache {
 			} as any);
 			this._dirty = false;
 		} catch {
-			// Non-fatal — cache write failures should not interrupt scanning
+			// Non-fatal -- cache write failures should not interrupt scanning
 		}
 	}
 
@@ -168,7 +168,7 @@ export class IncrementalScanCache {
 	get size(): number { return Object.keys(this._data.entries).length; }
 
 
-	// ─── Private ────────────────────────────────────────────────────────────
+	// --- Private ------------------------------------------------------------
 
 	private _cacheUri(): URI {
 		return URI.joinPath(this._projectRoot, CACHE_DIR, CACHE_FILE);
@@ -209,7 +209,7 @@ export class IncrementalScanCache {
 }
 
 
-// ─── Content Hashing ──────────────────────────────────────────────────────────
+// --- Content Hashing ----------------------------------------------------------
 
 /**
  * Compute a fast 32-bit FNV-1a hash of a string.
@@ -217,7 +217,7 @@ export class IncrementalScanCache {
  * This is not cryptographic but is sufficient for cache invalidation.
  * Using FNV-1a instead of SHA-256 because:
  *  - No async SubtleCrypto required
- *  - 10-50× faster for typical file sizes
+ *  - 10-50x faster for typical file sizes
  *  - Collision probability is negligible for content-change detection
  */
 export function fnv1aHash(content: string): string {

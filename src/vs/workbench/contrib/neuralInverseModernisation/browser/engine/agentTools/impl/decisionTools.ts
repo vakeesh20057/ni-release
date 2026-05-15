@@ -21,14 +21,14 @@ import {
 import { IDecisionConflict, IDecisionImpactResult } from '../../../knowledgeBase/service.js';
 
 
-// ─── Tool implementations ─────────────────────────────────────────────────────
+// --- Tool implementations -----------------------------------------------------
 
 export function getPendingDecisions(
 	input: IGetPendingDecisionsInput | undefined,
 	kb: IKnowledgeBaseService,
 ): IAgentToolCallResult<IPendingDecision[]> {
 	if (!kb.isActive) {
-		return { success: false, error: 'No active knowledge base — open the Modernisation panel (Cmd+Alt+M) to activate the session, then retry.' };
+		return { success: false, error: 'No active knowledge base -- open the Modernisation panel (Cmd+Alt+M) to activate the session, then retry.' };
 	}
 
 	let decisions: IPendingDecision[];
@@ -52,7 +52,7 @@ export function getPendingDecisions(
 	return {
 		success: true,
 		data: decisions,
-		summary: `${decisions.length} pending decision(s) — ${blocking} blocking, ${high} high`,
+		summary: `${decisions.length} pending decision(s) -- ${blocking} blocking, ${high} high`,
 	};
 }
 
@@ -62,7 +62,7 @@ export function getDecision(
 	kb: IKnowledgeBaseService,
 ): IAgentToolCallResult<IPendingDecision | null> {
 	if (!kb.isActive) {
-		return { success: false, error: 'No active knowledge base — open the Modernisation panel (Cmd+Alt+M) to activate the session, then retry.' };
+		return { success: false, error: 'No active knowledge base -- open the Modernisation panel (Cmd+Alt+M) to activate the session, then retry.' };
 	}
 
 	const decision = kb.getPendingDecision(input.decisionId);
@@ -82,7 +82,7 @@ export function answerDecision(
 	kb: IKnowledgeBaseService,
 ): IAgentToolCallResult<IAnswerDecisionResult> {
 	if (!kb.isActive) {
-		return { success: false, error: 'No active knowledge base — open the Modernisation panel (Cmd+Alt+M) to activate the session, then retry.' };
+		return { success: false, error: 'No active knowledge base -- open the Modernisation panel (Cmd+Alt+M) to activate the session, then retry.' };
 	}
 
 	const decision = kb.getPendingDecision(input.decisionId);
@@ -174,7 +174,7 @@ export function answerDecision(
 		}
 
 		case 'approval':
-			// Approval decisions are answered by annotation — the human's answer is the record
+			// Approval decisions are answered by annotation -- the human's answer is the record
 			if (input.answerNotes) {
 				kb.addAnnotation(
 					decision.unitId,
@@ -219,7 +219,7 @@ export function getDecisionLog(
 	kb: IKnowledgeBaseService,
 ): IAgentToolCallResult<IDecisionLog> {
 	if (!kb.isActive) {
-		return { success: false, error: 'No active knowledge base — open the Modernisation panel (Cmd+Alt+M) to activate the session, then retry.' };
+		return { success: false, error: 'No active knowledge base -- open the Modernisation panel (Cmd+Alt+M) to activate the session, then retry.' };
 	}
 
 	const log = input?.unitId
@@ -290,7 +290,7 @@ export function detectConflicts(
 	kb: IKnowledgeBaseService,
 ): IAgentToolCallResult<IDecisionConflict[]> {
 	if (!kb.isActive) {
-		return { success: false, error: 'No active knowledge base — open the Modernisation panel (Cmd+Alt+M) to activate the session, then retry.' };
+		return { success: false, error: 'No active knowledge base -- open the Modernisation panel (Cmd+Alt+M) to activate the session, then retry.' };
 	}
 
 	const conflicts = kb.detectDecisionConflicts();
@@ -309,7 +309,7 @@ export function getDecisionImpact(
 	kb: IKnowledgeBaseService,
 ): IAgentToolCallResult<IDecisionImpactResult> {
 	if (!kb.isActive) {
-		return { success: false, error: 'No active knowledge base — open the Modernisation panel (Cmd+Alt+M) to activate the session, then retry.' };
+		return { success: false, error: 'No active knowledge base -- open the Modernisation panel (Cmd+Alt+M) to activate the session, then retry.' };
 	}
 
 	const impact = kb.getDecisionImpact(
@@ -325,14 +325,14 @@ export function getDecisionImpact(
 }
 
 
-// ── Decision record tools ──────────────────────────────────────────────────────
+// -- Decision record tools ------------------------------------------------------
 
 export function recordTypeMapping(
 	input: import('../agentToolTypes.js').IRecordTypeMappingInput,
 	kb: IKnowledgeBaseService,
 ): IAgentToolCallResult<{ id: string }> {
 	if (!kb.isActive) {
-		return { success: false, error: 'No active knowledge base — open the Modernisation panel (Cmd+Alt+M) to activate the session, then retry.' };
+		return { success: false, error: 'No active knowledge base -- open the Modernisation panel (Cmd+Alt+M) to activate the session, then retry.' };
 	}
 
 	const id  = generateId('tm');
@@ -351,7 +351,7 @@ export function recordTypeMapping(
 	return {
 		success: true,
 		data: { id },
-		summary: `Type mapping recorded: ${input.sourceType} → ${input.targetType}`,
+		summary: `Type mapping recorded: ${input.sourceType} -> ${input.targetType}`,
 	};
 }
 
@@ -361,7 +361,7 @@ export function recordNamingDecision(
 	kb: IKnowledgeBaseService,
 ): IAgentToolCallResult<{ id: string }> {
 	if (!kb.isActive) {
-		return { success: false, error: 'No active knowledge base — open the Modernisation panel (Cmd+Alt+M) to activate the session, then retry.' };
+		return { success: false, error: 'No active knowledge base -- open the Modernisation panel (Cmd+Alt+M) to activate the session, then retry.' };
 	}
 
 	const id  = generateId('nd');
@@ -378,7 +378,7 @@ export function recordNamingDecision(
 	return {
 		success: true,
 		data: { id },
-		summary: `Naming decision recorded: ${input.sourceName} → ${input.targetName}`,
+		summary: `Naming decision recorded: ${input.sourceName} -> ${input.targetName}`,
 	};
 }
 
@@ -388,7 +388,7 @@ export function recordRuleInterpretation(
 	kb: IKnowledgeBaseService,
 ): IAgentToolCallResult<{ id: string }> {
 	if (!kb.isActive) {
-		return { success: false, error: 'No active knowledge base — open the Modernisation panel (Cmd+Alt+M) to activate the session, then retry.' };
+		return { success: false, error: 'No active knowledge base -- open the Modernisation panel (Cmd+Alt+M) to activate the session, then retry.' };
 	}
 
 	const id  = generateId('ri');
@@ -412,14 +412,14 @@ export function recordRuleInterpretation(
 }
 
 
-// ── Conflict resolution ────────────────────────────────────────────────────────
+// -- Conflict resolution --------------------------------------------------------
 
 export function resolveConflict(
 	input: import('../agentToolTypes.js').IResolveConflictInput,
 	kb: IKnowledgeBaseService,
 ): IAgentToolCallResult<{ conflictId: string; resolved: boolean }> {
 	if (!kb.isActive) {
-		return { success: false, error: 'No active knowledge base — open the Modernisation panel (Cmd+Alt+M) to activate the session, then retry.' };
+		return { success: false, error: 'No active knowledge base -- open the Modernisation panel (Cmd+Alt+M) to activate the session, then retry.' };
 	}
 
 	const conflict = kb.getDecisionConflict(input.conflictId);
@@ -432,19 +432,19 @@ export function resolveConflict(
 	return {
 		success: true,
 		data:    { conflictId: input.conflictId, resolved: true },
-		summary: `Conflict "${input.conflictId}" resolved — winning decision: ${input.winningDecisionId}`,
+		summary: `Conflict "${input.conflictId}" resolved -- winning decision: ${input.winningDecisionId}`,
 	};
 }
 
 
-// ── Decision removal ───────────────────────────────────────────────────────────
+// -- Decision removal -----------------------------------------------------------
 
 export function removeDecision(
 	input: import('../agentToolTypes.js').IRemoveDecisionInput,
 	kb: IKnowledgeBaseService,
 ): IAgentToolCallResult<{ removed: boolean }> {
 	if (!kb.isActive) {
-		return { success: false, error: 'No active knowledge base — open the Modernisation panel (Cmd+Alt+M) to activate the session, then retry.' };
+		return { success: false, error: 'No active knowledge base -- open the Modernisation panel (Cmd+Alt+M) to activate the session, then retry.' };
 	}
 
 	switch (input.decisionType) {

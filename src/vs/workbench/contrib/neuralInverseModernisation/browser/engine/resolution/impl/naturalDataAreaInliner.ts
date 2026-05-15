@@ -10,15 +10,15 @@
  *
  * ## NATURAL Dependency Mechanisms
  *
- * 1. `USING DA-CUSTOMER` — references a Global Data Area (GDA)
+ * 1. `USING DA-CUSTOMER` -- references a Global Data Area (GDA)
  *    All variables in the GDA are available to the program, but the AI
  *    can't see their field definitions without the GDA source.
  *
- * 2. `CALLNAT 'SUBPROGRAM' parameter-list` — calls a subprogram
+ * 2. `CALLNAT 'SUBPROGRAM' parameter-list` -- calls a subprogram
  *    The AI doesn't know the interface of the subprogram.
  *
- * 3. `INCLUDE source-member` — includes a copycode member
- *    Similar to COBOL COPY — needs to be expanded inline.
+ * 3. `INCLUDE source-member` -- includes a copycode member
+ *    Similar to COBOL COPY -- needs to be expanded inline.
  *
  * ## Strategy
  *
@@ -35,12 +35,12 @@ import { ResolutionFileCache, DependencyNameResolutionCache } from './resolution
 import { IKnowledgeBaseService } from '../../../knowledgeBase/service.js';
 
 
-// ─── Natural Source Extensions ────────────────────────────────────────────────
+// --- Natural Source Extensions ------------------------------------------------
 
 const NATURAL_EXTENSIONS = ['.nsp', '.nsa', '.nsg', '.nsl', '.nsn', '.nat', ''];
 
 
-// ─── Public API ───────────────────────────────────────────────────────────────
+// --- Public API ---------------------------------------------------------------
 
 export interface INaturalInlineOptions {
 	insertMarkers: boolean;
@@ -93,7 +93,7 @@ export async function resolveNaturalDependencies(
 }
 
 
-// ─── USING DA Resolver ────────────────────────────────────────────────────────
+// --- USING DA Resolver --------------------------------------------------------
 
 function resolveDataAreaUsing(
 	text: string,
@@ -133,7 +133,7 @@ function resolveDataAreaUsing(
 			}
 			resolvedRefs.push({ ref: depRef, resolved: true, inlinedContent: '', resolvedUnitId: unit.id });
 		} else {
-			contextLines.push(`/* DATA AREA: ${areaName} — NOT IN KNOWLEDGE BASE */`);
+			contextLines.push(`/* DATA AREA: ${areaName} -- NOT IN KNOWLEDGE BASE */`);
 			unresolvedRefs.push({ ref: depRef, resolved: false, inlinedContent: '', failureReason: `Data area ${areaName} not in KB` });
 		}
 	}
@@ -142,7 +142,7 @@ function resolveDataAreaUsing(
 		return text;
 	}
 
-	return ['/* ── NATURAL DATA AREA CONTEXT ─────────────────────────────────────', ...contextLines, '   ─────────────────────────────────────────────────────────────── */', ''].join('\n') + text;
+	return ['/* -- NATURAL DATA AREA CONTEXT -------------------------------------', ...contextLines, '   --------------------------------------------------------------- */', ''].join('\n') + text;
 }
 
 function extractNaturalDataAreaFields(sourceText: string, maxFields: number): string[] {
@@ -160,7 +160,7 @@ function extractNaturalDataAreaFields(sourceText: string, maxFields: number): st
 }
 
 
-// ─── INCLUDE Expansion ────────────────────────────────────────────────────────
+// --- INCLUDE Expansion --------------------------------------------------------
 
 async function expandNaturalIncludes(
 	text: string,
@@ -274,7 +274,7 @@ async function resolveNaturalMember(
 }
 
 
-// ─── CALLNAT Resolver ────────────────────────────────────────────────────────
+// --- CALLNAT Resolver --------------------------------------------------------
 
 function resolveCallnat(
 	text: string,
@@ -303,13 +303,13 @@ function resolveCallnat(
 		};
 
 		if (unit) {
-			contextLines.push(`/* CALLNAT ${subpgm} → KB Status: ${unit.status.toUpperCase()} */`);
+			contextLines.push(`/* CALLNAT ${subpgm} -> KB Status: ${unit.status.toUpperCase()} */`);
 			if (unit.businessRules[0]) {
 				contextLines.push(`/* Purpose: ${unit.businessRules[0].description} */`);
 			}
 			resolvedRefs.push({ ref: depRef, resolved: true, inlinedContent: '', resolvedUnitId: unit.id });
 		} else {
-			contextLines.push(`/* CALLNAT ${subpgm} → NOT IN KNOWLEDGE BASE */`);
+			contextLines.push(`/* CALLNAT ${subpgm} -> NOT IN KNOWLEDGE BASE */`);
 			unresolvedRefs.push({ ref: depRef, resolved: false, inlinedContent: '', failureReason: `${subpgm} not in KB` });
 		}
 	}
@@ -318,11 +318,11 @@ function resolveCallnat(
 		return text;
 	}
 
-	return ['/* ── CALLNAT REFERENCE CONTEXT ───────────────────────────────────', ...contextLines, '   ─────────────────────────────────────────────────────────────── */', ''].join('\n') + text;
+	return ['/* -- CALLNAT REFERENCE CONTEXT -----------------------------------', ...contextLines, '   --------------------------------------------------------------- */', ''].join('\n') + text;
 }
 
 
-// ─── Utilities ────────────────────────────────────────────────────────────────
+// --- Utilities ----------------------------------------------------------------
 
 function getParentDir(uri: string): string {
 	const normalised = uri.replace(/\\/g, '/');

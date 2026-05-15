@@ -17,12 +17,26 @@ import { IHostService } from '../../../services/host/browser/host.js';
 import { AgentManagerPart } from './agentManagerPart.js';
 import { Registry } from '../../../../platform/registry/common/platform.js';
 import { LifecyclePhase } from '../../../services/lifecycle/common/lifecycle.js';
-import './agentStoreService.js';            // Register agent store (replaces agentRegistryService)
-import './workflowAgentService.js';         // Register workflow engine
+// Services
+import './agentStoreService.js';
+import './workflowAgentService.js';
 import './fim/neuralInverseFIMService.js';
 import './context/input/astContextService.js';
 import './context/graph/dependencyGraph.js';
-import '../../powerMode/browser/powerMode.contribution.js'; // Register Power Mode service
+import '../common/modelManagement/serviceImpl.js';
+
+// External contributions
+import '../../powerMode/browser/powerMode.contribution.js';
+
+// Model Management - Auto Setup
+import { registerWorkbenchContribution2, WorkbenchPhase } from '../../../common/contributions.js';
+import { OllamaAutoSetupContribution } from './modelManagement/ollamaAutoSetup.js';
+
+registerWorkbenchContribution2(
+	OllamaAutoSetupContribution.ID,
+	OllamaAutoSetupContribution,
+	WorkbenchPhase.Eventually // Run after IDE fully loaded
+);
 
 
 

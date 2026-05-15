@@ -34,9 +34,9 @@
  * ## Progress events
  *
  * The engine emits three event types via the `ITranslationBatchProgress` callback:
- *   - `unit-started`    — a unit just entered the translation loop
- *   - `unit-completed`  — a unit produced a result (any outcome)
- *   - `batch-completed` — all units have been processed
+ *   - `unit-started`    -- a unit just entered the translation loop
+ *   - `unit-completed`  -- a unit produced a result (any outcome)
+ *   - `batch-completed` -- all units have been processed
  *
  * ## Abort
  *
@@ -61,7 +61,7 @@ import { TranslationMetricsCollector, ITranslationBatchMetrics } from './transla
 export type { ITranslationBatchMetrics, ILanguagePairMetrics } from './translationMetrics.js';
 
 
-// ─── Constants ────────────────────────────────────────────────────────────────
+// --- Constants ----------------------------------------------------------------
 
 /**
  * After this many consecutive error outcomes for the same unit in one batch,
@@ -71,7 +71,7 @@ export type { ITranslationBatchMetrics, ILanguagePairMetrics } from './translati
 const MAX_UNIT_FAILURES_BEFORE_PERMANENT_BLOCK = 2;
 
 
-// ─── Event types ──────────────────────────────────────────────────────────────
+// --- Event types --------------------------------------------------------------
 
 export interface ITranslationUnitStartedEvent {
 	unitId:   string;
@@ -101,7 +101,7 @@ export type ITranslationBatchProgress =
 	| { type: 'batch-completed'; data: ITranslationBatchCompletedEvent };
 
 
-// ─── Batch options ─────────────────────────────────────────────────────────────
+// --- Batch options -------------------------------------------------------------
 
 export interface IBatchTranslationOptions {
 	options:      ITranslationOptions;
@@ -116,11 +116,11 @@ export interface IBatchTranslationOptions {
 }
 
 
-// ─── Batch engine ─────────────────────────────────────────────────────────────
+// --- Batch engine -------------------------------------------------------------
 
 export class BatchTranslationEngine extends Disposable {
 
-	// ── Events ────────────────────────────────────────────────────────────────
+	// -- Events ----------------------------------------------------------------
 
 	private readonly _onProgress = this._register(new Emitter<ITranslationBatchProgress>());
 	readonly onProgress: Event<ITranslationBatchProgress> = this._onProgress.event;
@@ -133,13 +133,13 @@ export class BatchTranslationEngine extends Disposable {
 		super();
 	}
 
-	// ── Run ───────────────────────────────────────────────────────────────────
+	// -- Run -------------------------------------------------------------------
 
 	/**
 	 * Translate all eligible units in the KB.
 	 *
 	 * @param batchOptions  Options for this run
-	 * @param controller    Abort controller — call `.abort()` to stop the batch
+	 * @param controller    Abort controller -- call `.abort()` to stop the batch
 	 * @returns             Final batch metrics when all units are done (or aborted)
 	 */
 	async run(
@@ -149,7 +149,7 @@ export class BatchTranslationEngine extends Disposable {
 		const { options, sourceRoot, targetRoot, unitIdFilter, migrationPatternId } = batchOptions;
 		const signal = controller.signal;
 
-		// ── Collect eligible units ────────────────────────────────────────────
+		// -- Collect eligible units --------------------------------------------
 		const allUnits = this._kb.getAllUnits();
 		const filteredUnits = unitIdFilter && unitIdFilter.length > 0
 			? allUnits.filter(u => unitIdFilter.includes(u.id))
@@ -165,13 +165,13 @@ export class BatchTranslationEngine extends Disposable {
 			return finalMetrics;
 		}
 
-		// ── Per-unit failure counter ──────────────────────────────────────────
+		// -- Per-unit failure counter ------------------------------------------
 		// Tracks how many error outcomes a unit has accumulated in this batch run.
 		// When a unit reaches MAX_UNIT_FAILURES_BEFORE_PERMANENT_BLOCK, it is
 		// permanently blocked instead of returned to 'ready'.
 		const failureCount = new Map<string, number>();
 
-		// ── Concurrency pool ──────────────────────────────────────────────────
+		// -- Concurrency pool --------------------------------------------------
 		const maxConcurrency = Math.max(1, options.maxConcurrency ?? 3);
 		const inFlight       = new Set<Promise<void>>();
 		let dispatchedCount  = 0;
@@ -206,13 +206,13 @@ export class BatchTranslationEngine extends Disposable {
 								permanentlyFailed = next >= MAX_UNIT_FAILURES_BEFORE_PERMANENT_BLOCK;
 							}
 
-							// Write result to KB (async — awaited for interface extraction)
+							// Write result to KB (async -- awaited for interface extraction)
 							await recordTranslationResult(
 								result, this._kb, sourceRoot, targetRoot,
 								this._llm, this._settings, permanentlyFailed,
 							);
 						} else {
-							// Skipped (abort or lock collision) — revert to 'ready'
+							// Skipped (abort or lock collision) -- revert to 'ready'
 							this._kb.setUnitStatus(unit.id, 'ready', undefined, 'translation-engine');
 						}
 
@@ -268,10 +268,10 @@ export class BatchTranslationEngine extends Disposable {
 			}
 		};
 
-		// ── Kick off initial batch ────────────────────────────────────────────
+		// -- Kick off initial batch --------------------------------------------
 		dispatchNext();
 
-		// ── Wait for all in-flight jobs to complete ───────────────────────────
+		// -- Wait for all in-flight jobs to complete ---------------------------
 		while (inFlight.size > 0) {
 			await Promise.race(inFlight);
 		}

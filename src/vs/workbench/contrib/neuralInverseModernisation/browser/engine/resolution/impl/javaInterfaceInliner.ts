@@ -11,9 +11,9 @@
  * ## The Java Context Problem
  *
  * Java code references external classes through:
- * 1. `@EJB UserSessionBean userBean` — an injected EJB whose interface the AI doesn't know
- * 2. `@Autowired UserRepository userRepo` — a Spring bean
- * 3. `UserSessionBean bean = (UserSessionBean) ctx.lookup("...")` — JNDI lookup
+ * 1. `@EJB UserSessionBean userBean` -- an injected EJB whose interface the AI doesn't know
+ * 2. `@Autowired UserRepository userRepo` -- a Spring bean
+ * 3. `UserSessionBean bean = (UserSessionBean) ctx.lookup("...")` -- JNDI lookup
  *
  * When the AI encounters these, it knows the type name but not what methods it exposes,
  * what transactions it manages, or what business rules it encapsulates.
@@ -25,13 +25,13 @@
  * - For each dependency NOT found in the KB: a note that it's unknown
  *
  * We deliberately keep Java imports intact (unlike COBOL copybooks, we don't expand them
- * inline — Java's type system would reject inlined class bodies). Comments are injected
+ * inline -- Java's type system would reject inlined class bodies). Comments are injected
  * instead.
  *
  * ## Example Output
  *
  * ```java
- * // ── NEURAL INVERSE INTERFACE CONTEXT ────────────────────────────────────────
+ * // -- NEURAL INVERSE INTERFACE CONTEXT ----------------------------------------
  * // Injected beans resolved from Knowledge Base:
  * //
  * // @EJB UserSessionBean
@@ -43,8 +43,8 @@
  * //     createSession(UserDTO user): String
  * //
  * // @Autowired AccountRepository
- * //   Purpose: [NOT IN KNOWLEDGE BASE — external or library class]
- * // ─────────────────────────────────────────────────────────────────────────────
+ * //   Purpose: [NOT IN KNOWLEDGE BASE -- external or library class]
+ * // -----------------------------------------------------------------------------
  * @Stateless
  * public class PaymentService { ... }
  * ```
@@ -54,7 +54,7 @@ import { IDependencyRef, IDependencyResolutionResult } from './resolutionTypes.j
 import { IKnowledgeBaseService } from '../../../knowledgeBase/service.js';
 
 
-// ─── Public API ───────────────────────────────────────────────────────────────
+// --- Public API ---------------------------------------------------------------
 
 export interface IJavaInlineOptions {
 	insertMarkers: boolean;
@@ -90,7 +90,7 @@ export function resolveJavaDependencies(
 
 	// Build context block
 	const contextLines: string[] = [
-		'// ══ NEURAL INVERSE — DEPENDENCY CONTEXT ═════════════════════════════════════',
+		'// == NEURAL INVERSE -- DEPENDENCY CONTEXT =====================================',
 		'// Injected dependencies resolved from Knowledge Base:',
 		'//',
 	];
@@ -111,7 +111,7 @@ export function resolveJavaDependencies(
 
 		if (!unit) {
 			contextLines.push(`// ${inj.annotationType} ${inj.typeName}`);
-			contextLines.push(`//   [NOT IN KNOWLEDGE BASE — external library or not yet scanned]`);
+			contextLines.push(`//   [NOT IN KNOWLEDGE BASE -- external library or not yet scanned]`);
 			contextLines.push('//');
 			unresolvedRefs.push({
 				ref: depRef,
@@ -159,7 +159,7 @@ export function resolveJavaDependencies(
 		});
 	}
 
-	contextLines.push('// ══════════════════════════════════════════════════════════════════════════════');
+	contextLines.push('// ==============================================================================');
 	contextLines.push('');
 
 	return {
@@ -170,7 +170,7 @@ export function resolveJavaDependencies(
 }
 
 
-// ─── Injection Point Parser ───────────────────────────────────────────────────
+// --- Injection Point Parser ---------------------------------------------------
 
 interface IInjectionPoint {
 	annotationType: string;           // '@EJB', '@Autowired', '@Inject', '@Resource'
@@ -235,7 +235,7 @@ function extractPublicMethodSignatures(sourceText: string, maxMethods: number): 
 		const methodName = match[2];
 		const params = match[3].trim();
 
-		// Skip main, equals, hashCode, toString — boilerplate
+		// Skip main, equals, hashCode, toString -- boilerplate
 		if (['main', 'equals', 'hashCode', 'toString', 'clone'].includes(methodName)) {
 			continue;
 		}

@@ -9,11 +9,11 @@
  * Converts an IValidationResult into an IEquivalenceResult and writes it to
  * the Knowledge Base. Also handles unit status transitions:
  *
- *   outcome='validated'  → kb.setUnitStatus(unitId, 'validated')
- *   outcome='partial'    → kb.setUnitStatus(unitId, 'review')   — needs human look
- *   outcome='failed'     → kb.setUnitStatus(unitId, 'flagged')  — divergences found
- *   outcome='error'      → kb.setUnitStatus(unitId, 'review')   — retry later
- *   outcome='skipped'    → no change
+ *   outcome='validated'  -> kb.setUnitStatus(unitId, 'validated')
+ *   outcome='partial'    -> kb.setUnitStatus(unitId, 'review')   -- needs human look
+ *   outcome='failed'     -> kb.setUnitStatus(unitId, 'flagged')  -- divergences found
+ *   outcome='error'      -> kb.setUnitStatus(unitId, 'review')   -- retry later
+ *   outcome='skipped'    -> no change
  *
  * The evidence file path is always written to IEquivalenceResult.evidenceFilePath
  * even if the actual file write is not performed (the path is derived from the unit ID).
@@ -24,7 +24,7 @@ import { IEquivalenceResult, IOutputDivergence } from '../../../../common/modern
 import { IValidationResult } from './validationTypes.js';
 
 
-// ─── Evidence path derivation ──────────────────────────────────────────────────
+// --- Evidence path derivation --------------------------------------------------
 
 /**
  * Derive the evidence file path for a unit.
@@ -38,7 +38,7 @@ export function deriveEvidencePath(unitId: string, evidenceDir?: string): string
 }
 
 
-// ─── Main recorder ─────────────────────────────────────────────────────────────
+// --- Main recorder -------------------------------------------------------------
 
 /**
  * Convert a validation result to an IEquivalenceResult and persist to KB.
@@ -127,7 +127,7 @@ export function recordEquivalenceOverride(
 }
 
 
-// ─── Status transition ────────────────────────────────────────────────────────
+// --- Status transition --------------------------------------------------------
 
 function _transitionStatus(result: IValidationResult, kb: IKnowledgeBaseService): void {
 	const { unitId, outcome, failCount, testCaseCount, analysis } = result;

@@ -11,10 +11,10 @@
  *
  * ## Extraction strategy (4 passes, most strict to most lenient)
  *
- *   Pass 1 — Strict XML: look for well-formed <equivalence>...</equivalence> block
- *   Pass 2 — Lenient XML: extract individual <test_case> blocks + <summary>
- *   Pass 3 — Partial recovery: extract whatever test cases are present, infer totals
- *   Pass 4 — Failure: return parseSucceeded=false with the raw text as parseError
+ *   Pass 1 -- Strict XML: look for well-formed <equivalence>...</equivalence> block
+ *   Pass 2 -- Lenient XML: extract individual <test_case> blocks + <summary>
+ *   Pass 3 -- Partial recovery: extract whatever test cases are present, infer totals
+ *   Pass 4 -- Failure: return parseSucceeded=false with the raw text as parseError
  *
  * ## XML schema parsed
  *
@@ -43,7 +43,7 @@ import { IValidationParseResult, IValidationTestCase, ValidationConfidence } fro
 import { OutputDivergenceType } from '../../../../common/modernisationTypes.js';
 
 
-// ─── Valid enum values ─────────────────────────────────────────────────────────
+// --- Valid enum values ---------------------------------------------------------
 
 const VALID_CONFIDENCE: ValidationConfidence[] = ['high', 'medium', 'low', 'uncertain'];
 const VALID_DIVERGENCE: OutputDivergenceType[] = [
@@ -59,11 +59,11 @@ function isValidDivergenceType(s: string): s is OutputDivergenceType {
 }
 
 
-// ─── Main parser ──────────────────────────────────────────────────────────────
+// --- Main parser --------------------------------------------------------------
 
 /**
  * Parse the raw LLM response string into an IValidationParseResult.
- * Never throws — all failures return parseSucceeded=false.
+ * Never throws -- all failures return parseSucceeded=false.
  */
 export function parseValidationResponse(rawResponse: string): IValidationParseResult {
 	if (!rawResponse || rawResponse.trim().length === 0) {
@@ -78,11 +78,11 @@ export function parseValidationResponse(rawResponse: string): IValidationParseRe
 		if (result.parseSucceeded) { return result; }
 	}
 
-	// Pass 2: lenient — extract individual test case blocks directly from raw
+	// Pass 2: lenient -- extract individual test case blocks directly from raw
 	const lenientResult = _parseLenient(rawResponse);
 	if (lenientResult.parseSucceeded) { return lenientResult; }
 
-	// Pass 3: partial recovery — even if no well-formed XML, try to recover test cases
+	// Pass 3: partial recovery -- even if no well-formed XML, try to recover test cases
 	const partialResult = _parsePartial(rawResponse);
 	if (partialResult.parseSucceeded) { return partialResult; }
 
@@ -95,7 +95,7 @@ export function parseValidationResponse(rawResponse: string): IValidationParseRe
 }
 
 
-// ─── Pass 1: strict XML parse ──────────────────────────────────────────────────
+// --- Pass 1: strict XML parse --------------------------------------------------
 
 function _parseEquivalenceXml(xml: string): IValidationParseResult {
 	const testCases = _parseTestCases(xml);
@@ -126,7 +126,7 @@ function _parseEquivalenceXml(xml: string): IValidationParseResult {
 }
 
 
-// ─── Test case extraction ─────────────────────────────────────────────────────
+// --- Test case extraction -----------------------------------------------------
 
 function _parseTestCases(xml: string): IValidationTestCase[] {
 	const testCases: IValidationTestCase[] = [];
@@ -170,7 +170,7 @@ function _parseTestCases(xml: string): IValidationTestCase[] {
 }
 
 
-// ─── Summary extraction ───────────────────────────────────────────────────────
+// --- Summary extraction -------------------------------------------------------
 
 interface ISummaryData {
 	total?:      number;
@@ -207,7 +207,7 @@ function _parseSummary(xml: string): ISummaryData {
 }
 
 
-// ─── Pass 2: lenient parse ────────────────────────────────────────────────────
+// --- Pass 2: lenient parse ----------------------------------------------------
 
 function _parseLenient(raw: string): IValidationParseResult {
 	// Try extracting test case blocks without requiring <equivalence> wrapper
@@ -233,7 +233,7 @@ function _parseLenient(raw: string): IValidationParseResult {
 }
 
 
-// ─── Pass 3: partial recovery ─────────────────────────────────────────────────
+// --- Pass 3: partial recovery -------------------------------------------------
 
 function _parsePartial(raw: string): IValidationParseResult {
 	// Try to infer a minimal result from the LLM's plain-text response
@@ -270,7 +270,7 @@ function _parsePartial(raw: string): IValidationParseResult {
 }
 
 
-// ─── Confidence inference ─────────────────────────────────────────────────────
+// --- Confidence inference -----------------------------------------------------
 
 function _inferConfidence(
 	testCases: IValidationTestCase[],
@@ -286,7 +286,7 @@ function _inferConfidence(
 }
 
 
-// ─── XML utilities ─────────────────────────────────────────────────────────────
+// --- XML utilities -------------------------------------------------------------
 
 /** Extract the content of a self-contained <tag>...</tag> block (first match) */
 function _extractTag(xml: string, tag: string): string | null {
@@ -334,7 +334,7 @@ function _normalizeDivergenceType(raw: string): OutputDivergenceType {
 }
 
 
-// ─── Failure factory ──────────────────────────────────────────────────────────
+// --- Failure factory ----------------------------------------------------------
 
 function _failResult(parseError: string): IValidationParseResult {
 	return {

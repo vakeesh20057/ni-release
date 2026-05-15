@@ -6,12 +6,12 @@
 /**
  * # Cutover Service
  *
- * The DI-registered façade for Phase 11 of the Neural Inverse Modernisation pipeline.
+ * The DI-registered facade for Phase 11 of the Neural Inverse Modernisation pipeline.
  *
  * Provides three capabilities:
- *   1. **Audit export** — serialise and verify the KB audit trail.
- *   2. **Commit batch** — write translated target files to disk.
- *   3. **Cutover gate** — pre-flight readiness check + final approval.
+ *   1. **Audit export** -- serialise and verify the KB audit trail.
+ *   2. **Commit batch** -- write translated target files to disk.
+ *   3. **Cutover gate** -- pre-flight readiness check + final approval.
  *
  * ## DI token
  *
@@ -30,12 +30,12 @@ import { ICutoverMetrics } from './impl/cutoverMetrics.js';
 import { IApprovalRecord } from '../../../common/modernisationTypes.js';
 
 
-// ─── DI token ─────────────────────────────────────────────────────────────────
+// --- DI token -----------------------------------------------------------------
 
 export const ICutoverService = createDecorator<ICutoverService>('cutoverService');
 
 
-// ─── Progress event ───────────────────────────────────────────────────────────
+// --- Progress event -----------------------------------------------------------
 
 export interface ICommitProgress {
 	type:       'unit-committed' | 'unit-skipped' | 'unit-error' | 'batch-completed';
@@ -48,12 +48,12 @@ export interface ICommitProgress {
 }
 
 
-// ─── Service interface ────────────────────────────────────────────────────────
+// --- Service interface --------------------------------------------------------
 
 export interface ICutoverService {
 	readonly _serviceBrand: undefined;
 
-	// ── State ─────────────────────────────────────────────────────────────────
+	// -- State -----------------------------------------------------------------
 
 	/** True when a commit batch is actively running */
 	readonly isCommitting: boolean;
@@ -67,7 +67,7 @@ export interface ICutoverService {
 	/** The approval record for the cutover, if approved */
 	readonly cutoverApproval: IApprovalRecord | null;
 
-	// ── Events ────────────────────────────────────────────────────────────────
+	// -- Events ----------------------------------------------------------------
 
 	/** Fires during a commit batch: unit-committed, unit-error, batch-completed */
 	readonly onCommitProgress: Event<ICommitProgress>;
@@ -75,11 +75,11 @@ export interface ICutoverService {
 	/** Fires once when cutover is approved */
 	readonly onCutoverApproved: Event<IApprovalRecord>;
 
-	// ── Audit API ─────────────────────────────────────────────────────────────
+	// -- Audit API -------------------------------------------------------------
 
 	/**
 	 * Build a portable audit bundle from the current KB state.
-	 * Pure in-memory — does not write to disk.
+	 * Pure in-memory -- does not write to disk.
 	 */
 	exportAuditBundle(options?: IAuditBundleOptions): IAuditBundle;
 
@@ -93,7 +93,7 @@ export interface ICutoverService {
 	 */
 	verifyAuditBundle(bundle: IAuditBundle): { valid: boolean; message: string };
 
-	// ── Commit API ─────────────────────────────────────────────────────────────
+	// -- Commit API -------------------------------------------------------------
 
 	/**
 	 * Write all eligible translated units to their target files on disk.
@@ -110,7 +110,7 @@ export interface ICutoverService {
 	 */
 	cancelCommit(): void;
 
-	// ── Cutover gate ──────────────────────────────────────────────────────────
+	// -- Cutover gate ----------------------------------------------------------
 
 	/**
 	 * Run all pre-cutover readiness checks.
@@ -127,14 +127,14 @@ export interface ICutoverService {
 	 */
 	approveCutover(approver: string, rationale: string, changeTicketRef?: string): void;
 
-	// ── Metrics ───────────────────────────────────────────────────────────────
+	// -- Metrics ---------------------------------------------------------------
 
 	/** Snapshot of cutover-relevant KB statistics */
 	getMetrics(): ICutoverMetrics;
 }
 
 
-// ─── Error types ──────────────────────────────────────────────────────────────
+// --- Error types --------------------------------------------------------------
 
 export class CommitBatchAlreadyRunningError extends Error {
 	constructor() {
