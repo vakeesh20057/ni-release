@@ -60,6 +60,20 @@ export const SOURCE_EXTS = new Set([
 	'jcl',
 	'rexx', 'rex', 'cmd',
 	'asm', 'macro', 'mac', 'mlc',
+	// ColdFusion
+	'cfm', 'cfc',
+	// FORTRAN
+	'f', 'f77', 'f90', 'f95', 'f03', 'f08', 'for', 'ftn',
+	// Delphi / Pascal
+	'pas', 'dpr', 'dfm', 'dpk', 'pp',
+	// ABAP
+	'abap',
+	// MUMPS/M (.m skipped - conflicts with Objective-C/MATLAB)
+	'mum', 'int', 'rtn',
+	// Ada
+	'ada', 'adb', 'ads',
+	// PowerBuilder
+	'sru', 'srd', 'pbl', 'pbt',
 	// \u2500\u2500 Database / SQL \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
 	'sql', 'pls', 'pkb', 'pks', 'ddl', 'dml', 'trg', 'fnc', 'prc', 'vw',
 	// \u2500\u2500 JVM \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500

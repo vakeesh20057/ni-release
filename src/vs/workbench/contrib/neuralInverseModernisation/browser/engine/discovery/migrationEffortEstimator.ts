@@ -205,6 +205,15 @@ const LANGUAGE_DIFFICULTY: Record<string, number> = {
 	pl1:            2.2,
 	rpg:            2.0,
 	jcl:            1.8,
+	// Enterprise / business legacy
+	coldfusion:     1.8,  // CFML: PHP-level complexity, well-documented migration path
+	fortran:        2.5,  // Scientific code: implicit typing, FORMAT statements, array semantics
+	delphi:         1.9,  // Object Pascal: Delphi VCL framework coupling, event model
+	pascal:         1.7,  // Standard Pascal: cleaner than Delphi but less tooling
+	abap:           2.6,  // SAP ecosystem lock-in: DDIC, BAdIs, enhancement spots
+	mumps:          3.0,  // Very dense: implicit globals, no local scope, minimal syntax
+	ada:            2.4,  // Strong typing helps, but tasking model and exceptions are complex
+	powerbuilder:   2.2,  // DataWindow tight coupling to UI and database
 	// Database languages
 	plsql:          1.4,
 	sql:            1.3,

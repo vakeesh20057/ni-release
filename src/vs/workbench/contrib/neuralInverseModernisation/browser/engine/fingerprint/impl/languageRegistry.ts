@@ -271,6 +271,108 @@ const LANGUAGE_PROFILES: ILanguageProfile[] = [
 		primaryFrameworks: ['financial-core'],
 	},
 
+	// \u2500\u2500 ColdFusion / CFML \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+	{
+		key: 'coldfusion',
+		displayName: 'ColdFusion / CFML',
+		aliases: ['coldfusion', 'cfml', 'cfm', 'cfc', 'cold-fusion'],
+		hasLayer1Support: false,
+		patternRegistryKey: 'coldfusion',
+		terminology: {
+			unitTerm: 'function',
+			variableTerm: 'variable',
+			precisionTerm: 'numeric precision',
+			transactionTerm: 'cftransaction boundary',
+			complianceNotes: 'ColdFusion cffunction/cfcomponent define the unit boundary. cfquery tags are the data access layer. Layer 1 pattern support pending -- Layer 2 LLM extraction provides full coverage.',
+		},
+		primaryFrameworks: ['financial-core', 'pci-dss'],
+	},
+
+	// \u2500\u2500 Delphi / Pascal \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+	{
+		key: 'delphi',
+		displayName: 'Delphi / Object Pascal',
+		aliases: ['delphi', 'pascal', 'object-pascal', 'delphi-pascal', 'dpr', 'pas', 'borland-delphi'],
+		hasLayer1Support: false,
+		patternRegistryKey: 'delphi',
+		terminology: {
+			unitTerm: 'procedure',
+			variableTerm: 'variable',
+			precisionTerm: 'Currency type',
+			transactionTerm: 'database transaction (BeginTrans/CommitTrans)',
+			complianceNotes: 'Delphi Currency type is a scaled 64-bit integer -- exact decimal arithmetic. TDataModule components own DB connections and transaction boundaries. VCL form events drive UI logic.',
+		},
+		primaryFrameworks: ['financial-core', 'tax-compliance'],
+	},
+
+	// \u2500\u2500 PowerBuilder \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+	{
+		key: 'powerbuilder',
+		displayName: 'PowerBuilder / PowerScript',
+		aliases: ['powerbuilder', 'powerscript', 'pb', 'pbl', 'datawindow', 'pbt'],
+		hasLayer1Support: false,
+		patternRegistryKey: 'powerbuilder',
+		terminology: {
+			unitTerm: 'function',
+			variableTerm: 'variable',
+			precisionTerm: 'decimal type',
+			transactionTerm: 'SQLCA commit/rollback boundary',
+			complianceNotes: 'PowerBuilder DataWindow objects encapsulate SQL and presentation. SQLCA transaction object controls commit/rollback. retrieve() and update() are the canonical data access operations.',
+		},
+		primaryFrameworks: ['financial-core', 'sox'],
+	},
+
+	// \u2500\u2500 SAP ABAP \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+	{
+		key: 'abap',
+		displayName: 'SAP ABAP',
+		aliases: ['abap', 'sap-abap', 'sap', 'abap4', 'open-sql'],
+		hasLayer1Support: false,
+		patternRegistryKey: 'abap',
+		terminology: {
+			unitTerm: 'function module',
+			variableTerm: 'field',
+			precisionTerm: 'CURR / QUAN type',
+			transactionTerm: 'COMMIT WORK / ROLLBACK WORK boundary',
+			complianceNotes: 'ABAP CURR and QUAN data elements are monetary and quantity fields. CALL FUNCTION and CALL METHOD define unit boundaries. ENHANCEMENT / BAdI injection points must be preserved across migration.',
+		},
+		primaryFrameworks: ['financial-core', 'sox', 'gdpr-pii'],
+	},
+
+	// \u2500\u2500 MUMPS / M \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+	{
+		key: 'mumps',
+		displayName: 'MUMPS / M (InterSystems Cache / IRIS)',
+		aliases: ['mumps', 'm-language', 'cache', 'intersystems-cache', 'iris', 'gtm', 'vista-mumps'],
+		hasLayer1Support: false,
+		patternRegistryKey: 'mumps',
+		terminology: {
+			unitTerm: 'routine',
+			variableTerm: 'local variable',
+			precisionTerm: 'numeric string precision',
+			transactionTerm: 'TSTART / TCOMMIT boundary',
+			complianceNotes: 'MUMPS global variables (^GlobalName) persist across processes and form the implicit database. TSTART/TCOMMIT wrap transactional global updates. VistA MUMPS carries regulated healthcare PII under HIPAA.',
+		},
+		primaryFrameworks: ['financial-core', 'gdpr-pii'],
+	},
+
+	// \u2500\u2500 Ada / SPARK \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+	{
+		key: 'ada',
+		displayName: 'Ada / SPARK Ada',
+		aliases: ['ada', 'ada83', 'ada95', 'ada2005', 'ada2012', 'spark-ada', 'gnat'],
+		hasLayer1Support: false,
+		patternRegistryKey: 'ada',
+		terminology: {
+			unitTerm: 'procedure',
+			variableTerm: 'variable',
+			precisionTerm: 'fixed-point type',
+			transactionTerm: 'protected object / task rendezvous',
+			complianceNotes: 'Ada fixed-point types provide exact decimal arithmetic. Protected objects and task rendezvous define concurrency and transaction boundaries. SPARK aspects (Pre/Post/Global) encode formal contracts that must be preserved.',
+		},
+		primaryFrameworks: ['iec-61508', 'do-178c', 'misra-c'],
+	},
+
 	// \u2500\u2500 Angular 1 (JavaScript) \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
 	{
 		key: 'angular1',

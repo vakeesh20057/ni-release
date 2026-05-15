@@ -67,6 +67,25 @@ export function extractRawImports(content: string, lang: string): string[] {
 		case 'autosar':      return extractAutosarImports(content);
 		case 'can-dbc':      return extractCanDbcImports(content);
 		case 'ttcn3':        return extractTTCN3Imports(content);
+		// -- Legacy / enterprise languages --------------------------------
+		case 'rpg':
+		case 'rpgle':
+		case 'rpg4':
+		case 'sqlrpgle':
+		case 'ile-rpg':      return extractRpgImports(content);
+		case 'natural':
+		case 'nsp':
+		case 'nat':          return extractNaturalImports(content);
+		case 'pl1':
+		case 'pli':          return extractPL1Imports(content);
+		case 'fortran':      return extractFortranImports(content);
+		case 'abap':         return extractAbapImports(content);
+		case 'mumps':        return extractMumpsImports(content);
+		case 'ada':          return extractAdaImports(content);
+		case 'coldfusion':   return extractColdFusionImports(content);
+		case 'delphi':
+		case 'pascal':       return extractDelphiImports(content);
+		case 'powerbuilder': return extractPowerBuilderImports(content);
 		default:           return [];
 	}
 }
@@ -291,6 +310,146 @@ function extractTTCN3Imports(content: string): string[] {
 		results.push(m[1]);
 	}
 	return results;
+}
+
+
+// --- Legacy / Enterprise Language Extractors ------------------------------
+
+function extractRpgImports(content: string): string[] {
+	const results: string[] = [];
+	// /COPY and /INCLUDE directives
+	for (const m of content.matchAll(/^\s*\/(?:COPY|INCLUDE)\s+(.+)$/gim)) {
+		results.push(m[1].trim());
+	}
+	// CALL to external programs
+	for (const m of content.matchAll(/\bCALL\s+'([^']+)'/gim)) {
+		results.push(m[1]);
+	}
+	return [...new Set(results)];
+}
+
+function extractNaturalImports(content: string): string[] {
+	const results: string[] = [];
+	for (const m of content.matchAll(/\bINCLUDE\s+(\S+)/gim)) {
+		results.push(m[1]);
+	}
+	for (const m of content.matchAll(/\bCALLNAT\s+'([^']+)'/gim)) {
+		results.push(m[1]);
+	}
+	for (const m of content.matchAll(/\bFETCH\s+'([^']+)'/gim)) {
+		results.push(m[1]);
+	}
+	for (const m of content.matchAll(/\bDEFINE\s+DATA\s+USING\s+(\S+)/gim)) {
+		results.push(m[1]);
+	}
+	return [...new Set(results)];
+}
+
+function extractPL1Imports(content: string): string[] {
+	const results: string[] = [];
+	// %INCLUDE directive
+	for (const m of content.matchAll(/^\s*%INCLUDE\s+(\S+)/gim)) {
+		results.push(m[1]);
+	}
+	// CALL to external procedures
+	for (const m of content.matchAll(/\bCALL\s+(\w+)/gim)) {
+		results.push(m[1]);
+	}
+	return [...new Set(results)];
+}
+
+function extractFortranImports(content: string): string[] {
+	const results: string[] = [];
+	// USE module statements
+	for (const m of content.matchAll(/^\s*USE\s+(\w+)/gim)) {
+		results.push(m[1]);
+	}
+	// INCLUDE files
+	for (const m of content.matchAll(/^\s*INCLUDE\s+'([^']+)'/gim)) {
+		results.push(m[1]);
+	}
+	// CALL to external subroutines
+	for (const m of content.matchAll(/\bCALL\s+(\w+)/gim)) {
+		results.push(m[1]);
+	}
+	return [...new Set(results)];
+}
+
+function extractAbapImports(content: string): string[] {
+	const results: string[] = [];
+	// INCLUDE program references
+	for (const m of content.matchAll(/\bINCLUDE\s+(\w+)/gim)) {
+		results.push(m[1]);
+	}
+	// CALL FUNCTION references
+	for (const m of content.matchAll(/\bCALL\s+FUNCTION\s+'([^']+)'/gim)) {
+		results.push(m[1]);
+	}
+	return [...new Set(results)];
+}
+
+function extractMumpsImports(content: string): string[] {
+	const results: string[] = [];
+	// DO ^ROUTINE external references
+	for (const m of content.matchAll(/\bDO\s+\^(\w+)/gim)) {
+		results.push(`^${m[1]}`);
+	}
+	// DO/GOTO LABEL^ROUTINE form
+	for (const m of content.matchAll(/\b(?:DO|GOTO)\s+(\w+)\^/gim)) {
+		results.push(m[1]);
+	}
+	return [...new Set(results)];
+}
+
+function extractAdaImports(content: string): string[] {
+	const results: string[] = [];
+	// with clauses introduce package dependencies
+	for (const m of content.matchAll(/^\s*with\s+([\w.]+)\s*;/gim)) {
+		results.push(m[1]);
+	}
+	return [...new Set(results)];
+}
+
+function extractColdFusionImports(content: string): string[] {
+	const results: string[] = [];
+	// <cfinclude template="...">
+	for (const m of content.matchAll(/<cfinclude\s+template="([^"]+)"/gi)) {
+		results.push(m[1]);
+	}
+	// <cfmodule template="..."> or name="..."
+	for (const m of content.matchAll(/<cfmodule\s+(?:template|name)="([^"]+)"/gi)) {
+		results.push(m[1]);
+	}
+	// createObject(...)
+	for (const m of content.matchAll(/createObject\s*\(\s*['"]([^'"]+)['"]/gi)) {
+		results.push(m[1]);
+	}
+	return [...new Set(results)];
+}
+
+function extractDelphiImports(content: string): string[] {
+	const results: string[] = [];
+	// uses clause: comma-separated unit list terminated by ;
+	for (const m of content.matchAll(/\buses\s+([\w\s,]+);/gim)) {
+		for (const unit of m[1].split(',')) {
+			const name = unit.trim();
+			if (name) { results.push(name); }
+		}
+	}
+	return [...new Set(results)];
+}
+
+function extractPowerBuilderImports(content: string): string[] {
+	const results: string[] = [];
+	// open( WindowName ... ) calls
+	for (const m of content.matchAll(/\bopen\s*\(\s*(\w+)/gi)) {
+		results.push(m[1]);
+	}
+	// OpenSheet( sheetref, ... )
+	for (const m of content.matchAll(/\bOpenSheet\s*\(\s*(\w+)/gi)) {
+		results.push(m[1]);
+	}
+	return [...new Set(results)];
 }
 
 

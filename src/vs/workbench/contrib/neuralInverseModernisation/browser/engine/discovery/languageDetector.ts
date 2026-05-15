@@ -59,6 +59,39 @@ export const EXT_TO_LANG: Readonly<Record<string, string>> = {
 	ttcn:    'ttcn3',         // TTCN-3 test module
 	ttcn3:   'ttcn3',
 	ttcnpp:  'ttcn3',         // TTCN-3 preprocessor format
+	// -- ColdFusion --
+	cfm:     'coldfusion',
+	cfc:     'coldfusion',
+	// -- FORTRAN --
+	f:       'fortran',
+	f77:     'fortran',
+	f90:     'fortran',
+	f95:     'fortran',
+	f03:     'fortran',
+	f08:     'fortran',
+	for:     'fortran',
+	ftn:     'fortran',
+	// -- Delphi / Pascal --
+	pas:     'delphi',
+	dpr:     'delphi',
+	dfm:     'delphi',
+	dpk:     'delphi',
+	pp:      'pascal',
+	// -- ABAP --
+	abap:    'abap',
+	// -- MUMPS/M --
+	mum:     'mumps',
+	int:     'mumps',
+	rtn:     'mumps',
+	// -- Ada --
+	ada:     'ada',
+	adb:     'ada',
+	ads:     'ada',
+	// -- PowerBuilder --
+	sru:     'powerbuilder',
+	srd:     'powerbuilder',
+	pbl:     'powerbuilder',
+	pbt:     'powerbuilder',
 	// \u2500\u2500 Systems / high-level languages (still supported for hybrid projects) \u2500
 	go:      'go',
 	py:      'python',

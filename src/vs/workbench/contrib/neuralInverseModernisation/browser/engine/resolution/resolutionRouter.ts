@@ -28,6 +28,16 @@
  * | csharp, c#                            | genericImportInliner             |
  * | vb, vbnet, vb.net, visualbasic        | genericImportInliner             |
  * | kotlin, scala                         | genericImportInliner             |
+ * | fortran                               | genericImportInliner             |
+ * | coldfusion                            | genericImportInliner             |
+ * | abap                                  | genericImportInliner             |
+ * | mumps                                 | genericImportInliner             |
+ * | ada                                   | genericImportInliner             |
+ * | delphi, pascal                        | genericImportInliner             |
+ * | powerbuilder                          | genericImportInliner             |
+ * | ttcn3, ttcn                           | genericImportInliner             |
+ * | can-dbc, dbc                          | genericImportInliner             |
+ * | pl1, pli                              | genericImportInliner             |
  * | (anything else)                       | genericImportInliner (fallback)  |
  *
  * ## Resolution Flow Per Unit
@@ -391,6 +401,108 @@ async function dispatchToInliner(
 
 	// \u2500\u2500 Generic Fallback \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
 	// TypeScript, JavaScript, Python, Go, Rust, C#, VB, Kotlin, Scala, etc.
+	// Also covers: fortran, coldfusion, abap, mumps, ada, delphi, pascal,
+	// powerbuilder, pl1, pli, can-dbc, dbc not already matched above.
+
+	// -- CAN DBC (Controller Area Network database) ------------------------
+	if (lang === 'can-dbc' || lang === 'dbc') {
+		const r = resolveGenericImports(
+			request.sourceText,
+			'can-dbc',
+			kb,
+			{ insertMarkers: options.insertExpansionMarkers, maxMethodsPerImport: 8, includeUnresolvedComments: true },
+		);
+		return { expandedSource: r.expandedSource, resolvedRefs: r.resolvedRefs, unresolvedRefs: r.unresolvedRefs, cycleDetected: false };
+	}
+
+	// -- PL/I ---------------------------------------------------------------
+	if (lang === 'pl1' || lang === 'pli') {
+		const r = resolveGenericImports(
+			request.sourceText,
+			'pl1',
+			kb,
+			{ insertMarkers: options.insertExpansionMarkers, maxMethodsPerImport: 8, includeUnresolvedComments: true },
+		);
+		return { expandedSource: r.expandedSource, resolvedRefs: r.resolvedRefs, unresolvedRefs: r.unresolvedRefs, cycleDetected: false };
+	}
+
+	// -- FORTRAN ------------------------------------------------------------
+	if (lang === 'fortran') {
+		const r = resolveGenericImports(
+			request.sourceText,
+			'fortran',
+			kb,
+			{ insertMarkers: options.insertExpansionMarkers, maxMethodsPerImport: 8, includeUnresolvedComments: true },
+		);
+		return { expandedSource: r.expandedSource, resolvedRefs: r.resolvedRefs, unresolvedRefs: r.unresolvedRefs, cycleDetected: false };
+	}
+
+	// -- ColdFusion ---------------------------------------------------------
+	if (lang === 'coldfusion') {
+		const r = resolveGenericImports(
+			request.sourceText,
+			'coldfusion',
+			kb,
+			{ insertMarkers: options.insertExpansionMarkers, maxMethodsPerImport: 8, includeUnresolvedComments: true },
+		);
+		return { expandedSource: r.expandedSource, resolvedRefs: r.resolvedRefs, unresolvedRefs: r.unresolvedRefs, cycleDetected: false };
+	}
+
+	// -- ABAP ---------------------------------------------------------------
+	if (lang === 'abap') {
+		const r = resolveGenericImports(
+			request.sourceText,
+			'abap',
+			kb,
+			{ insertMarkers: options.insertExpansionMarkers, maxMethodsPerImport: 8, includeUnresolvedComments: true },
+		);
+		return { expandedSource: r.expandedSource, resolvedRefs: r.resolvedRefs, unresolvedRefs: r.unresolvedRefs, cycleDetected: false };
+	}
+
+	// -- MUMPS / M ----------------------------------------------------------
+	if (lang === 'mumps') {
+		const r = resolveGenericImports(
+			request.sourceText,
+			'mumps',
+			kb,
+			{ insertMarkers: options.insertExpansionMarkers, maxMethodsPerImport: 8, includeUnresolvedComments: true },
+		);
+		return { expandedSource: r.expandedSource, resolvedRefs: r.resolvedRefs, unresolvedRefs: r.unresolvedRefs, cycleDetected: false };
+	}
+
+	// -- Ada ----------------------------------------------------------------
+	if (lang === 'ada') {
+		const r = resolveGenericImports(
+			request.sourceText,
+			'ada',
+			kb,
+			{ insertMarkers: options.insertExpansionMarkers, maxMethodsPerImport: 8, includeUnresolvedComments: true },
+		);
+		return { expandedSource: r.expandedSource, resolvedRefs: r.resolvedRefs, unresolvedRefs: r.unresolvedRefs, cycleDetected: false };
+	}
+
+	// -- Delphi / Pascal ----------------------------------------------------
+	if (lang === 'delphi' || lang === 'pascal') {
+		const r = resolveGenericImports(
+			request.sourceText,
+			'delphi',
+			kb,
+			{ insertMarkers: options.insertExpansionMarkers, maxMethodsPerImport: 8, includeUnresolvedComments: true },
+		);
+		return { expandedSource: r.expandedSource, resolvedRefs: r.resolvedRefs, unresolvedRefs: r.unresolvedRefs, cycleDetected: false };
+	}
+
+	// -- PowerBuilder -------------------------------------------------------
+	if (lang === 'powerbuilder') {
+		const r = resolveGenericImports(
+			request.sourceText,
+			'powerbuilder',
+			kb,
+			{ insertMarkers: options.insertExpansionMarkers, maxMethodsPerImport: 8, includeUnresolvedComments: true },
+		);
+		return { expandedSource: r.expandedSource, resolvedRefs: r.resolvedRefs, unresolvedRefs: r.unresolvedRefs, cycleDetected: false };
+	}
+
 	const result = resolveGenericImports(
 		request.sourceText,
 		request.language,
