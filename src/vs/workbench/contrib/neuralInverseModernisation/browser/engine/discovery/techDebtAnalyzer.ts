@@ -6,12 +6,12 @@
 /**
  * # Tech Debt Analyzer
  *
- * Detects 17 categories of technical debt from source text without an AST.
- * Works universally across all supported languages — the heuristics are tuned
- * per category but do not require language-specific parsing.
+ * Detects 17 generic + 9 firmware/industrial debt categories from source text
+ * without an AST. Works universally across all supported languages.
  *
  * ## Debt Categories & Detection Strategy
  *
+ * ### Generic
  * | Category                  | Detection Heuristic                                          |
  * |---------------------------|--------------------------------------------------------------|
  * | god-unit                  | CC > 20 AND logical lines > 300                              |
@@ -23,7 +23,7 @@
  * | deep-nesting              | Nesting depth > 5 (brace/indent)                             |
  * | long-parameter-list       | Function/method with > 7 parameters                          |
  * | missing-error-handling    | Has I/O ops (file/DB/network) but no error handling keywords  |
- * | commented-out-code        | Block of ≥ 3 consecutive comment lines that contain keywords  |
+ * | commented-out-code        | Block of \u2265 3 consecutive comment lines that contain keywords  |
  * | todo-fixme                | TODO / FIXME / HACK / XXX / NOSONAR / BUG markers           |
  * | implicit-type-coercion    | == in JS/PHP, auto-widening cast patterns                    |
  * | unbounded-loop            | while(true) / loop / DO UNTIL without VARYING                |
@@ -31,11 +31,24 @@
  * | goto-usage                | GOTO / GOBACK / jump / computed-goto statements              |
  * | global-state              | Module-level mutable var / field outside class               |
  * | no-unit-tests             | Unit name not matched by any test file in the project        |
+ *
+ * ### Firmware / Industrial / Telecom / Energy
+ * | Category                  | Detection Heuristic                                          |
+ * |---------------------------|--------------------------------------------------------------|
+ * | unsafe-pointer-arithmetic | Cast to volatile uint*_t pointer at raw hex address (reg map)|
+ * | isr-reentrance-risk       | ISR body accesses a global variable with no critical section  |
+ * | misra-c-critical-violation| MISRA Rule 11.4 (ptr cast), 14.4 (non-bool branch), 17.3 (int promo)|
+ * | hardware-dependency       | MCU-specific register macro with no HAL alias (#define GPIOx) |
+ * | watchdog-gap              | Function body > 100 lines with no watchdog refresh call      |
+ * | autosar-rte-dependency    | Rte_Read/Write with no matching Adaptive ara::com mapping hint|
+ * | e2e-protection-gap        | Com_SendSignal / Rte_Write with E2E profile but no E2E wrapper|
+ * | security-key-material     | 3GPP AS/NAS key arrays or SUPI/SUCI inline material detected  |
+ * | goose-protection-relay    | IEC 61850 GOOSE XCBR/XSWI trip command bridged via TCP/HTTP  |
  */
 
 import { ITechDebtItem, IUnitComplexity } from './discoveryTypes.js';
 
-// ─── Public API ───────────────────────────────────────────────────────────────
+// \u2500\u2500\u2500 Public API \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
 
 export interface IDebtAnalysisInput {
 	unitId: string;
@@ -60,24 +73,24 @@ export function analyzeUnitDebt(input: IDebtAnalysisInput): ITechDebtItem[] {
 	const { unitId, unitName, content, lang, complexity } = input;
 	const lines = content.split('\n');
 
-	// ── god-unit ────────────────────────────────────────────────────────────
+	// \u2500\u2500 god-unit \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
 	if (complexity.cyclomaticComplexity > 20 && complexity.logicalLineCount > 300) {
 		items.push({
 			unitId, category: 'god-unit',
-			description: `Unit has CC=${complexity.cyclomaticComplexity} and ${complexity.logicalLineCount} logical lines — likely doing too much.`,
+			description: `Unit has CC=${complexity.cyclomaticComplexity} and ${complexity.logicalLineCount} logical lines \u2014 likely doing too much.`,
 			severity: 'error',
 			migrationImpact: 'Must be decomposed before migration; direct translation will produce an unmaintainable target module.',
 		});
 	} else if (complexity.cyclomaticComplexity > 15 && complexity.logicalLineCount > 200) {
 		items.push({
 			unitId, category: 'god-unit',
-			description: `Unit has CC=${complexity.cyclomaticComplexity} and ${complexity.logicalLineCount} logical lines — approaching god-unit territory.`,
+			description: `Unit has CC=${complexity.cyclomaticComplexity} and ${complexity.logicalLineCount} logical lines \u2014 approaching god-unit territory.`,
 			severity: 'warning',
 			migrationImpact: 'Consider decomposing before or during migration to reduce translator complexity.',
 		});
 	}
 
-	// ── deep-nesting ────────────────────────────────────────────────────────
+	// \u2500\u2500 deep-nesting \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
 	if (complexity.nestingDepth > 7) {
 		items.push({
 			unitId, category: 'deep-nesting',
@@ -95,7 +108,7 @@ export function analyzeUnitDebt(input: IDebtAnalysisInput): ITechDebtItem[] {
 		});
 	}
 
-	// ── long-parameter-list ─────────────────────────────────────────────────
+	// \u2500\u2500 long-parameter-list \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
 	if (complexity.paramCount > 10) {
 		items.push({
 			unitId, category: 'long-parameter-list',
@@ -112,41 +125,89 @@ export function analyzeUnitDebt(input: IDebtAnalysisInput): ITechDebtItem[] {
 		});
 	}
 
-	// ── missing-error-handling ──────────────────────────────────────────────
+	// \u2500\u2500 missing-error-handling \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
 	detectMissingErrorHandling(unitId, content, lang, complexity, items);
 
-	// ── hardcoded-credential ────────────────────────────────────────────────
+	// \u2500\u2500 hardcoded-credential \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
 	detectHardcodedCredentials(unitId, lines, lang, items);
 
-	// ── hardcoded-url ────────────────────────────────────────────────────────
+	// \u2500\u2500 hardcoded-url \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
 	detectHardcodedURLs(unitId, lines, lang, items);
 
-	// ── magic-number ─────────────────────────────────────────────────────────
+	// \u2500\u2500 magic-number \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
 	detectMagicNumbers(unitId, lines, lang, items);
 
-	// ── commented-out-code ───────────────────────────────────────────────────
+	// \u2500\u2500 commented-out-code \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
 	detectCommentedOutCode(unitId, lines, lang, items);
 
-	// ── todo-fixme ───────────────────────────────────────────────────────────
+	// \u2500\u2500 todo-fixme \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
 	detectTodoFixme(unitId, lines, items);
 
-	// ── implicit-type-coercion ───────────────────────────────────────────────
+	// \u2500\u2500 implicit-type-coercion \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
 	detectImplicitCoercion(unitId, lines, lang, items);
 
-	// ── unbounded-loop ───────────────────────────────────────────────────────
+	// \u2500\u2500 unbounded-loop \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
 	detectUnboundedLoop(unitId, lines, lang, items);
 
-	// ── goto-usage ───────────────────────────────────────────────────────────
+	// \u2500\u2500 goto-usage \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
 	detectGotoUsage(unitId, lines, lang, items);
 
-	// ── global-state ─────────────────────────────────────────────────────────
+	// \u2500\u2500 global-state \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
 	detectGlobalState(unitId, lines, lang, items);
 
-	// ── dead-code ────────────────────────────────────────────────────────────
+	// \u2500\u2500 dead-code \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
 	detectDeadCode(unitId, unitName, lang, input.allCallExpressions, items);
 
-	// ── no-unit-tests ────────────────────────────────────────────────────────
+	// \u2500\u2500 no-unit-tests \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
 	detectNoUnitTests(unitId, unitName, input.testUnitIds, items);
+
+	// \u2500\u2500 Firmware / embedded / industrial debt (market vertical-specific) \u2500\u2500\u2500\u2500
+	if (['c', 'cpp', 'embedded-c', 'embedded-cpp', 'assembler'].includes(lang)) {
+		detectUnsafePointerArithmetic(unitId, lines, items);
+		detectISRReentranceRisk(unitId, lines, items);
+		detectMisraCCriticalViolations(unitId, lines, items);
+		detectHardwareDependency(unitId, lines, items);
+		detectWatchdogGap(unitId, lines, complexity.logicalLineCount, items);
+	}
+	if (['autosar', 'c', 'cpp', 'embedded-c'].includes(lang)) {
+		detectAutosarRteDependency(unitId, lines, items);
+		detectE2EProtectionGap(unitId, lines, items);
+	}
+	if (['c', 'cpp', 'embedded-c', 'typescript', 'javascript', 'python'].includes(lang)) {
+		detectSecurityKeyMaterial(unitId, lines, items);
+	}
+	if (['c', 'cpp', 'python', 'java'].includes(lang)) {
+		detectGooseProtectionRelay(unitId, lines, items);
+	}
+	// \u2500\u2500 Energy / Critical Infrastructure \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+	if (['c', 'cpp', 'embedded-c', 'python', 'java', 'javascript', 'typescript'].includes(lang)) {
+		detectDnp3UnencryptedTransport(unitId, lines, items);
+		detectModbusHardcodedCoils(unitId, lines, items);
+		detectIEC62443CredentialInOTContext(unitId, lines, items);
+	}
+	if (['iec61131', 'c', 'cpp', 'embedded-c', 'python'].includes(lang)) {
+		detectSILRatedFunctionWithoutDiagnosticCoverage(unitId, lines, items);
+	}
+	// \u2500\u2500 Telecom & 5G \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+	if (['c', 'cpp', 'embedded-c', 'python', 'java'].includes(lang)) {
+		detectNASKeyDerivationInCode(unitId, lines, items);
+		detectFronthaulLatencyRisk(unitId, lines, items);
+		detectGTPTunnelPlaneViolation(unitId, lines, items);
+	}
+	if (lang === 'ttcn3') {
+		detectTTCN3InConcVerdictSuppression(unitId, lines, items);
+	}
+	// \u2500\u2500 Industrial IoT & OT \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+	if (['c', 'cpp', 'embedded-c', 'python', 'java', 'javascript', 'typescript'].includes(lang)) {
+		detectEtherCATTimingViolation(unitId, lines, items);
+		detectCANopenSDOTimeout(unitId, lines, items);
+		detectMQTTSparkplugBirthCertificate(unitId, lines, items);
+		detectOPCUANodeWithoutSecurity(unitId, lines, items);
+		detectTSNGateScheduleViolation(unitId, lines, items);
+	}
+	if (['c', 'cpp', 'embedded-c'].includes(lang)) {
+		detectPROFINETDeviceNameHardcoded(unitId, lines, items);
+	}
 
 	return items;
 }
@@ -215,7 +276,7 @@ export function detectCopyPasteCobol(
 }
 
 
-// ─── Detection Helpers ────────────────────────────────────────────────────────
+// \u2500\u2500\u2500 Detection Helpers \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
 
 function detectMissingErrorHandling(
 	unitId: string, content: string, lang: string,
@@ -264,7 +325,7 @@ function detectMissingErrorHandling(
 			category: 'missing-error-handling',
 			description: `Unit performs ${ops} but has no visible error handling.`,
 			severity: 'warning',
-			migrationImpact: 'Target language translation must add appropriate error handling — the translator cannot infer intent from missing handlers.',
+			migrationImpact: 'Target language translation must add appropriate error handling \u2014 the translator cannot infer intent from missing handlers.',
 		});
 	}
 }
@@ -290,7 +351,7 @@ function detectHardcodedCredentials(
 					description: `Possible hardcoded credential at line ${i + 1}.`,
 					severity: 'error',
 					lineNumber: i + 1,
-					migrationImpact: 'Credentials must be externalised to environment variables or a secrets manager before migration — never carry forward into target.',
+					migrationImpact: 'Credentials must be externalised to environment variables or a secrets manager before migration \u2014 never carry forward into target.',
 				});
 				break;
 			}
@@ -421,7 +482,7 @@ function detectImplicitCoercion(
 			unitId, category: 'implicit-type-coercion',
 			description: `${count} potential implicit type coercion / loose equality patterns detected.`,
 			severity: 'warning',
-			migrationImpact: 'Loose equality semantics often differ in target languages — explicit type checks must be added during migration.',
+			migrationImpact: 'Loose equality semantics often differ in target languages \u2014 explicit type checks must be added during migration.',
 		});
 	}
 }
@@ -453,7 +514,7 @@ function detectUnboundedLoop(
 					description: `Potentially unbounded loop at line ${i + 1}.`,
 					severity: 'warning',
 					lineNumber: i + 1,
-					migrationImpact: 'Unbounded loops require explicit termination conditions in the target — translator cannot infer the intent from `while(true)` alone.',
+					migrationImpact: 'Unbounded loops require explicit termination conditions in the target \u2014 translator cannot infer the intent from `while(true)` alone.',
 				});
 				break;
 			}
@@ -466,7 +527,7 @@ function detectGotoUsage(
 ): void {
 	const gotoPatterns: Partial<Record<string, RegExp>> = {
 		cobol:      /\bGO\s+TO\b|\bGOBACK\b/i,
-		java:       /\bgoto\b/,     // reserved but unused — just flag if present
+		java:       /\bgoto\b/,     // reserved but unused \u2014 just flag if present
 		c:          /\bgoto\b/,
 		cpp:        /\bgoto\b/,
 		csharp:     /\bgoto\b/,
@@ -537,7 +598,7 @@ function detectDeadCode(
 ): void {
 	// Only meaningful for named units (not file-level units)
 	if (unitName.includes('$module') || unitName.includes('$file')) { return; }
-	// Very common utility patterns — skip
+	// Very common utility patterns \u2014 skip
 	if (/^(?:main|Main|Program|App|index|Index|init|Init|constructor|Constructor)$/.test(unitName)) { return; }
 
 	const normalised = unitName.replace(/[-_$]/g, '').toLowerCase();
@@ -559,7 +620,7 @@ function detectDeadCode(
 function detectNoUnitTests(
 	unitId: string, unitName: string, testUnitIds: string[], items: ITechDebtItem[],
 ): void {
-	if (testUnitIds.length === 0) { return; } // No test files detected at all — skip
+	if (testUnitIds.length === 0) { return; } // No test files detected at all \u2014 skip
 	const norm = unitName.toLowerCase().replace(/[-_$]/g, '');
 	const hasTest = testUnitIds.some(tid => {
 		const tnorm = tid.toLowerCase().replace(/[-_$]/g, '');
@@ -572,13 +633,488 @@ function detectNoUnitTests(
 			unitId, category: 'no-unit-tests',
 			description: `No test file found that corresponds to unit "${unitName}".`,
 			severity: 'info',
-			migrationImpact: 'Untested units carry higher migration risk — write characterisation tests before translating to catch regressions.',
+			migrationImpact: 'Untested units carry higher migration risk \u2014 write characterisation tests before translating to catch regressions.',
 		});
 	}
 }
 
 
-// ─── Comment Detection Helpers ────────────────────────────────────────────────
+// \u2500\u2500\u2500 Firmware / Industrial Debt Detectors \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+
+function detectUnsafePointerArithmetic(unitId: string, lines: string[], items: ITechDebtItem[]): void {
+	// Cast of an integer literal to volatile uint*_t \u2014 typical direct register access
+	const re = /\(\s*volatile\s+uint(?:8|16|32|64)_t\s*\*\s*\)\s*0x[0-9A-Fa-f]+/;
+	for (let i = 0; i < lines.length; i++) {
+		if (re.test(lines[i])) {
+			items.push({
+				unitId, category: 'unsafe-pointer-arithmetic',
+				description: `Raw peripheral register address cast at line ${i + 1} \u2014 MISRA-C:2012 Rule 11.4 violation.`,
+				severity: 'error',
+				lineNumber: i + 1,
+				migrationImpact:
+					'Replace raw register casts with HAL/SDK named-register macros (e.g. GPIOA->ODR \u2192 GPIO_PinWrite) ' +
+					'before migration. MISRA-C:2012 R11.4 prohibits casts between pointer and integer types.',
+			});
+		}
+	}
+}
+
+function detectISRReentranceRisk(unitId: string, lines: string[], items: ITechDebtItem[]): void {
+	const isrDecl = /\bvoid\s+\w+_IRQHandler\s*\(\s*void\s*\)/;
+	let inISR = false;
+	let braceDepth = 0;
+	let globalWriteInISR = false;
+	let globalWriteLine = 0;
+	const criticalSectionRe = /\b(?:taskENTER_CRITICAL|__disable_irq|portDISABLE_INTERRUPTS|BaseType_t\s+xHigherPriority|portYIELD_FROM_ISR)\b/;
+
+	for (let i = 0; i < lines.length; i++) {
+		const line = lines[i];
+		if (isrDecl.test(line)) { inISR = true; braceDepth = 0; globalWriteInISR = false; continue; }
+		if (!inISR) { continue; }
+		braceDepth += (line.match(/\{/g) ?? []).length - (line.match(/\}/g) ?? []).length;
+		if (braceDepth <= 0) { inISR = false; continue; }
+		// Detect global variable write: assignment to a global-like name (lowercase snake, all-caps)
+		if (/\b[a-zA-Z_][a-zA-Z0-9_]+\s*(?:\[.*\])?\s*[+\-*/%&|^]?=(?!=)/.test(line) &&
+		    !criticalSectionRe.test(line) && !/\blocal|const\s|uint\s+\w+\s*=|int\s+\w+\s*=/.test(line)) {
+			globalWriteInISR = true;
+			globalWriteLine = i + 1;
+		}
+	}
+	if (globalWriteInISR) {
+		items.push({
+			unitId, category: 'isr-reentrance-risk',
+			description: `ISR appears to write a shared variable at line ${globalWriteLine} without a critical section guard.`,
+			severity: 'error',
+			lineNumber: globalWriteLine,
+			migrationImpact:
+				'Wrap all ISR-to-mainline shared-variable accesses in taskENTER_CRITICAL / taskEXIT_CRITICAL (FreeRTOS) ' +
+				'or irq_lock / irq_unlock (Zephyr). In RTOS migration, use a queue or semaphore instead of globals.',
+		});
+	}
+}
+
+function detectMisraCCriticalViolations(unitId: string, lines: string[], items: ITechDebtItem[]): void {
+	// Rule 11.4: Cast between pointer and integer
+	const r11_4 = /\(\s*(?:uint|int)(?:8|16|32|64)_t\s*\*\s*\)/;
+	// Rule 14.4: Non-boolean condition in if/while (e.g. if(ptr) rather than if(ptr != NULL))
+	const r14_4 = /\bif\s*\(\s*(?!\s*\w+\s*(?:!=|==|<|>|<=|>=|!|\|\||\&\&))\s*[\w*&]+\s*\)/;
+	let r11_4Count = 0; let r14_4Count = 0;
+	for (const line of lines) {
+		if (r11_4.test(line)) { r11_4Count++; }
+		if (r14_4.test(line)) { r14_4Count++; }
+	}
+	if (r11_4Count > 0) {
+		items.push({
+			unitId, category: 'misra-c-critical-violation',
+			description: `${r11_4Count} instance(s) of MISRA-C:2012 Rule 11.4 (pointer/integer cast) detected.`,
+			severity: 'error',
+			migrationImpact: 'Replace integer-to-pointer casts with CMSIS-named peripheral base macros (e.g. GPIOA_BASE \u2192 (GPIO_TypeDef *)) per MISRA-C Advisory Rule 11.4.',
+		});
+	}
+	if (r14_4Count > 0) {
+		items.push({
+			unitId, category: 'misra-c-critical-violation',
+			description: `${r14_4Count} instance(s) of MISRA-C:2012 Rule 14.4 (non-boolean controlling expression) detected.`,
+			severity: 'warning',
+			migrationImpact: 'Replace implicit null/zero checks with explicit comparisons (ptr != NULL, count != 0u) to satisfy MISRA-C Advisory Rule 14.4.',
+		});
+	}
+}
+
+function detectHardwareDependency(unitId: string, lines: string[], items: ITechDebtItem[]): void {
+	// MCU-specific peripheral #defines used as values (not CMSIS/HAL abstractions)
+	const mcuRegRe = /\b(GPIO[A-H]|USART\d|SPI\d|I2C\d|TIM\d+|ADC\d|DMA\d|RCC|EXTI|NVIC|SCB|SysTick)\b->|\b\(GPIO_TypeDef\s*\*\)\s*0x/;
+	let count = 0;
+	for (const line of lines) {
+		if (mcuRegRe.test(line) && !/HAL_|LL_|CMSIS/.test(line)) { count++; }
+	}
+	if (count > 0) {
+		items.push({
+			unitId, category: 'hardware-dependency',
+			description: `${count} direct peripheral register access(es) without HAL/LL abstraction.`,
+			severity: count > 5 ? 'error' : 'warning',
+			migrationImpact:
+				'Each peripheral access must be mapped to its HAL/SDK equivalent before migration. ' +
+				'Target SDK (NXP MCUXpresso, STM32 HAL, Zephyr drivers) requires driver API calls \u2014 not raw register writes.',
+		});
+	}
+}
+
+function detectWatchdogGap(unitId: string, lines: string[], logicalLineCount: number, items: ITechDebtItem[]): void {
+	if (logicalLineCount < 50) { return; } // Short functions don't need watchdog refresh
+	const watchdogRefresh = /\b(?:HAL_IWDG_Refresh|IWDG_ReloadCounter|wdt_feed|watchdog_reset|ioctl.*WDIOC_KEEPALIVE|vTaskDelay|HAL_Delay|taskYIELD)\b/;
+	const hasWatchdog = lines.some(l => watchdogRefresh.test(l));
+	if (!hasWatchdog) {
+		items.push({
+			unitId, category: 'watchdog-gap',
+			description: `Function body has ${logicalLineCount} logical lines with no watchdog refresh call.`,
+			severity: logicalLineCount > 200 ? 'error' : 'warning',
+			migrationImpact:
+				'Long-running firmware functions without watchdog refresh can cause unexpected resets in target. ' +
+				'Insert watchdog refresh calls at safe points, or use FreeRTOS task delay (which yields to watchdog task).',
+		});
+	}
+}
+
+function detectAutosarRteDependency(unitId: string, lines: string[], items: ITechDebtItem[]): void {
+	const rteRe = /\bRte_(?:Read|Write|Call|Send|Receive|IRead|IWrite)\s*\(/;
+	const araComRe = /\bara::com|AraComProxy|AraComSkeleton|ara::core::Result/;
+	const rteCount = lines.filter(l => rteRe.test(l)).length;
+	if (rteCount === 0) { return; }
+	const hasAraCom = lines.some(l => araComRe.test(l));
+	if (!hasAraCom) {
+		items.push({
+			unitId, category: 'autosar-rte-dependency',
+			description: `${rteCount} AUTOSAR Classic Rte_Read/Write/Call invocation(s) with no Adaptive ara::com mapping found in this unit.`,
+			severity: 'warning',
+			migrationImpact:
+				'Each Classic RTE port must be mapped to an Adaptive ara::com service interface. ' +
+				'Generate ara::com proxy/skeleton from ServiceInterface ARXML before translating this SWC.',
+		});
+	}
+}
+
+function detectE2EProtectionGap(unitId: string, lines: string[], items: ITechDebtItem[]): void {
+	const e2eProfileRe = /\bCom_SendSignal|Rte_Write|E2E_P\w+_Protect|E2E_P\w+_Check\b/;
+	const e2eWrapperRe = /\bE2E_P(?:01|02|04|05|06|07|08|11)_Protect|E2EPW_Write|E2EPW_Read\b/;
+	const hasSend = lines.some(l => e2eProfileRe.test(l));
+	const hasWrapper = lines.some(l => e2eWrapperRe.test(l));
+	if (hasSend && !hasWrapper) {
+		items.push({
+			unitId, category: 'e2e-protection-gap',
+			description: 'Com_SendSignal / Rte_Write found but no E2E protection wrapper (E2EPW_Write) detected.',
+			severity: 'warning',
+			migrationImpact:
+				'ASIL-rated signals require E2E protection (CRC + counter) in the target Adaptive stack. ' +
+				'Configure the E2E profile in the ComM/ara::com manifest and link the SWS_E2ELibrary.',
+		});
+	}
+}
+
+function detectSecurityKeyMaterial(unitId: string, lines: string[], items: ITechDebtItem[]): void {
+	// 3GPP key arrays: uint8_t kNAS[16], uint8_t kRRC[32] etc.
+	const keyArrayRe = /\b(?:uint8_t|unsigned char|bytes)\s+k(?:NAS|RRC|AMF|SEAF|AUSF|ASME|eNB|gNB|UPint|KAMF)\s*\[/i;
+	// SUPI/SUCI inline
+	const supiRe = /\bsupi\s*=\s*["']\d{15}["']|\bimsi\s*=\s*["']\d{15}["']/i;
+	// Generic master key or PSK
+	const pskRe = /\b(?:master_key|msk|emsk|pmk|psk|mk)\s*=\s*(?:0x[0-9A-Fa-f]+|\{[0x0-9A-Fa-f,\s]+\})/i;
+
+	for (let i = 0; i < lines.length; i++) {
+		if (keyArrayRe.test(lines[i]) || supiRe.test(lines[i]) || pskRe.test(lines[i])) {
+			items.push({
+				unitId, category: 'security-key-material',
+				description: `3GPP/wireless security key material found inline at line ${i + 1}.`,
+				severity: 'error',
+				lineNumber: i + 1,
+				migrationImpact:
+					'Key material MUST NOT be hardcoded per 3GPP TS 33.501 S6.2. ' +
+					'Externalise to an HSM, TEE, or key provisioning service before migration. ' +
+					'This is a blocking prerequisite \u2014 failure to remediate violates GSMA NESAS requirements.',
+			});
+			break; // One item per unit is enough
+		}
+	}
+}
+
+function detectGooseProtectionRelay(unitId: string, lines: string[], items: ITechDebtItem[]): void {
+	// IEC 61850 GOOSE trip command being sent over TCP or HTTP (forbidden for protection relays)
+	const gooseRe = /\b(?:XCBR|XSWI|goose|GOOSE|IEC61850|iec61850)\b/;
+	const tcpHttpRe = /\b(?:send|write|publish|post|put)\s*\(|http(?:s)?:\/\/|mqtt|opc.?ua|opcua/i;
+	const hasGoose = lines.some(l => gooseRe.test(l));
+	const hasTcpHttp = lines.some(l => tcpHttpRe.test(l));
+	if (hasGoose && hasTcpHttp) {
+		items.push({
+			unitId, category: 'goose-protection-relay',
+			description: 'IEC 61850 GOOSE protection-relay logic co-located with TCP/HTTP/MQTT send calls.',
+			severity: 'error',
+			migrationImpact:
+				'GOOSE trip commands for protection relays (XCBR/XSWI) must remain on IEC 61850 multicast GOOSE. ' +
+				'Bridging via OPC-UA, MQTT, or HTTP cannot meet IEC 61850-5 Class P5/P6 latency (< 4 ms). ' +
+				'Separate protection-relay logic from monitoring/HMI data paths before migration.',
+		});
+	}
+}
+
+
+// \u2500\u2500\u2500 Energy / Critical Infrastructure Detectors \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+
+function detectDnp3UnencryptedTransport(unitId: string, lines: string[], items: ITechDebtItem[]): void {
+	// DNP3 usage without Secure Authentication v5 (SAv5) \u2014 IEC 62351-5 / NERC CIP
+	const dnp3Re = /\bdnp3|DNP3|DnpMaster|DnpOutstation|DnpChannel\b/;
+	const sauthRe = /\bSAv5|SecureAuthentication|HMAC_SHA256|challengeKey\b/;
+	const hasDnp3 = lines.some(l => dnp3Re.test(l));
+	const hasSAuth = lines.some(l => sauthRe.test(l));
+	if (hasDnp3 && !hasSAuth) {
+		items.push({
+			unitId, category: 'dnp3-secure-auth-gap',
+			description: 'DNP3 communication detected without Secure Authentication v5 (SAv5) \u2014 NERC CIP / IEC 62351-5 violation.',
+			severity: 'error',
+			migrationImpact:
+				'DNP3 without SAv5 is prohibited in NERC CIP BES Cyber Systems (CIP-005, CIP-007). ' +
+				'The migration target must implement DNP3 SAv5 (HMAC-SHA-256 challenges) or replace DNP3 with IEC 60870-5-104 over TLS.',
+		});
+	}
+}
+
+function detectModbusHardcodedCoils(unitId: string, lines: string[], items: ITechDebtItem[]): void {
+	// Hardcoded Modbus coil/register addresses \u2014 should be symbolic constants per IEC 62443
+	const modbusRe = /\b(?:ReadCoils|ReadHoldingRegisters|WriteSingleCoil|WriteMultipleRegisters|mb_read|mb_write)\s*\([^)]*\d{3,}/;
+	let count = 0;
+	for (const line of lines) {
+		if (modbusRe.test(line)) { count++; }
+	}
+	if (count > 3) {
+		items.push({
+			unitId, category: 'hardware-dependency',
+			description: `${count} hardcoded Modbus register/coil address(es) detected \u2014 should be symbolic constants.`,
+			severity: 'warning',
+			migrationImpact:
+				'Hardcoded Modbus addresses must be replaced with named symbolic constants or an OPC-UA NodeId map ' +
+				'in the migration target to support reconfiguration without code changes.',
+		});
+	}
+}
+
+function detectIEC62443CredentialInOTContext(unitId: string, lines: string[], items: ITechDebtItem[]): void {
+	// OT/IT credentials in SCADA/PLC context \u2014 IEC 62443-2-4 requirement
+	const otContextRe = /\b(?:scada|plc|rtu|hmi|historian|ied|substation|dcs)\b/i;
+	const credRe = /(?:password|passwd|secret)\s*[=:]\s*["'][^"']{4,}["']/i;
+	const hasOtContext = lines.some(l => otContextRe.test(l));
+	const hasCredential = lines.some(l => credRe.test(l));
+	if (hasOtContext && hasCredential) {
+		items.push({
+			unitId, category: 'hardcoded-credential',
+			description: 'Hardcoded credential detected in OT/SCADA/PLC context \u2014 IEC 62443-2-4 violation.',
+			severity: 'error',
+			migrationImpact:
+				'IEC 62443-2-4 SP.03.03 requires that IACS component credentials are provisioned externally. ' +
+				'Remove all hardcoded passwords and replace with a PAM/CyberArk/vault integration in the migration target.',
+		});
+	}
+}
+
+function detectSILRatedFunctionWithoutDiagnosticCoverage(unitId: string, lines: string[], items: ITechDebtItem[]): void {
+	// SIL-rated safety function block without diagnostic coverage
+	const silFbRe = /\b(?:SF_EmergencyStop|SF_SafelyLimitedSpeed|SF_SafelyLimitedPosition|SF_GuardMonitoring|SF_SafeStop|SF_EnableSwitch|SF_MutingPar|SF_MutingSeq|STO_function|SS1_function|SS2_function|SLS_function|SBC_function)\s*\(/;
+	const diagnosticRe = /\b(?:DiagCode|FaultState|S_FaultState|error_code|ErrorID|errId|diagnosis|DIAG)\b/;
+	const hasSilFb = lines.some(l => silFbRe.test(l));
+	const hasDiag = lines.some(l => diagnosticRe.test(l));
+	if (hasSilFb && !hasDiag) {
+		items.push({
+			unitId, category: 'misra-c-critical-violation',
+			description: 'PLCopen Safety FB call without DiagCode/FaultState diagnostic output handling.',
+			severity: 'error',
+			migrationImpact:
+				'IEC 62061 S6.7.6 requires that safety function diagnostic outputs (DiagCode, FaultState, ErrorID) ' +
+				'are monitored and reacted to. Target migration must wire all diagnostic outputs to a safety PLC fault handler.',
+		});
+	}
+}
+
+// \u2500\u2500\u2500 Telecom & 5G Detectors \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+
+function detectNASKeyDerivationInCode(unitId: string, lines: string[], items: ITechDebtItem[]): void {
+	// NAS/AS key derivation inline \u2014 3GPP TS 33.501 S6.2 violation
+	const kdfRe = /\b(?:KDF|derive_key|compute_ck_ik|f2_f3_f4_f5|milenage_|kasumi_|snow3g_|zuc_)\s*\(/i;
+	const keyOutputRe = /\b(?:CK|IK|AK|RES|AUTN|XRES)\b/;
+	const hasKdf = lines.some(l => kdfRe.test(l));
+	const hasKeyOutput = lines.some(l => keyOutputRe.test(l));
+	if (hasKdf && hasKeyOutput) {
+		items.push({
+			unitId, category: 'security-key-material',
+			description: 'NAS/AS key derivation function (KDF/Milenage/KASUMI/SNOW 3G) called with key output in source \u2014 3GPP TS 33.501 S6.2 violation.',
+			severity: 'error',
+			migrationImpact:
+				'3GPP TS 33.501 S6.2 requires all AS/NAS key material to remain within the SIM/USIM or HSM/TEE. ' +
+				'Key derivation must be delegated to the UICC or a secure enclave. ' +
+				'This is a blocking prerequisite before telecom NF migration.',
+		});
+	}
+}
+
+function detectFronthaulLatencyRisk(unitId: string, lines: string[], items: ITechDebtItem[]): void {
+	// O-RAN fronthaul path through HTTP/REST \u2014 fatal for eCPRI latency
+	const fhRe = /\b(?:eCPRI|ecpri|fronthaul|iq_data|IQ_sample|oranU|oran_u_plane)\b/i;
+	const httpRe = /\b(?:http|REST|axios|fetch|XMLHttpRequest|curl|requests\.get|requests\.post)\b/i;
+	const hasFh = lines.some(l => fhRe.test(l));
+	const hasHttp = lines.some(l => httpRe.test(l));
+	if (hasFh && hasHttp) {
+		items.push({
+			unitId, category: 'goose-protection-relay',
+			description: 'O-RAN fronthaul IQ data path co-located with HTTP/REST calls \u2014 fatal for eCPRI timing.',
+			severity: 'error',
+			migrationImpact:
+				'O-RAN Option 7-2x eCPRI fronthaul requires < 100 us one-way latency. ' +
+				'HTTP/REST cannot meet this constraint. ' +
+				'Separate IQ-plane (U-Plane) processing from management/control plane (M-Plane over NETCONF/YANG). ' +
+				'Use shared memory + DPDK or kernel bypass for the U-plane path.',
+		});
+	}
+}
+
+function detectTTCN3InConcVerdictSuppression(unitId: string, lines: string[], items: ITechDebtItem[]): void {
+	// TTCN-3 INCONC verdict suppressed or ignored \u2014 GSMA PRD FS.13
+	const inconcRe = /\bverdict\s*:=\s*inconc\b|\bsetverdict\s*\(\s*inconc\s*\)/i;
+	let inconcLines = 0;
+	let hasTraceabilityComment = false;
+	for (const line of lines) {
+		if (inconcRe.test(line)) { inconcLines++; }
+		if (inconcLines > 0 && /\b(?:\/\/|--)\s*3GPP\s+TS\s+\d+/.test(line)) { hasTraceabilityComment = true; }
+	}
+	if (inconcLines > 0 && !hasTraceabilityComment) {
+		items.push({
+			unitId, category: 'ttcn3-verdict-suppression',
+			description: `${inconcLines} INCONC verdict(s) without 3GPP TS clause reference \u2014 GSMA PRD FS.13 violation.`,
+			severity: 'warning',
+			migrationImpact:
+				'GSMA PRD FS.13 requires that every INCONC verdict in a TTCN-3 test module is accompanied by ' +
+				'a reference to the specific 3GPP TS clause it corresponds to. ' +
+				'The migration target (PyTest/Robot Framework) must replace each INCONC with pytest.skip() or SKIP ' +
+				'with a documented 3GPP TS clause justification.',
+		});
+	}
+}
+
+function detectGTPTunnelPlaneViolation(unitId: string, lines: string[], items: ITechDebtItem[]): void {
+	// GTP-U tunnel endpoint in C-Plane code path \u2014 3GPP TS 23.501 UP/CP separation
+	const gtpURe = /\b(?:gtpu|GTP_U|gtp1u|gtp_u_send|pfcp|PFCP|PDR|FAR|URR)\b/i;
+	const cpSignalRe = /\b(?:AMF|SMF|ngap_|nas_encode|nas_decode|rrc_setup|NAS_PDU)\b/;
+	const hasGtpU = lines.some(l => gtpURe.test(l));
+	const hasCpSignal = lines.some(l => cpSignalRe.test(l));
+	if (hasGtpU && hasCpSignal) {
+		items.push({
+			unitId, category: 'protocol-state-machine-break',
+			description: 'GTP-U (User Plane) processing mixed with Control Plane NAS/RRC in same unit \u2014 3GPP TS 23.501 UP/CP separation violation.',
+			severity: 'error',
+			migrationImpact:
+				'3GPP TS 23.501 S5.8 requires strict separation of User Plane (UPF/GTP-U/PFCP) from ' +
+				'Control Plane (AMF/SMF/NAS). Mixing them blocks O-RAN CU-UP / CU-CP split. ' +
+				'Decompose into separate translation units before NF migration.',
+		});
+	}
+}
+
+// \u2500\u2500\u2500 Industrial IoT & OT Detectors \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+
+function detectEtherCATTimingViolation(unitId: string, lines: string[], items: ITechDebtItem[]): void {
+	// EtherCAT application code using OS sleep/delay \u2014 fatal for deterministic cycle time
+	const ecatRe = /\b(?:EC_Master|ecrt_|soem_|ethercatmaster|EcMasterLib|EtherCATmaster)\b/i;
+	const sleepRe = /\b(?:sleep|usleep|nanosleep|std::this_thread::sleep|time\.sleep|Thread\.Sleep|delay|HAL_Delay)\s*\(/i;
+	const hasEcat = lines.some(l => ecatRe.test(l));
+	const hasSleep = lines.some(l => sleepRe.test(l));
+	if (hasEcat && hasSleep) {
+		items.push({
+			unitId, category: 'isr-reentrance-risk',
+			description: 'EtherCAT master application uses OS sleep/delay \u2014 violates deterministic cycle time requirement.',
+			severity: 'error',
+			migrationImpact:
+				'EtherCAT cycle times (250 us\u20131 ms) require a PREEMPT-RT or dedicated RTOS task loop without OS sleeps. ' +
+				'Replace sleep() calls with cycle-synchronised ecrt_master_receive/ecrt_domain_process/ecrt_master_send ' +
+				'inside a SCHED_FIFO real-time thread. Target must use Linux PREEMPT_RT or a bare-metal RTOS.',
+		});
+	}
+}
+
+function detectCANopenSDOTimeout(unitId: string, lines: string[], items: ITechDebtItem[]): void {
+	// CANopen SDO transfer without timeout \u2014 can block network management forever
+	const sdoRe = /\b(?:CO_SDO_readExpedited|CO_SDO_writeExpedited|CO_SDOclientRead|SDO_write|sdo_read|co_sdo)\s*\(/i;
+	const timeoutRe = /\b(?:timeout|SDO_TIMEOUT|timeoutMs|maxWait|SDO_BLOCK_TIMEOUT)\b/i;
+	const hasSdo = lines.some(l => sdoRe.test(l));
+	const hasTimeout = lines.some(l => timeoutRe.test(l));
+	if (hasSdo && !hasTimeout) {
+		items.push({
+			unitId, category: 'unbounded-loop',
+			description: 'CANopen SDO transfer without timeout \u2014 can block NMT state machine indefinitely.',
+			severity: 'warning',
+			migrationImpact:
+				'CANopen CiA 301 S9.2.4 requires SDO client timeout handling. A blocking SDO will stall the NMT ' +
+				'heartbeat consumer and may trigger node guarding timeout errors across the network. ' +
+				'Add SDO_TIMEOUT_MS and error recovery to all SDO transactions in the migration target.',
+		});
+	}
+}
+
+function detectMQTTSparkplugBirthCertificate(unitId: string, lines: string[], items: ITechDebtItem[]): void {
+	// MQTT SparkplugB publisher without NBIRTH/DBIRTH publication
+	const spbPublishRe = /\b(?:NDEATH|DDEATH|NDATA|DDATA|sparkplug|SparkplugB|spB)\b/i;
+	const birthRe = /\b(?:NBIRTH|DBIRTH)\b/;
+	const hasSpbPublish = lines.some(l => spbPublishRe.test(l));
+	const hasBirth = lines.some(l => birthRe.test(l));
+	if (hasSpbPublish && !hasBirth) {
+		items.push({
+			unitId, category: 'missing-error-handling',
+			description: 'MQTT SparkplugB publisher sends NDATA/DDATA without NBIRTH/DBIRTH \u2014 violates SparkplugB v3.0 S4.2.',
+			severity: 'error',
+			migrationImpact:
+				'SparkplugB v3.0 S4.2 requires every Node/Device to publish a BIRTH certificate (NBIRTH/DBIRTH) ' +
+				'immediately after connecting. Without it, Host Applications cannot build the live metric dictionary. ' +
+				'The migration target must publish NBIRTH with all metric definitions on session establishment.',
+		});
+	}
+}
+
+function detectOPCUANodeWithoutSecurity(unitId: string, lines: string[], items: ITechDebtItem[]): void {
+	// OPC-UA client/server without security policy \u2014 IEC 62443 / IEC 62541-6
+	const opcuaRe = /\b(?:OpcUa_|UA_Client|UA_Server|open62541|opcua_client|opcua_server|EndpointUrl|opcua\.Client)\b/i;
+	const securityPolicyRe = /\b(?:SecurityPolicy|BASIC256SHA256|AES128_SHA256|AES256_SHA256|Sign_and_Encrypt|MessageSecurity)\b/i;
+	const noneRe = /(?:SecurityPolicy\.None|SecurityMode\.None|None_|security_policy\s*=\s*["']None["'])/i;
+	const hasOpcua = lines.some(l => opcuaRe.test(l));
+	const hasSecPolicy = lines.some(l => securityPolicyRe.test(l));
+	const hasNone = lines.some(l => noneRe.test(l));
+	if (hasOpcua && (!hasSecPolicy || hasNone)) {
+		items.push({
+			unitId, category: 'hardcoded-credential',
+			description: 'OPC-UA endpoint using SecurityPolicy.None or missing security configuration \u2014 IEC 62443 / IEC 62541-6 violation.',
+			severity: 'error',
+			migrationImpact:
+				'IEC 62443-3-3 SR 3.1 and IEC 62541-6 S6.7 require OPC-UA connections in industrial networks to use ' +
+				'at least Basic256Sha256 (Sign & Encrypt). SecurityPolicy.None is prohibited except for discovery endpoints. ' +
+				'Migration target must configure certificate-based authentication + message encryption.',
+		});
+	}
+}
+
+function detectTSNGateScheduleViolation(unitId: string, lines: string[], items: ITechDebtItem[]): void {
+	// TSN Qbv gate schedule reference without IEEE 802.1AS time synchronisation
+	const tsnQbvRe = /\b(?:qbv|Qbv|GateControlList|GateState|TAPRIO|tc_taprio|ieee_8021qbv|tsn_schedule)\b/i;
+	const ptpSyncRe = /\b(?:ptp|PTP|IEEE1588|ptpd|linuxptp|PTPD|gptp|gPTP|802\.1AS)\b/i;
+	const hasQbv = lines.some(l => tsnQbvRe.test(l));
+	const hasSync = lines.some(l => ptpSyncRe.test(l));
+	if (hasQbv && !hasSync) {
+		items.push({
+			unitId, category: 'hardware-dependency',
+			description: 'IEEE 802.1Qbv gate schedule configured without IEEE 802.1AS (gPTP) time synchronisation.',
+			severity: 'error',
+			migrationImpact:
+				'IEEE 802.1Qbv Scheduled Traffic requires all talkers and listeners to be synchronised to < 1 us ' +
+				'via IEEE 802.1AS-2020 (gPTP). Without time sync the gate schedule is meaningless and real-time ' +
+				'traffic will miss its transmission window. Migration target must initialise linuxptp/ptpd2 ' +
+				'before applying the taprio qdisc gate schedule.',
+		});
+	}
+}
+
+function detectPROFINETDeviceNameHardcoded(unitId: string, lines: string[], items: ITechDebtItem[]): void {
+	// Hardcoded PROFINET station name / IP \u2014 must be configurable per IEC 61158 / PN spec
+	const pnRe = /\b(?:pn_dev|PN_Device|profinet_|PNIO_|PnDev_|pndv_)\b/i;
+	const hardcodedNameRe = /(?:station_name|device_name|pnio_dev_name)\s*=\s*["'][^"']{3,}["']/i;
+	const hasPn = lines.some(l => pnRe.test(l));
+	const hasHardcodedName = lines.some(l => hardcodedNameRe.test(l));
+	if (hasPn && hasHardcodedName) {
+		items.push({
+			unitId, category: 'hardware-dependency',
+			description: 'PROFINET station name hardcoded in source \u2014 must be DCP-assignable per IEC 61158-6-10.',
+			severity: 'warning',
+			migrationImpact:
+				'PROFINET IEC 61158-6-10 requires the station name to be assignable via DCP (Discovery and basic Configuration Protocol). ' +
+				'Hardcoding it prevents correct deployment in PLC project engineering tools (TIA Portal / STEP7). ' +
+				'Store in non-volatile memory or flash and implement DCP Set/Identify handlers.',
+		});
+	}
+}
+
+
+// \u2500\u2500\u2500 Comment Detection Helpers \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
 
 function isCommentLine(line: string, lang: string): boolean {
 	const t = line.trim();
@@ -601,7 +1137,7 @@ function isCommentContent(line: string, lang: string): boolean {
 }
 
 
-// ─── Clone Detection Helpers ──────────────────────────────────────────────────
+// \u2500\u2500\u2500 Clone Detection Helpers \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
 
 function normaliseForClone(content: string, lang: string): string {
 	let s = content

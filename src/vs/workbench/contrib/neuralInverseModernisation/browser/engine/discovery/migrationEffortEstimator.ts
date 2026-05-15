@@ -7,51 +7,58 @@
  * # Migration Effort Estimator
  *
  * Produces heuristic `IMigrationEffortEstimate` per unit using a weighted
- * multi-factor model. No machine learning is required — the model is calibrated
+ * multi-factor model. No machine learning is required \u2014 the model is calibrated
  * against typical enterprise legacy migration projects.
  *
  * ## Scoring Model
  *
- * Each factor contributes "difficulty points" (0–∞):
+ * Each factor contributes "difficulty points" (0\u2013\u221E):
  *
  * | Factor                        | Points Added                                          |
  * |-------------------------------|-------------------------------------------------------|
- * | Logical lines (LL)            | <50 → 0  │  50-200 → 1  │  200-500 → 2  │  >500 → 4 |
- * | Cyclomatic complexity (CC)    | <5 → 0   │  5-10 → 1    │  10-20 → 2    │  >20 → 4  |
- * | Nesting depth                 | ≤3 → 0   │  4-5 → 1     │  >5 → 2                   |
- * | Parameter count               | ≤5 → 0   │  6-10 → 1    │  >10 → 2                  |
+ * | Logical lines (LL)            | <50 \u2192 0  \u2502  50-200 \u2192 1  \u2502  200-500 \u2192 2  \u2502  >500 \u2192 4 |
+ * | Cyclomatic complexity (CC)    | <5 \u2192 0   \u2502  5-10 \u2192 1    \u2502  10-20 \u2192 2    \u2502  >20 \u2192 4  |
+ * | Nesting depth                 | \u22643 \u2192 0   \u2502  4-5 \u2192 1     \u2502  >5 \u2192 2                   |
+ * | Parameter count               | \u22645 \u2192 0   \u2502  6-10 \u2192 1    \u2502  >10 \u2192 2                  |
  * | External calls                | +1 if present                                         |
  * | Database operations           | +1 if present                                         |
  * | File I/O                      | +1 if present                                         |
  * | UI interaction                | +1 if present                                         |
- * | Regulated fields (count)      | ≤2 → 0   │  3-5 → 1     │  >5 → 3                   |
- * | GRC violations (count)        | ≤2 → 0   │  3-10 → 1    │  >10 → 2                  |
- * | Tech debt items (count)       | 0 → 0    │  1-3 → 1     │  >3 → 2                   |
+ * | Regulated fields (count)      | \u22642 \u2192 0   \u2502  3-5 \u2192 1     \u2502  >5 \u2192 3                   |
+ * | GRC violations (count)        | \u22642 \u2192 0   \u2502  3-10 \u2192 1    \u2502  >10 \u2192 2                  |
+ * | Tech debt items (count)       | 0 \u2192 0    \u2502  1-3 \u2192 1     \u2502  >3 \u2192 2                   |
  * | Language difficulty factor    | Applied as a multiplier after summing raw points      |
  * | Complexity of target language | +0-2 additional points for paradigm mismatch          |
  *
  * ## Language Difficulty Factors (multiplier)
  *
- * | Source Lang      | Multiplier | Rationale                                           |
- * |------------------|------------|-----------------------------------------------------|
- * | COBOL            | 2.5        | Unique idioms, FD/copybook expansion, GRC baggage   |
- * | PL/I             | 2.2        | Complex data types, ON conditions, PL/I pointer arith|
- * | RPG              | 2.0        | Fixed-format columns, indicator variables, cycle     |
- * | JCL              | 1.8        | Step sequencing, DD statements, conditional steps   |
- * | PL/SQL / T-SQL   | 1.4        | Implicit cursors, package state, bulk ops           |
- * | Java / Kotlin    | 1.3        | Verbose but structured                              |
- * | C# / VB.NET      | 1.3        | Framework coupling                                  |
- * | C / C++          | 1.6        | Manual memory, undefined behaviour, macros          |
- * | Python           | 1.0        | Readable, minimal ceremony                          |
- * | TypeScript / JS  | 1.0        | Readable, but async complexity adds                 |
- * | Go               | 1.1        | Explicit error handling adds translation ceremony   |
- * | Rust             | 1.5        | Ownership/borrow complexity                         |
- * | Scala            | 1.4        | Functional + OO hybrid, implicits                   |
- * | Groovy / PHP     | 1.2        | Dynamic typing, framework magic                     |
- * | Ruby             | 1.1        | Metaprogramming, DSL patterns                       |
- * | Others           | 1.2        | Default moderate difficulty                         |
+ * | Source Lang         | Multiplier | Rationale                                          |
+ * |---------------------|------------|----------------------------------------------------|
+ * | COBOL               | 2.5        | Unique idioms, FD/copybook expansion, GRC baggage  |
+ * | PL/I                | 2.2        | Complex data types, ON conditions, pointer arith   |
+ * | RPG                 | 2.0        | Fixed-format, indicator variables, RPG cycle       |
+ * | JCL                 | 1.8        | Step sequencing, DD statements, conditional steps  |
+ * | PL/SQL / T-SQL      | 1.4        | Implicit cursors, package state, bulk ops          |
+ * | Java / Kotlin       | 1.3        | Verbose but structured                             |
+ * | C# / VB.NET         | 1.3        | Framework coupling                                 |
+ * | C / C++             | 1.6        | Manual memory, undefined behaviour, macros         |
+ * | Embedded C          | 2.2        | Register maps, ISR, MISRA, HAL migration           |
+ * | Assembler           | 3.0        | Highest; register semantics, calling conventions   |
+ * | AUTOSAR             | 2.8        | RTE port re-mapping, manifest regen, ara::com      |
+ * | CAN DBC             | 2.0        | OD mapping, PDO/SDO, COB-ID assignment             |
+ * | IEC 61131-3         | 2.3        | Scan-cycle semantics, safety FB, vendor extensions |
+ * | TTCN-3              | 2.5        | Verdict semantics, altstep \u2192 async receive         |
+ * | Energy / IEC 61850  | 2.4        | GOOSE/SV, DNP3, OPC-UA mapping                     |
+ * | Python              | 1.0        | Readable, minimal ceremony                         |
+ * | TypeScript / JS     | 1.0        | Readable, but async complexity adds                |
+ * | Go                  | 1.1        | Explicit error handling adds translation ceremony  |
+ * | Rust                | 1.5        | Ownership/borrow complexity                        |
+ * | Scala               | 1.4        | Functional + OO hybrid, implicits                  |
+ * | Groovy / PHP        | 1.2        | Dynamic typing, framework magic                    |
+ * | Ruby                | 1.1        | Metaprogramming, DSL patterns                      |
+ * | Others              | 1.2        | Default moderate difficulty                        |
  *
- * ## Band → Hours Mapping
+ * ## Band \u2192 Hours Mapping
  *
  * | Band    | Hours (Low) | Hours (High) | Typical Effort                              |
  * |---------|-------------|--------------|---------------------------------------------|
@@ -64,7 +71,7 @@
 
 import { IMigrationEffortEstimate, MigrationEffortBand, IUnitComplexity } from './discoveryTypes.js';
 
-// ─── Public API ───────────────────────────────────────────────────────────────
+// \u2500\u2500\u2500 Public API \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
 
 export interface IEffortInput {
 	unitId: string;
@@ -84,51 +91,61 @@ export function estimateMigrationEffort(input: IEffortInput): IMigrationEffortEs
 	const drivers: string[] = [];
 	let rawPoints = 0;
 
-	// ── Logical lines ───────────────────────────────────────────────────
+	// \u2500\u2500 Logical lines \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
 	const ll = complexity.logicalLineCount;
 	if (ll > 500)       { rawPoints += 4; drivers.push(`${ll} logical lines (very large)`); }
 	else if (ll > 200)  { rawPoints += 2; drivers.push(`${ll} logical lines (large)`); }
 	else if (ll >= 50)  { rawPoints += 1; drivers.push(`${ll} logical lines`); }
 
-	// ── Cyclomatic complexity ────────────────────────────────────────────
+	// \u2500\u2500 Cyclomatic complexity \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
 	const cc = complexity.cyclomaticComplexity;
 	if (cc > 20)        { rawPoints += 4; drivers.push(`CC=${cc} (very high)`); }
 	else if (cc > 10)   { rawPoints += 2; drivers.push(`CC=${cc} (high)`); }
 	else if (cc >= 5)   { rawPoints += 1; drivers.push(`CC=${cc}`); }
 
-	// ── Nesting depth ────────────────────────────────────────────────────
+	// \u2500\u2500 Nesting depth \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
 	const nd = complexity.nestingDepth;
 	if (nd > 5)         { rawPoints += 2; drivers.push(`nesting depth ${nd}`); }
 	else if (nd >= 4)   { rawPoints += 1; }
 
-	// ── Parameter count ──────────────────────────────────────────────────
+	// \u2500\u2500 Parameter count \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
 	const pc = complexity.paramCount;
 	if (pc > 10)        { rawPoints += 2; drivers.push(`${pc} parameters`); }
 	else if (pc > 5)    { rawPoints += 1; }
 
-	// ── I/O operations ──────────────────────────────────────────────────
+	// \u2500\u2500 I/O operations \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
 	if (complexity.hasExternalCalls) { rawPoints += 1; drivers.push('external API/service calls'); }
 	if (complexity.hasDatabaseOps)   { rawPoints += 1; drivers.push('database operations'); }
 	if (complexity.hasFileOps)       { rawPoints += 1; drivers.push('file I/O'); }
 	if (complexity.hasUIInteraction) { rawPoints += 1; drivers.push('UI interaction'); }
 
-	// ── Regulated fields ────────────────────────────────────────────────
+	// \u2500\u2500 Regulated fields \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
 	if (regulatedFieldCount > 5)     { rawPoints += 3; drivers.push(`${regulatedFieldCount} regulated data fields`); }
 	else if (regulatedFieldCount > 2) { rawPoints += 1; drivers.push(`${regulatedFieldCount} regulated fields`); }
 
-	// ── GRC violations ──────────────────────────────────────────────────
+	// \u2500\u2500 GRC violations \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
 	if (grcViolationCount > 10)      { rawPoints += 2; drivers.push(`${grcViolationCount} GRC violations`); }
 	else if (grcViolationCount > 2)  { rawPoints += 1; }
 
-	// ── Tech debt ────────────────────────────────────────────────────────
+	// \u2500\u2500 Tech debt \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
 	if (techDebtItemCount > 3)       { rawPoints += 2; drivers.push(`${techDebtItemCount} tech debt items`); }
 	else if (techDebtItemCount > 0)  { rawPoints += 1; }
 
-	// ── Language difficulty multiplier ───────────────────────────────────
+	// \u2500\u2500 Safety-critical language surcharge \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+	const SAFETY_CRITICAL_LANGS = new Set([
+		'embedded-c', 'embedded-cpp', 'assembler', 'autosar', 'iec61131',
+		'ttcn3', 'energy', 'iiot-ot', 'can-dbc', 'flexray',
+	]);
+	if (SAFETY_CRITICAL_LANGS.has(lang)) {
+		rawPoints += 3;
+		drivers.push('safety-critical language (compliance documentation overhead)');
+	}
+
+	// \u2500\u2500 Language difficulty multiplier \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
 	const multiplier = LANGUAGE_DIFFICULTY[lang] ?? 1.2;
 	const adjustedPoints = rawPoints * multiplier;
 
-	// ── Map to band ──────────────────────────────────────────────────────
+	// \u2500\u2500 Map to band \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
 	let band: MigrationEffortBand;
 	if (adjustedPoints < 2)       { band = 'trivial'; }
 	else if (adjustedPoints < 5)  { band = 'small'; }
@@ -138,7 +155,7 @@ export function estimateMigrationEffort(input: IEffortInput): IMigrationEffortEs
 
 	const [hoursLow, hoursHigh] = BAND_HOURS[band];
 
-	// ── Confidence ───────────────────────────────────────────────────────
+	// \u2500\u2500 Confidence \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
 	let confidence: IMigrationEffortEstimate['confidence'];
 	if (cc > 0 && ll > 0) {
 		confidence = regulatedFieldCount > 0 || grcViolationCount > 5 ? 'medium' : 'high';
@@ -180,49 +197,68 @@ export function totalEffortHours(estimates: IMigrationEffortEstimate[]): { low: 
 }
 
 
-// ─── Constants ────────────────────────────────────────────────────────────────
+// \u2500\u2500\u2500 Constants \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
 
 const LANGUAGE_DIFFICULTY: Record<string, number> = {
 	// Mainframe / legacy
-	cobol:      2.5,
-	pl1:        2.2,
-	rpg:        2.0,
-	jcl:        1.8,
+	cobol:          2.5,
+	pl1:            2.2,
+	rpg:            2.0,
+	jcl:            1.8,
 	// Database languages
-	plsql:      1.4,
-	sql:        1.3,
+	plsql:          1.4,
+	sql:            1.3,
 	// Systems languages
-	c:          1.6,
-	cpp:        1.6,
-	rust:       1.5,
+	c:              1.6,
+	cpp:            1.6,
+	rust:           1.5,
+	// \u2500\u2500 Market vertical: Firmware & Embedded \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+	'embedded-c':   2.2,  // Bare-metal C: register maps, ISR semantics, HAL migration, MISRA compliance
+	'embedded-cpp': 2.0,  // Embedded C++: same + vtable / exception constraints
+	assembler:      3.0,  // Assembly \u2192 C/Rust: highest effort; register semantics, calling conventions
+	svd:            1.0,  // CMSIS SVD \u2192 code generation \u2014 simple structural transform
+	'linker-script': 1.8, // LD/SCF \u2192 target toolchain: memory region mapping, VMA/LMA
+	cmake:          0.8,  // CMake \u2192 CMake (cross-compilation refinement)
+	// \u2500\u2500 Market vertical: Automotive \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+	autosar:        2.8,  // AUTOSAR Classic CP \u2192 Adaptive AP: RTE port re-mapping, manifest regen
+	'can-dbc':      2.0,  // CAN DBC \u2192 CANopen: OD mapping, PDO configuration, COB-ID assignment
+	'lin-ldf':      1.8,  // LIN LDF \u2192 ISO 17987: frame schedule, NAD mapping
+	flexray:        2.4,  // FlexRay OPF \u2192 Ethernet TSN: static slot \u2192 TDMA schedule translation
+	// \u2500\u2500 Market vertical: Industrial / PLC \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+	iec61131:       2.3,  // IEC 61131-3 Ladder/ST \u2192 Structured Text or Python: scan-cycle semantics
+	// \u2500\u2500 Market vertical: Telecom & 5G \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+	ttcn3:          2.5,  // TTCN-3 \u2192 PyTest/Robot: verdict semantics, altstep \u2192 async receive
+	// \u2500\u2500 Market vertical: Energy / OT \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+	energy:         2.4,  // IEC 61850 / DNP3 / SCADA \u2192 OPC-UA + MQTT SparkplugB
+	'iiot-ot':      2.2,  // IIoT/OT protocol migration: EtherCAT \u2192 Profinet, CANopen \u2192 EtherCAT
 	// Functional / complex
-	scala:      1.4,
-	haskell:    1.5,
-	erlang:     1.4,
-	elixir:     1.3,
+	scala:          1.4,
+	haskell:        1.5,
+	erlang:         1.4,
+	elixir:         1.3,
 	// Object-oriented
-	java:       1.3,
-	kotlin:     1.2,
-	csharp:     1.3,
-	vb:         1.4,
-	vbnet:      1.4,
-	groovy:     1.2,
+	java:           1.3,
+	kotlin:         1.2,
+	csharp:         1.3,
+	vb:             1.4,
+	vbnet:          1.4,
+	groovy:         1.2,
 	// Web / scripting
-	typescript: 1.0,
-	javascript: 1.0,
-	python:     1.0,
-	ruby:       1.1,
-	php:        1.2,
-	perl:       1.3,
+	typescript:     1.0,
+	javascript:     1.0,
+	python:         1.0,
+	ruby:           1.1,
+	php:            1.2,
+	perl:           1.3,
 	// Modern systems
-	go:         1.1,
-	swift:      1.1,
-	dart:       1.1,
+	go:             1.1,
+	swift:          1.1,
+	dart:           1.1,
 	// Markup / config
-	xml:        0.6,
-	json:       0.4,
-	yaml:       0.4,
-	toml:       0.4,
+	xml:            0.6,
+	json:           0.4,
+	yaml:           0.4,
+	toml:           0.4,
 };
 
 const BAND_HOURS: Record<MigrationEffortBand, [number, number]> = {

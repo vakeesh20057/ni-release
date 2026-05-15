@@ -176,7 +176,8 @@ class MigrationPlannerService extends Disposable implements IMigrationPlannerSer
 
 			// Validate and sanitise phaseOverrides
 			const validPhases = new Set<string>([
-				'foundation', 'schema', 'core-logic', 'api-layer', 'integration', 'compliance', 'cutover',
+				'foundation', 'bsp', 'schema', 'core-logic', 'hal-layer',
+				'api-layer', 'integration', 'compliance', 'safety-critical', 'cutover',
 			]);
 			const phaseOverrides: Record<string, MigrationPhaseType> = {};
 			if (raw.phaseOverrides && typeof raw.phaseOverrides === 'object') {

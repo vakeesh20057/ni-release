@@ -30,7 +30,7 @@
  *  - Batch: Scheduled class or cron expression differs
  *  - Stored Proc: Procedure name differs
  *
- * ## Source → Target Matching
+ * ## Source \u2192 Target Matching
  *
  * For each source-side API endpoint, the analyzer:
  *  1. Checks the cross-project pairing map for the unit ID
@@ -47,7 +47,7 @@ import {
 import { IAPICompatibilityGate } from './planningTypes.js';
 
 
-// ─── Risk by endpoint kind ─────────────────────────────────────────────────────
+// \u2500\u2500\u2500 Risk by endpoint kind \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
 
 /** Base compatibility risk for each endpoint kind when no target equivalent is found. */
 const BASE_RISK_NO_TARGET: Record<string, 'low' | 'medium' | 'high'> = {
@@ -72,7 +72,7 @@ const BASE_RISK_NO_TARGET: Record<string, 'low' | 'medium' | 'high'> = {
 };
 
 
-// ─── Public API ───────────────────────────────────────────────────────────────
+// \u2500\u2500\u2500 Public API \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
 
 /**
  * Analyze all source-side API endpoints and produce IAPICompatibilityGate
@@ -91,7 +91,7 @@ export function analyzeAPICompatibility(
 
 	if (sourceProject.apiEndpoints.length === 0) { return gates; }
 
-	// Build pairing lookup: sourceUnitId → best-confidence pairing
+	// Build pairing lookup: sourceUnitId \u2192 best-confidence pairing
 	const pairingBySrc = new Map<string, ICrossProjectPairing>();
 	for (const p of pairings) {
 		if (p.sourceProjectId !== sourceProject.projectId) { continue; }
@@ -101,7 +101,7 @@ export function analyzeAPICompatibility(
 		}
 	}
 
-	// Build target endpoint index: targetUnitId → IAPIEndpoint[]
+	// Build target endpoint index: targetUnitId \u2192 IAPIEndpoint[]
 	const targetEndpointsByUnit = new Map<string, IAPIEndpoint[]>();
 	for (const tgt of targetProjects) {
 		for (const ep of tgt.apiEndpoints) {
@@ -110,7 +110,7 @@ export function analyzeAPICompatibility(
 		}
 	}
 
-	// Build target unit name lookup: targetUnitId → unitName
+	// Build target unit name lookup: targetUnitId \u2192 unitName
 	const targetUnitNames = new Map<string, string>();
 	for (const tgt of targetProjects) {
 		for (const u of tgt.units) { targetUnitNames.set(u.id, u.unitName); }
@@ -156,7 +156,7 @@ export function analyzeAPICompatibility(
 }
 
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
+// \u2500\u2500\u2500 Helpers \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
 
 /**
  * Find the target endpoint that best matches the source endpoint.
@@ -236,7 +236,7 @@ function buildCompatibilityNotes(
 		);
 		if (risk === 'high') {
 			lines.push(
-				`HIGH RISK: This is a public-facing endpoint — any omission will cause ` +
+				`HIGH RISK: This is a public-facing endpoint \u2014 any omission will cause ` +
 				`service disruption or client contract breakage.`
 			);
 		}
@@ -246,13 +246,13 @@ function buildCompatibilityNotes(
 			`but API signature appears changed.`
 		);
 		if (src.httpMethod && tgt?.httpMethod && src.httpMethod !== tgt.httpMethod) {
-			lines.push(`HTTP method changed: ${src.httpMethod} → ${tgt.httpMethod}.`);
+			lines.push(`HTTP method changed: ${src.httpMethod} \u2192 ${tgt.httpMethod}.`);
 		}
 		if (src.path && tgt?.path && normPath(src.path) !== normPath(tgt.path)) {
-			lines.push(`Path changed: "${src.path}" → "${tgt.path}".`);
+			lines.push(`Path changed: "${src.path}" \u2192 "${tgt.path}".`);
 		}
 		if (src.operationName && tgt?.operationName && src.operationName !== tgt.operationName) {
-			lines.push(`Operation name changed: "${src.operationName}" → "${tgt.operationName}".`);
+			lines.push(`Operation name changed: "${src.operationName}" \u2192 "${tgt.operationName}".`);
 		}
 		lines.push(`Ensure all callers are updated or provide a backward-compatible adapter.`);
 	} else {

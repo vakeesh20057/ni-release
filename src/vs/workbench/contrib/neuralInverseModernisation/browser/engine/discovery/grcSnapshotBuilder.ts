@@ -10,7 +10,7 @@
  * into a compact `IGRCSnapshot` suitable for persisting in the discovery result and
  * feeding to the migration planner prompt.
  *
- * Also provides `riskFromGRC` — the single source of truth for deriving an
+ * Also provides `riskFromGRC` \u2014 the single source of truth for deriving an
  * `IMigrationUnit.riskLevel` from a set of GRC violations and the regulated-field count.
  *
  * ## Snapshot fields
@@ -25,16 +25,50 @@
  * | `violations`       | First `MAX_STORED_VIOLATIONS` violations stored in compact form      |
  */
 
-import { ICheckResult } from './discoveryTypes.js';
-import { IGRCSnapshot, IGRCMiniViolation } from './discoveryTypes.js';
+import { ICheckResult, IGRCSnapshot, IGRCMiniViolation } from './discoveryTypes.js';
 import { MigrationRiskLevel } from '../../../common/modernisationTypes.js';
 
 
 /** Maximum compact violations to keep in the snapshot (keeps the payload bounded). */
 export const MAX_STORED_VIOLATIONS = 300;
 
+/**
+ * GRC domains that belong to safety-critical regulated market verticals.
+ * A single blocking violation in these domains always escalates to `critical`.
+ */
+export const SAFETY_CRITICAL_DOMAINS = new Set([
+	// Functional safety
+	'iec-61508', 'iec-62061', 'iec-61511',
+	// Automotive
+	'iso-26262', 'autosar', 'misra-c', 'misra-c++',
+	// Industrial / OT
+	'iec-62443', 'nerc-cip',
+	// Telecom security
+	'3gpp-security', 'gsma-nesas',
+	// Embedded correctness
+	'certc', 'cert-c++',
+	// Automotive cybersecurity
+	'iso-21434',
+]);
 
-// ─── Public API ───────────────────────────────────────────────────────────────
+/**
+ * GRC rule-ID prefixes that always force `critical` risk regardless of blocking flag.
+ * Covers SIL/ASIL integrity violations and memory-safety hazards in safety-critical code.
+ */
+const ALWAYS_CRITICAL_RULE_PREFIXES = [
+	'sil-',          // IEC 61508 Safety Integrity Level
+	'asil-',         // ISO 26262 Automotive Safety Integrity Level
+	'misra-c-',      // MISRA C mandatory rules
+	'isr-',          // ISR (Interrupt Service Routine) safety
+	'watchdog-',     // Watchdog coverage gaps
+	'e2e-',          // End-to-end protection gaps
+	'certc-',        // CERT C mandatory
+	'iec62443-',     // IEC 62443 mandatory security controls
+	'iso21434-',     // ISO 21434 cybersecurity mandatory
+];
+
+
+// \u2500\u2500\u2500 Public API \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
 
 /**
  * Build an `IGRCSnapshot` from a flat array of `ICheckResult`s.
@@ -47,12 +81,9 @@ export function buildGRCSnapshot(violations: ICheckResult[]): IGRCSnapshot {
 	let   blockingCount = 0;
 
 	for (const v of violations) {
-		const d = v.domain   ?? 'unknown';
-		const s = v.severity ?? 'info';
-		const r = v.ruleId;
-		byDomain[d]   = (byDomain[d]   ?? 0) + 1;
-		bySeverity[s] = (bySeverity[s] ?? 0) + 1;
-		ruleCount[r]  = (ruleCount[r]  ?? 0) + 1;
+		byDomain[v.domain]     = (byDomain[v.domain]     ?? 0) + 1;
+		bySeverity[v.severity] = (bySeverity[v.severity] ?? 0) + 1;
+		ruleCount[v.ruleId]    = (ruleCount[v.ruleId]    ?? 0) + 1;
 		if (v.blockingBehavior?.blocksCommit) { blockingCount++; }
 	}
 
@@ -65,11 +96,11 @@ export function buildGRCSnapshot(violations: ICheckResult[]): IGRCSnapshot {
 		.slice(0, MAX_STORED_VIOLATIONS)
 		.map(v => ({
 			ruleId:   v.ruleId,
-			domain:   v.domain   ?? 'unknown',
-			severity: v.severity ?? 'info',
+			domain:   v.domain,
+			severity: v.severity,
 			message:  v.message,
-			fileUri:  v.fileUri?.toString() ?? '',
-			line:     v.line ?? 0,
+			fileUri:  v.fileUri.toString(),
+			line:     v.line,
 		}));
 
 	return {
@@ -87,10 +118,11 @@ export function buildGRCSnapshot(violations: ICheckResult[]): IGRCSnapshot {
  * Derive a `MigrationRiskLevel` for a single migration unit.
  *
  * Risk escalation rules (ordered, first match wins):
- *  1. **critical** — any violation with `blockingBehavior.blocksCommit === true`
- *  2. **high**     — >10 violations OR >5 regulated fields
- *  3. **medium**   — >3 violations OR >2 regulated fields
- *  4. **low**      — everything else
+ *  1. **critical** \u2014 any blocking violation, OR any violation in a safety-critical domain,
+ *                    OR any violation whose ruleId starts with an always-critical prefix
+ *  2. **high**     \u2014 >10 violations OR >5 regulated fields OR any violation in a safety domain
+ *  3. **medium**   \u2014 >3 violations OR >2 regulated fields
+ *  4. **low**      \u2014 everything else
  *
  * @param violations        GRC violations that fall within this unit's line range
  * @param regulatedFieldCount  Number of regulated fields detected by Layer 1 fingerprint
@@ -99,10 +131,50 @@ export function riskFromGRC(
 	violations: ICheckResult[],
 	regulatedFieldCount: number,
 ): MigrationRiskLevel {
-	if (violations.some(v => v.blockingBehavior?.blocksCommit))  { return 'critical'; }
-	if (violations.length > 10 || regulatedFieldCount > 5)        { return 'high'; }
-	if (violations.length > 3  || regulatedFieldCount > 2)        { return 'medium'; }
+	// Safety-critical domain or blocking violation \u2192 always critical
+	if (violations.some(v =>
+		v.blockingBehavior?.blocksCommit ||
+		SAFETY_CRITICAL_DOMAINS.has(v.domain?.toLowerCase?.() ?? '') ||
+		ALWAYS_CRITICAL_RULE_PREFIXES.some(p => (v.ruleId ?? '').toLowerCase().startsWith(p))
+	)) { return 'critical'; }
+
+	// Any violation in a safety-adjacent domain \u2192 high (even without blocking flag)
+	const hasSafetyDomain = violations.some(v => SAFETY_CRITICAL_DOMAINS.has(v.domain?.toLowerCase?.() ?? ''));
+	if (violations.length > 10 || regulatedFieldCount > 5 || hasSafetyDomain) { return 'high'; }
+	if (violations.length > 3  || regulatedFieldCount > 2)                     { return 'medium'; }
 	return 'low';
+}
+
+/**
+ * Return a compliance framework score (0\u2013100) for a snapshot.
+ * Score = 100 \u2013 penalty. Used by the planner to show compliance debt at a glance.
+ *
+ * Penalty schedule:
+ *  - Each blocking violation in a safety-critical domain: \u201320
+ *  - Each blocking violation in any other domain: \u201310
+ *  - Each non-blocking error in safety domain: \u20135
+ *  - Each non-blocking warning: \u20131
+ * Score is clamped to [0, 100].
+ */
+export function complianceScoreFromSnapshot(snapshot: IGRCSnapshot): number {
+	let penalty = 0;
+	for (const v of snapshot.violations) {
+		const isSafety  = SAFETY_CRITICAL_DOMAINS.has((v.domain ?? '').toLowerCase());
+		if (v.severity === 'error' && isSafety)   { penalty += 20; }
+		else if (v.severity === 'error')           { penalty += 10; }
+		else if (v.severity === 'warning' && isSafety) { penalty += 5; }
+		else if (v.severity === 'warning')         { penalty += 1; }
+	}
+	return Math.max(0, 100 - penalty);
+}
+
+/**
+ * Return the primary compliance framework for a project based on the most-violated domain.
+ * Falls back to `'iec-61508'` (the general functional-safety standard) when ambiguous.
+ */
+export function primaryFrameworkFromSnapshot(snapshot: IGRCSnapshot): string {
+	const domains = Object.entries(snapshot.byDomain).sort((a, b) => b[1] - a[1]);
+	return domains[0]?.[0] ?? 'iec-61508';
 }
 
 /**

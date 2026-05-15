@@ -20,7 +20,7 @@
  * ## Why resolution matters
  *
  * A COBOL `COPY WS-COMMONS` might resolve to the unit
- * `proj123::src/WS-COMMONS.cpy::WS-COMMONS` — giving the planner a directed
+ * `proj123::src/WS-COMMONS.cpy::WS-COMMONS` \u2014 giving the planner a directed
  * dependency edge it can use to order migration units (dependencies first).
  * Unresolved edges (external libraries) are still recorded for the planner's
  * compliance notes.
@@ -30,7 +30,7 @@ import { IDependencyEdge } from './discoveryTypes.js';
 import { IMigrationUnit } from '../../../common/modernisationTypes.js';
 
 
-// ─── Raw Import Extraction ────────────────────────────────────────────────────
+// \u2500\u2500\u2500 Raw Import Extraction \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
 
 /**
  * Extract all import statements from `content` for the given `lang`.
@@ -57,11 +57,21 @@ export function extractRawImports(content: string, lang: string): string[] {
 		case 'vb':         return extractVBImports(content);
 		case 'fsharp':     return extractFSharpImports(content);
 		case 'groovy':     return extractGroovyImports(content);
+		// \u2500\u2500 Market vertical languages \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+		case 'c':
+		case 'cpp':
+		case 'embedded-c':
+		case 'embedded-cpp': return extractCImports(content);
+		case 'assembler':    return extractAssemblerImports(content);
+		case 'iec61131':     return extractIEC61131Imports(content);
+		case 'autosar':      return extractAutosarImports(content);
+		case 'can-dbc':      return extractCanDbcImports(content);
+		case 'ttcn3':        return extractTTCN3Imports(content);
 		default:           return [];
 	}
 }
 
-// ─── Per-language extractors ─────────────────────────────────────────────────
+// \u2500\u2500\u2500 Per-language extractors \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
 
 function extractCobolImports(content: string): string[] {
 	const results: string[] = [];
@@ -226,13 +236,71 @@ function extractGroovyImports(content: string): string[] {
 }
 
 
-// ─── Dependency Graph Resolution ─────────────────────────────────────────────
+// \u2500\u2500\u2500 Market Vertical Languages \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+
+function extractCImports(content: string): string[] {
+	const results: string[] = [];
+	for (const m of content.matchAll(/^\s*#\s*include\s*["<]([^">\s]+)[">/]/gm)) {
+		results.push(m[1]);
+	}
+	return results;
+}
+
+function extractAssemblerImports(content: string): string[] {
+	const results: string[] = [];
+	for (const m of content.matchAll(/^\s*(?:#include|\.include)\s+["<]?([\w./\\]+)[">/]?/gim)) {
+		results.push(m[1]);
+	}
+	return results;
+}
+
+function extractIEC61131Imports(content: string): string[] {
+	const results: string[] = [];
+	for (const m of content.matchAll(/^\s*(?:USES|FROM)\s+([\w.]+)/gim)) {
+		results.push(m[1]);
+	}
+	return results;
+}
+
+function extractAutosarImports(content: string): string[] {
+	// ARXML references other ARXML packages via SHORT-NAME paths or DEST attributes
+	const results: string[] = [];
+	for (const m of content.matchAll(/<BASE-REF\s+DEST="[^"]*">([^<]+)<\/BASE-REF>/g)) {
+		results.push(m[1].split('/').pop() ?? m[1]);
+	}
+	for (const m of content.matchAll(/<CATEGORY>([^<]+)<\/CATEGORY>/g)) {
+		results.push(m[1]);
+	}
+	return [...new Set(results)];
+}
+
+function extractCanDbcImports(content: string): string[] {
+	// DBC files reference other nodes (ECU names) and signal groups
+	const results: string[] = [];
+	for (const m of content.matchAll(/^BU_:(.+)/gm)) {
+		for (const node of m[1].trim().split(/\s+/)) {
+			if (node) { results.push(node); }
+		}
+	}
+	return results;
+}
+
+function extractTTCN3Imports(content: string): string[] {
+	const results: string[] = [];
+	for (const m of content.matchAll(/^\s*import\s+from\s+(\w+)\s+/gm)) {
+		results.push(m[1]);
+	}
+	return results;
+}
+
+
+// \u2500\u2500\u2500 Dependency Graph Resolution \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
 
 /**
  * Resolve raw import strings to `IDependencyEdge[]` for a project.
  *
  * Strategy:
- *  1. Build lookup tables: unitName → id, fileBasename (no ext) → id.
+ *  1. Build lookup tables: unitName \u2192 id, fileBasename (no ext) \u2192 id.
  *  2. For each raw edge, extract the terminal name (leaf of dotted path, last segment of '/'-path, COPY name).
  *  3. Look up in the tables; mark `resolved: true` if found.
  *
@@ -246,8 +314,8 @@ export function buildDependencyGraph(
 	const edges: IDependencyEdge[] = [];
 
 	// Build lookup maps
-	const byName = new Map<string, string>(); // lower unitName → id
-	const byBase = new Map<string, string>(); // lower basename (no ext) → id
+	const byName = new Map<string, string>(); // lower unitName \u2192 id
+	const byBase = new Map<string, string>(); // lower basename (no ext) \u2192 id
 
 	for (const unit of units) {
 		byName.set(unit.unitName.toLowerCase(), unit.id);
@@ -260,7 +328,7 @@ export function buildDependencyGraph(
 		if (!imported) { continue; }
 
 		const norm = imported.toLowerCase().replace(/['"]/g, '');
-		// Try: exact name match → basename match → basename without extension
+		// Try: exact name match \u2192 basename match \u2192 basename without extension
 		const resolvedId =
 			byName.get(norm) ??
 			byBase.get(norm) ??
@@ -285,10 +353,10 @@ export function buildDependencyGraph(
  * Extract the terminal (leaf) name from a raw import string.
  *
  * Examples:
- *  `COPY WS-COMMONS`         → `WS-COMMONS`
- *  `import ./utils/foo`      → `foo`
- *  `com.example.service.Foo` → `Foo`
- *  `std::collections::HashMap` → `HashMap`
+ *  `COPY WS-COMMONS`         \u2192 `WS-COMMONS`
+ *  `import ./utils/foo`      \u2192 `foo`
+ *  `com.example.service.Foo` \u2192 `Foo`
+ *  `std::collections::HashMap` \u2192 `HashMap`
  */
 function parseImportLeaf(rawImport: string): string | undefined {
 	if (!rawImport.trim()) { return undefined; }

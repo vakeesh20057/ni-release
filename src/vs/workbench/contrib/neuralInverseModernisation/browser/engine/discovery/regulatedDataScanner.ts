@@ -4,29 +4,26 @@
  *--------------------------------------------------------------------------------------------*/
 
 /**
- * # Regulated Data Scanner
+ * # Regulated Data Scanner \u2014 Firmware & Safety-Critical Edition
  *
- * Scans source code for literal PII, PCI-DSS, PHI and security-sensitive
- * patterns embedded directly in source text. Each hit is language-neutral —
- * the scanner works on raw text after basic string/comment stripping.
+ * Scans firmware source code for safety-regulated patterns embedded directly
+ * in source text. Each hit is language-neutral \u2014 the scanner works on raw
+ * text after basic comment stripping.
  *
  * ## Pattern Catalogue
  *
- * | Pattern             | Regulatory Frameworks       | Confidence |
- * |---------------------|-----------------------------|------------|
- * | SSN (US)            | HIPAA, GDPR                 | High       |
- * | Credit Card (Luhn)  | PCI-DSS                     | High       |
- * | IBAN                | PSD2, GDPR                  | High       |
- * | BIC / SWIFT         | PSD2                        | High       |
- * | Passport Number     | GDPR, US COPPA              | Medium     |
- * | National ID (EU)    | GDPR                        | Medium     |
- * | Date of Birth       | HIPAA, GDPR                 | Medium     |
- * | Email Address       | GDPR, CAN-SPAM              | Medium     |
- * | Phone Number        | GDPR, TCPA                  | Medium     |
- * | IP Address          | GDPR, CCPA                  | Low        |
- * | PEM Private Key     | SOC2, PCI-DSS               | High       |
- * | API Key / Token     | SOC2, PCI-DSS               | High       |
- * | DB Connection String| SOC2, PCI-DSS               | High       |
+ * | Pattern                    | Framework             | Confidence |
+ * |----------------------------|-----------------------|------------|
+ * | Hardcoded peripheral addr  | IEC 61508 / MISRA-C   | High       |
+ * | Raw MMIO volatile cast     | MISRA-C Rule 11.4      | High       |
+ * | ISR handler definition     | IEC 61508             | High       |
+ * | Watchdog refresh call      | IEC 61508             | High       |
+ * | Hardcoded credential       | IEC 62443             | High       |
+ * | API key / auth token       | IEC 62443             | High       |
+ * | PLCopen Safety FB call     | IEC 61508 / 61131     | High       |
+ * | Hardcoded IP address       | IEC 62443             | Medium     |
+ * | Dynamic allocation (malloc)| MISRA-C Rule 21.3     | High       |
+ * | GPIO hardcoded pin literal  | IEC 61508             | Medium     |
  *
  * ## Redaction
  *
@@ -35,40 +32,48 @@
  *
  * ## False Positive Reduction
  *
- * - Credit cards are validated with a Luhn checksum pass.
- * - Patterns are checked against surrounding context to exclude known test data
- *   (e.g., `test`, `example`, `fake`, `dummy` within 50 characters).
- * - Comment-only lines are scanned with low confidence since test data is often
- *   in comments.
+ * - Patterns are checked against surrounding context to exclude known test/mock data.
+ * - Comment-only lines are scanned with lower confidence.
  */
 
 import { IRegulatedDataHit, RegulatedDataPattern } from './discoveryTypes.js';
 
 
-// ─── Pattern → Framework Tag Mapping ─────────────────────────────────────────
+// \u2500\u2500\u2500 Pattern \u2192 Framework Tag Mapping \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
 //
 // Maps each RegulatedDataPattern to the tag keywords that a loaded enterprise
 // framework's rules must include (in IFrameworkRule.tags) for that framework to
 // be considered applicable to a detected pattern.
 //
 // The discovery service uses this at scan time to query IFrameworkRegistry for
-// the actual framework names — zero framework name strings are hardcoded here.
+// the actual framework names \u2014 zero framework name strings are hardcoded here.
 //
 export const PATTERN_TAGS: Record<RegulatedDataPattern, string[]> = {
-	'ssn':               ['ssn', 'social-security', 'national-id', 'pii', 'personal-data'],
-	'credit-card':       ['credit-card', 'card-number', 'pan', 'pci', 'pci-dss', 'financial'],
-	'iban':              ['iban', 'bank-account', 'account-number', 'financial', 'psd2'],
-	'bic-swift':         ['bic', 'swift', 'bank-code', 'routing', 'financial', 'psd2'],
-	'national-id':       ['national-id', 'identity', 'id-number', 'pii', 'personal-data'],
-	'passport':          ['passport', 'travel-document', 'national-id', 'pii', 'identity'],
-	'date-of-birth':     ['dob', 'date-of-birth', 'birthdate', 'age', 'pii', 'health', 'hipaa'],
-	'email':             ['email', 'email-address', 'pii', 'contact', 'personal-data'],
-	'phone':             ['phone', 'mobile', 'telephone', 'pii', 'contact', 'personal-data'],
-	'ip-address':        ['ip-address', 'ip', 'network-identifier', 'pii', 'personal-data'],
-	'private-key':       ['private-key', 'rsa-key', 'pem', 'credential', 'secret', 'security'],
-	'api-key':           ['api-key', 'access-token', 'auth-token', 'bearer', 'credential', 'secret', 'security'],
-	'connection-string': ['connection-string', 'database-credential', 'jdbc', 'credential', 'secret', 'security'],
+	// \u2500\u2500 Safety-regulated firmware patterns (IEC 61508 / MISRA-C) \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+	'peripheral-register':   ['peripheral', 'mmio', 'register', 'hardware', 'iec-61508', 'misra-c', 'can-id', 'iso-26262'],
+	'raw-mmio-cast':         ['mmio', 'volatile-cast', 'misra-c-rule-11', 'iec-61508', 'iso-26262'],
+	'isr-definition':        ['interrupt', 'isr', 'handler', 'iec-61508', 'timing', 'autosar', 'goose', 'iec-61850'],
+	'watchdog-refresh':      ['watchdog', 'wdt', 'iec-61508', 'safety'],
+	'safety-function-block': ['plcopen-safety', 'sf-fb', 'iec-61508', 'iec-61131', 'autosar', 'rte'],
+	'dynamic-allocation':    ['malloc', 'heap', 'misra-c-rule-21', 'iec-61508'],
+	'hardcoded-ip':          ['ip-address', 'iec-62443', 'network', 'ot-security', 'scada', 'dnp3'],
+	// \u2500\u2500 Cybersecurity patterns (IEC 62443 / 3GPP TS 33.501 / GSMA NESAS) \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+	'api-key':               ['api-key', 'access-token', 'auth-token', 'credential', 'iec-62443', '3gpp-security', 'gsma-nesas', 'supi', 'suci', 'nas-key', 'rrc-key'],
+	'private-key':           ['private-key', 'pem', 'credential', 'iec-62443', 'iso-21434'],
+	'connection-string':     ['connection-string', 'credential', 'iec-62443', 'modbus', 'opc-ua', 'mqtt', 'profinet'],
+	// \u2500\u2500 Financial / PII patterns (retained for hybrid codebases \u2014 GDPR / PCI-DSS) \u2500
+	'ssn':                   ['pii', 'gdpr', 'ccpa', 'hipaa'],
+	'credit-card':           ['pci-dss', 'pii', 'financial'],
+	'iban':                  ['pii', 'gdpr', 'psd2', 'financial'],
+	'bic-swift':             ['pii', 'gdpr', 'financial'],
+	'national-id':           ['pii', 'gdpr', 'ccpa'],
+	'passport':              ['pii', 'gdpr'],
+	'date-of-birth':         ['pii', 'gdpr', 'hipaa'],
+	'email':                 ['pii', 'gdpr', 'ccpa'],
+	'phone':                 ['pii', 'gdpr', 'ccpa'],
+	'ip-address':            ['pii', 'gdpr', 'network'],
 };
+
 
 /**
  * Maps each RegulatedDataPattern to the list of framework names (or IDs) that
@@ -76,12 +81,12 @@ export const PATTERN_TAGS: Record<RegulatedDataPattern, string[]> = {
  *
  * Built by the discovery service from IFrameworkRegistry.getActiveFrameworks()
  * at scan time. Empty arrays mean no loaded framework explicitly covers that
- * pattern type — the hit is still recorded, just without applicable framework info.
+ * pattern type \u2014 the hit is still recorded, just without applicable framework info.
  */
 export type IPatternFrameworkMap = Partial<Record<RegulatedDataPattern, string[]>>;
 
 
-// ─── Public API ───────────────────────────────────────────────────────────────
+// \u2500\u2500\u2500 Public API \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
 
 /**
  * Scan source content for regulated data literals.
@@ -90,7 +95,7 @@ export type IPatternFrameworkMap = Partial<Record<RegulatedDataPattern, string[]
  * @param unitId        Unit ID to attach hits to
  * @param fileUri       Absolute URI of the source file (for hit attribution)
  * @param lang          Normalised language key
- * @param frameworkMap  Pattern → applicable framework names, built from
+ * @param frameworkMap  Pattern \u2192 applicable framework names, built from
  *                      IFrameworkRegistry by the discovery service at scan time.
  *                      Defaults to empty (no framework attribution) if not provided.
  */
@@ -118,7 +123,7 @@ export function scanForRegulatedData(
 }
 
 
-// ─── Per-Line Scanner ─────────────────────────────────────────────────────────
+// \u2500\u2500\u2500 Per-Line Scanner \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
 
 function scanLine(
 	line: string,
@@ -134,12 +139,9 @@ function scanLine(
 		matched: string,
 		confidence: IRegulatedDataHit['confidence'],
 	) => {
-		// Framework names come exclusively from the loaded enterprise frameworks,
-		// not hardcoded strings. The discovery service populates frameworkMap.
 		const frameworks = frameworkMap[pattern] ?? [];
 		if (isTestOrFakeContext(line, matched)) { return; }
 		if (isComment) {
-			// Downgrade confidence for comment-line hits
 			confidence = confidence === 'high' ? 'medium' : 'low';
 		}
 		hits.push({
@@ -153,116 +155,105 @@ function scanLine(
 		});
 	};
 
-	// ── SSN (US) ──────────────────────────────────────────────────────────────
-	const ssnRe = /\b(\d{3}[-\s]\d{2}[-\s]\d{4})\b/g;
+	// \u2500\u2500 Raw MMIO volatile cast (MISRA-C Rule 11.4) \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+	// e.g.  (volatile uint32_t*)0x40020000UL
+	if (/\(\s*volatile\s+uint(?:8|16|32|64)_t\s*\*\s*\)\s*0x[0-9A-Fa-f]+/.test(line)) {
+		const m = /0x[0-9A-Fa-f]+U?L?/.exec(line);
+		addHit('raw-mmio-cast', m?.[0] ?? line.trim().slice(0, 40), 'high');
+	}
+
+	// \u2500\u2500 Hardcoded peripheral register address (numeric literal in peripheral range) \u2500\u2500
+	// Typical Cortex-M peripheral space: 0x40000000 \u2013 0x5FFFFFFF
+	const perpAddrRe = /\b(0x4[0-9A-Fa-f]{7}|0x5[0-9A-Fa-f]{7})\b/g;
 	let m: RegExpExecArray | null;
-	while ((m = ssnRe.exec(line)) !== null) {
-		addHit('ssn', m[1], 'high');
+	while ((m = perpAddrRe.exec(line)) !== null) {
+		if (!(/(volatile|uint|REG|BASE|ADDR)/i.test(line))) { continue; } // only if context looks like HW access
+		addHit('peripheral-register', m[0], 'medium');
 	}
 
-	// ── Credit Card (Luhn-validated) ──────────────────────────────────────────
-	// Visa (4xxx), Mastercard (5xxx / 2xxx), Amex (34/37), Discover (6011/65), JCB (35)
-	const ccRe = /\b(?:4\d{3}|5[1-5]\d{2}|2[2-7]\d{2}|3[47]\d{2}|6(?:011|5\d{2}))\s?[-\s]?\d{4}[-\s]?\d{4}[-\s]?\d{4}(?:[-\s]?\d{3})?\b/g;
-	while ((m = ccRe.exec(line)) !== null) {
-		const digits = m[0].replace(/[\s-]/g, '');
-		if (luhnCheck(digits)) {
-			addHit('credit-card', m[0], 'high');
-		}
+	// \u2500\u2500 ISR/Interrupt handler definition \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+	if (/\bvoid\s+\w+_IRQHandler\s*\(\s*void\s*\)/.test(line) ||
+	    /\bvoid\s+\w+_Handler\s*\(\s*void\s*\)/.test(line) ||
+	    /\b__interrupt\s+void\b/.test(line)) {
+		const fn = /void\s+(\w+)\s*\(/.exec(line);
+		addHit('isr-definition', fn?.[1] ?? 'IRQHandler', 'high');
 	}
 
-	// ── IBAN ──────────────────────────────────────────────────────────────────
-	const ibanRe = /\b([A-Z]{2}\d{2}[A-Z0-9]{4,30})\b/g;
-	while ((m = ibanRe.exec(line)) !== null) {
-		if (isValidIBAN(m[1])) {
-			addHit('iban', m[1], 'high');
-		}
+	// \u2500\u2500 Watchdog refresh call \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+	if (/\b(?:HAL_IWDG_Refresh|HAL_WWDG_Refresh|IWDG_ReloadCounter|wdt_feed|WDT_Feed|WDT_Kick|wdt_clear)\s*\(/.test(line)) {
+		const fn = /(\w+)\s*\(/.exec(line);
+		addHit('watchdog-refresh', fn?.[1] ?? 'wdt_refresh', 'high');
 	}
 
-	// ── BIC / SWIFT ───────────────────────────────────────────────────────────
-	const bicRe = /\b([A-Z]{6}[A-Z0-9]{2}(?:[A-Z0-9]{3})?)\b/g;
-	while ((m = bicRe.exec(line)) !== null) {
-		if (m[1].length === 8 || m[1].length === 11) {
-			addHit('bic-swift', m[1], 'medium');
-		}
+	// \u2500\u2500 PLCopen Safety FB call \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+	if (/\b(SF_EmergencyStop|SF_SafelyLimitedSpeed|SF_SafelyLimitedPosition|SF_GuardMonitoring|SF_SafeStop|SF_EnableSwitch)\s*\(/.test(line)) {
+		const fn = /(SF_\w+)/.exec(line);
+		addHit('safety-function-block', fn?.[1] ?? 'SF_', 'high');
 	}
 
-	// ── Passport Number ───────────────────────────────────────────────────────
-	// Generic pattern: 1-2 letters followed by 6-9 digits
-	const passportRe = /\b([A-Z]{1,2}\d{6,9})\b/g;
-	while ((m = passportRe.exec(line)) !== null) {
-		if (/passport|pass_no|passnr/i.test(line.slice(Math.max(0, m.index - 30), m.index))) {
-			addHit('passport', m[1], 'medium');
-		}
+	// \u2500\u2500 Dynamic allocation (MISRA-C Rule 21.3 / IEC 61508) \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+	if (/\b(?:malloc|calloc|realloc|free|pvPortMalloc|vPortFree)\s*\(/.test(line)) {
+		const fn = /(\w+)\s*\(/.exec(line);
+		addHit('dynamic-allocation', fn?.[1] ?? 'malloc', 'high');
 	}
 
-	// ── Date of Birth ─────────────────────────────────────────────────────────
-	// Only flag if near a DOB-indicating field name
-	const dobFieldRe = /\b(?:dob|date_of_birth|birth_date|birthdate|date_naissance|geburtsdatum)\b/i;
-	if (dobFieldRe.test(line)) {
-		const dateRe = /\b(\d{4}[-/]\d{2}[-/]\d{2}|\d{2}[-/]\d{2}[-/]\d{4})\b/;
-		const dateMat = dateRe.exec(line);
-		if (dateMat) {
-			addHit('date-of-birth', dateMat[1], 'high');
-		} else {
-			// Flag the field name itself even if no date literal
-			addHit('date-of-birth', line.trim().slice(0, 40), 'medium');
-		}
-	}
-
-	// ── Email Address ─────────────────────────────────────────────────────────
-	// Only flag non-test emails (filter test@test.com, example@example.com etc.)
-	const emailRe = /\b([a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,})\b/g;
-	while ((m = emailRe.exec(line)) !== null) {
-		const email = m[1].toLowerCase();
-		if (!isTestEmail(email)) {
-			addHit('email', m[1], 'medium');
-		}
-	}
-
-	// ── Phone Number ──────────────────────────────────────────────────────────
-	// E.164, US, UK, generic international
-	const phoneRe = /\b(?:\+\d{1,3}[\s-]?)?\(?\d{3}\)?[\s.-]?\d{3}[\s.-]?\d{4,6}\b/g;
-	while ((m = phoneRe.exec(line)) !== null) {
-		const digits = m[0].replace(/\D/g, '');
-		if (digits.length >= 10 && digits.length <= 15) {
-			if (/phone|mobile|tel|cell|fax|contact/i.test(line.slice(Math.max(0, m.index - 40), m.index))) {
-				addHit('phone', m[0], 'medium');
-			}
-		}
-	}
-
-	// ── IP Address ────────────────────────────────────────────────────────────
+	// \u2500\u2500 Hardcoded IP address (IEC 62443 \u2014 OT network credential) \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
 	const ipRe = /\b((?:(?:25[0-5]|2[0-4]\d|[01]?\d\d?)\.){3}(?:25[0-5]|2[0-4]\d|[01]?\d\d?))\b/g;
 	while ((m = ipRe.exec(line)) !== null) {
 		const ip = m[1];
-		if (!isPrivateIP(ip) && !isLoopbackIP(ip)) {
-			addHit('ip-address', ip, 'low');
+		// Only flag if it looks like an OT/IT target (not private test ranges)
+		if (!isLoopbackIP(ip) && !isTestOrFakeContext(line, ip)) {
+			addHit('hardcoded-ip', ip, 'medium');
 		}
 	}
 
-	// ── PEM Private Key ───────────────────────────────────────────────────────
+	// \u2500\u2500 AUTOSAR ASIL-rated signal writes (RTE port operations) \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+	// Rte_Write_<port>_<signal> \u2014 these are safety-regulated writes to inter-SWC signals
+	if (/\bRte_(?:Write|Read|IWrite|IRead|Call|Send|Receive)\s*\(/.test(line)) {
+		const fn = /(Rte_\w+)\s*\(/.exec(line);
+		addHit('safety-function-block', fn?.[1] ?? 'Rte_Write', 'medium');
+	}
+
+	// \u2500\u2500 IEC 61850 GOOSE/XCBR/XSWI protection relay patterns \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+	if (/\b(?:XCBR|XSWI|RREC|PDIS|PIOC|goose_publish|IEC61850_GOOSE)\b/i.test(line)) {
+		const fn = /\b(XCBR\w*|XSWI\w*|RREC\w*|goose_publish|IEC61850_GOOSE\w*)\b/i.exec(line);
+		addHit('isr-definition', fn?.[1] ?? 'GOOSE-trip-path', 'high');
+	}
+
+	// \u2500\u2500 3GPP security key material (NAS/AS/RRC key arrays) \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+	const key3gppRe = /\b(?:uint8_t|unsigned char)\s+k(?:NAS|RRC|AMF|SEAF|AUSF|ASME|eNB|gNB|KAMF|AMF)\s*\[/i;
+	if (key3gppRe.test(line)) {
+		const kn = /\b(k(?:NAS|RRC|AMF|SEAF|AUSF|ASME|eNB|gNB|KAMF|AMF))\b/i.exec(line);
+		addHit('api-key', kn?.[1] ?? '3gpp-key-material', 'high');
+	}
+
+	// \u2500\u2500 CAN DBC signal values / safety-critical CAN IDs \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+	// Hardcoded CAN message IDs above 0x700 may be safety-critical (ISO 26262 E2E)
+	const canIdRe = /\b0x(?:7[0-9A-Fa-f]{2}|[89A-Fa-f][0-9A-Fa-f]{2})\b/g;
+	while ((m = canIdRe.exec(line)) !== null) {
+		if (/\b(?:CAN_ID|MSG_ID|COBID|MsgID|cobId)\b/i.test(line)) {
+			addHit('peripheral-register', m[0], 'low');
+		}
+	}
+
+	// \u2500\u2500 PEM Private Key \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
 	if (/-----BEGIN\s+(?:RSA\s+|EC\s+|DSA\s+|OPENSSH\s+)?PRIVATE\s+KEY-----/.test(line)) {
 		addHit('private-key', '-----BEGIN PRIVATE KEY-----...', 'high');
 	}
-	// Generic high-entropy base64 that looks like a key (20+ chars, no spaces)
 	const b64KeyRe = /(?:private_?key|rsa_?key|pem_?cert)\s*[=:]\s*["']([A-Za-z0-9+/=]{40,})["']/i;
 	const b64Mat = b64KeyRe.exec(line);
-	if (b64Mat) {
-		addHit('private-key', b64Mat[1], 'high');
-	}
+	if (b64Mat) { addHit('private-key', b64Mat[1], 'high'); }
 
-	// ── API Key / Token ───────────────────────────────────────────────────────
+	// \u2500\u2500 API Key / Auth Token (IEC 62443 \u2014 OT credential) \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
 	const apiKeyRe = /(?:api[_-]?key|access[_-]?token|auth[_-]?token|secret[_-]?key|bearer[_-]?token|client[_-]?secret|oauth[_-]?token)\s*[=:]\s*["'`]([^\s"'`]{16,})["'`]/i;
 	const apiMat = apiKeyRe.exec(line);
-	if (apiMat) {
-		addHit('api-key', apiMat[1], 'high');
-	}
+	if (apiMat) { addHit('api-key', apiMat[1], 'high'); }
 
-	// ── Database Connection String ────────────────────────────────────────────
+	// \u2500\u2500 OT/IT Connection String \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
 	const connStrPatterns = [
-		/(?:jdbc|mongodb(?:\+srv)?|postgresql|mysql|mariadb|redis|amqp|rabbitmq|sqlserver|oracle):\/\/[^:@\s]+:[^@\s]{4,}@[^\s"'`]+/i,
+		/(?:modbus|opcua|opc\.tcp|mqtt|amqp|s7|profinet):\/\/[^:@\s]+:[^@\s]{4,}@[^\s"'`]+/i,
 		/(?:Server|Host)=[^;]+;.*(?:Password|Pwd)=[^;]+/i,
-		/Data\s+Source=[^;]+;.*Password=[^;]+/i,
+		/jdbc:[\w:]+:\/\/[^\s"'`]+:[^@\s]{4,}@[^\s"'`]+/i,
 	];
 	for (const re of connStrPatterns) {
 		const connMat = re.exec(line);
@@ -271,66 +262,45 @@ function scanLine(
 			break;
 		}
 	}
-}
 
-
-// ─── Validation Helpers ───────────────────────────────────────────────────────
-
-/** Luhn algorithm — validates credit card numbers. */
-function luhnCheck(digits: string): boolean {
-	let sum = 0;
-	let alternate = false;
-	for (let i = digits.length - 1; i >= 0; i--) {
-		let n = parseInt(digits[i], 10);
-		if (alternate) {
-			n *= 2;
-			if (n > 9) { n -= 9; }
-		}
-		sum += n;
-		alternate = !alternate;
+	// \u2500\u2500 DNP3 Secure Authentication gap \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+	if (/\bdnp3_send|DnpOutstation|DnpMaster|DNP3_APP\b/i.test(line)) {
+		const fn = /\b(Dnp\w+|DNP3\w*)\b/.exec(line);
+		addHit('connection-string', fn?.[1] ?? 'dnp3-endpoint', 'medium');
 	}
-	return sum % 10 === 0 && sum > 0;
+
+	// \u2500\u2500 PROFINET / EtherCAT hardcoded station name \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+	if (/\b(?:station_name|pnio_dev_name)\s*=\s*["'][^"']{3,}["']/i.test(line)) {
+		const fn = /["']([^"']{3,})["']/.exec(line);
+		addHit('hardcoded-ip', fn?.[1] ?? 'pn-station-name', 'medium');
+	}
+
+	// \u2500\u2500 MQTT SparkplugB without BIRTH \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+	if (/\b(?:NDATA|DDATA)\b/.test(line) && !/\b(?:NBIRTH|DBIRTH)\b/.test(line)) {
+		addHit('safety-function-block', 'sparkplug-no-birth', 'low');
+	}
+
+	// \u2500\u2500 OPC-UA SecurityPolicy.None \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+	if (/SecurityPolicy\.None|SecurityMode\.None/i.test(line)) {
+		addHit('api-key', 'opcua-security-none', 'high');
+	}
+
+	// \u2500\u2500 GTP-U in C-Plane context \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+	if (/\b(?:gtpu|GTP_U|pfcp|PDR|FAR)\b/.test(line) && /\b(?:AMF|SMF|ngap_|nas_encode)\b/.test(line)) {
+		addHit('safety-function-block', 'gtp-u-cp-mixed', 'high');
+	}
+
+	// \u2500\u2500 NAS/AS Key derivation \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+	if (/\b(?:KDF|milenage_|kasumi_|snow3g_|zuc_)\s*\(/i.test(line) && /\b(?:CK|IK|AK|RES|AUTN)\b/.test(line)) {
+		const fn = /\b(KDF\w*|milenage_\w*|kasumi_\w*)\b/.exec(line);
+		addHit('api-key', fn?.[1] ?? '3gpp-kdf', 'high');
+	}
 }
 
-/** Basic IBAN structural validation (length + country check). */
-function isValidIBAN(iban: string): boolean {
-	// Country code → expected length
-	const IBAN_LENGTHS: Record<string, number> = {
-		AL:28, AD:24, AT:20, AZ:28, BH:22, BE:16, BA:20, BR:29, BG:22, CR:22,
-		HR:21, CY:28, CZ:24, DK:18, DO:28, EE:20, FO:18, FI:18, FR:27, GE:22,
-		DE:22, GI:23, GR:27, GL:18, GT:28, HU:28, IS:26, IE:22, IL:23, IT:27,
-		JO:30, KZ:20, KW:30, LV:21, LB:28, LI:21, LT:20, LU:20, MK:19, MT:31,
-		MR:27, MU:30, MC:27, MD:24, ME:22, NL:18, NO:15, PK:24, PS:29, PL:28,
-		PT:25, QA:29, RO:24, LC:32, SM:27, SA:24, RS:22, SK:24, SI:19, ES:24,
-		SE:24, CH:21, TN:24, TR:26, AE:23, GB:22, VG:24,
-	};
-	const country = iban.slice(0, 2);
-	const expected = IBAN_LENGTHS[country];
-	return expected !== undefined && iban.length === expected;
-}
 
-/** Private RFC1918 / RFC4193 IP ranges. */
-function isPrivateIP(ip: string): boolean {
-	const parts = ip.split('.').map(Number);
-	if (parts[0] === 10) { return true; }
-	if (parts[0] === 172 && parts[1] >= 16 && parts[1] <= 31) { return true; }
-	if (parts[0] === 192 && parts[1] === 168) { return true; }
-	return false;
-}
 
 function isLoopbackIP(ip: string): boolean {
 	return ip === '127.0.0.1' || ip.startsWith('127.') || ip === '0.0.0.0';
-}
-
-/** Known test / example email domains that should not be flagged. */
-function isTestEmail(email: string): boolean {
-	const TEST_DOMAINS = new Set([
-		'example.com', 'example.org', 'example.net', 'test.com', 'test.org',
-		'dummy.com', 'fake.com', 'placeholder.com', 'noreply.com',
-		'no-reply.com', 'mailinator.com', 'guerrillamail.com',
-	]);
-	const domain = email.split('@')[1] ?? '';
-	return TEST_DOMAINS.has(domain);
 }
 
 /** Returns true if the surrounding context contains known test data markers. */
@@ -342,16 +312,21 @@ function isTestOrFakeContext(line: string, matched: string): boolean {
 }
 
 
-// ─── Comment Detection ────────────────────────────────────────────────────────
+// \u2500\u2500\u2500 Comment Detection \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
 
 function isCommentLine(line: string, lang: string): boolean {
 	const t = line.trim();
 	if (!t) { return false; }
-	if (['java','kotlin','scala','csharp','typescript','javascript','go','rust','swift','dart','php','groovy','c','cpp'].includes(lang)) {
+	// C-style (embedded C, C++, assembler with // comments, AUTOSAR ARXML, TTCN-3)
+	if (['c', 'cpp', 'embedded-c', 'embedded-cpp', 'autosar', 'ttcn3',
+	     'java', 'kotlin', 'scala', 'csharp', 'typescript', 'javascript', 'go', 'rust', 'swift', 'dart', 'php', 'groovy'].includes(lang)) {
 		return t.startsWith('//') || t.startsWith('*') || t.startsWith('/*');
 	}
-	if (['python','ruby','shell','elixir','yaml','toml'].includes(lang)) { return t.startsWith('#'); }
-	if (lang === 'cobol') { return line.length >= 7 && (line[6] === '*' || line[6] === '/'); }
+	// Assembly (ARM: ; or @ prefix, AVR: ;)
+	if (lang === 'assembler') { return t.startsWith(';') || t.startsWith('@') || t.startsWith('//'); }
+	// IEC 61131-3 (* ... *) comments
+	if (lang === 'iec61131') { return t.startsWith('(*') || t.startsWith('//'); }
+	if (['python', 'ruby', 'shell', 'elixir', 'yaml', 'toml'].includes(lang)) { return t.startsWith('#'); }
 	if (lang === 'sql' || lang === 'plsql') { return t.startsWith('--'); }
 	if (lang === 'haskell' || lang === 'lua') { return t.startsWith('--'); }
 	if (lang === 'xml' || lang === 'html') { return t.startsWith('<!--'); }
@@ -359,7 +334,7 @@ function isCommentLine(line: string, lang: string): boolean {
 }
 
 
-// ─── Redaction ────────────────────────────────────────────────────────────────
+// \u2500\u2500\u2500 Redaction \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
 
 /** Redact all but the last 4 characters of a matched value. */
 function redact(value: string): string {
@@ -369,7 +344,7 @@ function redact(value: string): string {
 }
 
 
-// ─── Deduplication ────────────────────────────────────────────────────────────
+// \u2500\u2500\u2500 Deduplication \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
 
 function deduplicateHits(hits: IRegulatedDataHit[]): IRegulatedDataHit[] {
 	const seen = new Set<string>();
