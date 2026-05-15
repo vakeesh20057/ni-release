@@ -8,7 +8,7 @@
  *
  * Dispatches resolution work to the correct language-specific inliner based on
  * the unit's `sourceLang`. This is the central dispatch point for Phase 1 of the
- * modernisation engine — transforming a "pending" unit with opaque external
+ * modernisation engine \u2014 transforming a "pending" unit with opaque external
  * dependencies into a "ready" unit with a fully self-contained `resolvedSource`.
  *
  * ## Dispatch Table
@@ -53,8 +53,8 @@ import {
 } from './impl/resolutionTypes.js';
 import { ResolutionFileCache, DependencyNameResolutionCache } from './impl/resolutionCache.js';
 
-import { inlineCobolCopybooks } from './impl/cobolCopybookInliner.js';
-import { resolveCobolCalls } from './impl/cobolCallResolver.js';
+import { inlineCHeaders } from './impl/cobolCopybookInliner.js';
+import { resolveCFunctionCalls } from './impl/cobolCallResolver.js';
 import { resolvePlsqlTypes } from './impl/plsqlTypeInliner.js';
 import { resolveJavaDependencies } from './impl/javaInterfaceInliner.js';
 import { resolveRpgDependencies } from './impl/rpgBindingInliner.js';
@@ -62,7 +62,7 @@ import { resolveNaturalDependencies } from './impl/naturalDataAreaInliner.js';
 import { resolveGenericImports } from './impl/genericImportInliner.js';
 
 
-// ─── Router Options ───────────────────────────────────────────────────────────
+// \u2500\u2500\u2500 Router Options \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
 
 export interface IRoutedResolutionOptions {
 	maxExpansionDepth: number;
@@ -74,7 +74,7 @@ export interface IRoutedResolutionOptions {
 }
 
 
-// ─── Main Router Entry Point ──────────────────────────────────────────────────
+// \u2500\u2500\u2500 Main Router Entry Point \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
 
 /**
  * Route a single unit's dependency resolution to the correct language inliner.
@@ -158,7 +158,7 @@ export async function routeResolution(
 }
 
 
-// ─── Language Dispatch ────────────────────────────────────────────────────────
+// \u2500\u2500\u2500 Language Dispatch \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
 
 interface IInlinerResult {
 	expandedSource: string;
@@ -180,9 +180,9 @@ async function dispatchToInliner(
 
 	const lang = canonicaliseLanguage(request.language);
 
-	// ── COBOL ──────────────────────────────────────────────────────────────────
-	if (lang === 'cobol') {
-		const copybookResult = await inlineCobolCopybooks(
+	// \u2500\u2500 Embedded C / C++ (firmware) \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+	if (lang === 'c' || lang === 'cpp' || lang === 'c++' || lang === 'embedded-c') {
+		const headerResult = await inlineCHeaders(
 			request.sourceText,
 			request.sourceFileUri,
 			searchPaths,
@@ -198,25 +198,50 @@ async function dispatchToInliner(
 			},
 		);
 
-		// Second pass: resolve CALL statements
-		const callResult = resolveCobolCalls(
-			copybookResult.expandedSource,
+		// Second pass: annotate function calls with KB interface comments
+		const callResult = resolveCFunctionCalls(
+			headerResult.expandedSource,
 			kb,
 			{
 				insertMarkers: options.insertExpansionMarkers,
-				maxLinkageSectionLines: 20,
+				maxSignatureLines: 20,
 			},
 		);
 
 		return {
 			expandedSource: callResult.expandedSource,
-			resolvedRefs: [...copybookResult.resolvedRefs, ...callResult.resolvedCalls],
-			unresolvedRefs: [...copybookResult.unresolvedRefs, ...callResult.unresolvedCalls],
+			resolvedRefs: [...headerResult.resolvedRefs, ...callResult.resolvedCalls],
+			unresolvedRefs: [...headerResult.unresolvedRefs, ...callResult.unresolvedCalls],
+			cycleDetected: headerResult.cycleRefs.length > 0,
+		};
+	}
+
+	// \u2500\u2500 COBOL (hybrid project support) \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+	if (lang === 'cobol') {
+		const copybookResult = await inlineCHeaders(
+			request.sourceText,
+			request.sourceFileUri,
+			searchPaths,
+			readFile,
+			listDir,
+			fileCache,
+			nameCache,
+			{
+				insertMarkers:         options.insertExpansionMarkers,
+				insertResolutionHeader: options.insertResolutionHeader,
+				maxExpansionDepth:     options.maxExpansionDepth,
+				maxInlineSize:         options.maxInlineSize,
+			},
+		);
+		return {
+			expandedSource: copybookResult.expandedSource,
+			resolvedRefs: copybookResult.resolvedRefs,
+			unresolvedRefs: copybookResult.unresolvedRefs,
 			cycleDetected: copybookResult.cycleRefs.length > 0,
 		};
 	}
 
-	// ── PL/SQL / SQL ───────────────────────────────────────────────────────────
+	// \u2500\u2500 PL/SQL / SQL \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
 	if (lang === 'plsql' || lang === 'sql' || lang === 'oracle-sql') {
 		const result = resolvePlsqlTypes(
 			request.sourceText,
@@ -234,7 +259,7 @@ async function dispatchToInliner(
 		};
 	}
 
-	// ── Java ──────────────────────────────────────────────────────────────────
+	// \u2500\u2500 Java \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
 	if (lang === 'java') {
 		const result = resolveJavaDependencies(
 			request.sourceText,
@@ -252,7 +277,7 @@ async function dispatchToInliner(
 		};
 	}
 
-	// ── RPG ───────────────────────────────────────────────────────────────────
+	// \u2500\u2500 RPG \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
 	if (lang === 'rpg' || lang === 'rpgle' || lang === 'rpg4' || lang === 'sqlrpgle' || lang === 'ile-rpg') {
 		const result = await resolveRpgDependencies(
 			request.sourceText,
@@ -276,7 +301,71 @@ async function dispatchToInliner(
 		};
 	}
 
-	// ── NATURAL / ADABAS ─────────────────────────────────────────────────────
+	// \u2500\u2500 AUTOSAR ARXML \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+	// ARXML files reference other ARXML elements by SHORT-NAME paths.
+	// We inject KB-registered interface signatures as an XML comment block.
+	if (lang === 'autosar' || lang === 'arxml') {
+		const result = resolveGenericImports(
+			request.sourceText,
+			'autosar',
+			kb,
+			{
+				insertMarkers: options.insertExpansionMarkers,
+				maxMethodsPerImport: 15,
+				includeUnresolvedComments: true,
+			},
+		);
+		return {
+			expandedSource: result.expandedSource,
+			resolvedRefs: result.resolvedRefs,
+			unresolvedRefs: result.unresolvedRefs,
+			cycleDetected: false,
+		};
+	}
+
+	// \u2500\u2500 IEC 61131-3 (PLC ST/LD) \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+	// IEC 61131-3 USES / FROM imports reference library function block definitions.
+	// We inject KB-registered FB signatures as (* comment *) blocks.
+	if (lang === 'iec61131' || lang === 'st' || lang === 'plc') {
+		const result = resolveGenericImports(
+			request.sourceText,
+			'iec61131',
+			kb,
+			{
+				insertMarkers: options.insertExpansionMarkers,
+				maxMethodsPerImport: 10,
+				includeUnresolvedComments: true,
+			},
+		);
+		return {
+			expandedSource: result.expandedSource,
+			resolvedRefs: result.resolvedRefs,
+			unresolvedRefs: result.unresolvedRefs,
+			cycleDetected: false,
+		};
+	}
+
+	// \u2500\u2500 TTCN-3 (Telecom test modules) \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+	if (lang === 'ttcn3' || lang === 'ttcn') {
+		const result = resolveGenericImports(
+			request.sourceText,
+			'ttcn3',
+			kb,
+			{
+				insertMarkers: options.insertExpansionMarkers,
+				maxMethodsPerImport: 12,
+				includeUnresolvedComments: true,
+			},
+		);
+		return {
+			expandedSource: result.expandedSource,
+			resolvedRefs: result.resolvedRefs,
+			unresolvedRefs: result.unresolvedRefs,
+			cycleDetected: false,
+		};
+	}
+
+	// \u2500\u2500 NATURAL / ADABAS \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
 	if (lang === 'natural' || lang === 'nsp' || lang === 'nat') {
 		const result = await resolveNaturalDependencies(
 			request.sourceText,
@@ -300,7 +389,7 @@ async function dispatchToInliner(
 		};
 	}
 
-	// ── Generic Fallback ─────────────────────────────────────────────────────
+	// \u2500\u2500 Generic Fallback \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
 	// TypeScript, JavaScript, Python, Go, Rust, C#, VB, Kotlin, Scala, etc.
 	const result = resolveGenericImports(
 		request.sourceText,
@@ -321,7 +410,7 @@ async function dispatchToInliner(
 }
 
 
-// ─── Outcome Calculation ─────────────────────────────────────────────────────
+// \u2500\u2500\u2500 Outcome Calculation \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
 
 function determineOutcome(
 	resolvedRefs: IDependencyResolutionResult[],
@@ -336,7 +425,7 @@ function determineOutcome(
 	const resolvedProject = resolvedRefs.filter(r => !r.isExternal);
 
 	if (totalProject.length === 0) {
-		// No project-internal deps at all — trivially resolved
+		// No project-internal deps at all \u2014 trivially resolved
 		return 'resolved';
 	}
 
@@ -352,7 +441,7 @@ function determineOutcome(
 }
 
 
-// ─── Resolution Header ────────────────────────────────────────────────────────
+// \u2500\u2500\u2500 Resolution Header \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
 
 function buildResolutionHeader(
 	unitName: string,
@@ -370,7 +459,7 @@ function buildResolutionHeader(
 	const externalCount = unresolvedRefs.filter(r => r.isExternal).length;
 
 	const lines: string[] = [
-		`${commentLine} ── NEURAL INVERSE — SOURCE RESOLUTION SUMMARY ────────────────────────────`,
+		`${commentLine} \u2500\u2500 NEURAL INVERSE \u2014 SOURCE RESOLUTION SUMMARY \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500`,
 		`${commentLine}   Unit:       ${unitName}`,
 		`${commentLine}   Resolved:   ${projectResolved.length} internal dependencies expanded`,
 	];
@@ -378,27 +467,27 @@ function buildResolutionHeader(
 	if (projectUnresolved.length > 0) {
 		lines.push(`${commentLine}   Missing:    ${projectUnresolved.length} internal dependencies not found`);
 		const top5 = projectUnresolved.slice(0, 5).map(r => r.ref.canonicalName);
-		lines.push(`${commentLine}               ${top5.join(', ')}${projectUnresolved.length > 5 ? ' …' : ''}`);
+		lines.push(`${commentLine}               ${top5.join(', ')}${projectUnresolved.length > 5 ? ' \u2026' : ''}`);
 	}
 
 	if (externalCount > 0) {
 		lines.push(`${commentLine}   External:   ${externalCount} external library references (not expanded)`);
 	}
 
-	lines.push(`${commentLine} ─────────────────────────────────────────────────────────────────────────────`);
+	lines.push(`${commentLine} \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500`);
 	lines.push('');
 
 	return lines.join('\n');
 }
 
 
-// ─── Search Path Builder ─────────────────────────────────────────────────────
+// \u2500\u2500\u2500 Search Path Builder \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
 
 /**
  * Build the ordered search path list for dependency resolution.
  *
  * Priority order:
- * 1. The directory containing the source file (most local — highest priority)
+ * 1. The directory containing the source file (most local \u2014 highest priority)
  * 2. Explicitly provided search paths (from project configuration)
  * 3. Extra search paths (from resolution options)
  */
@@ -436,7 +525,7 @@ function buildSearchPaths(
 }
 
 
-// ─── File System Adapters ─────────────────────────────────────────────────────
+// \u2500\u2500\u2500 File System Adapters \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
 
 /**
  * Build a `readFile` function that reads from the VS Code file system.
@@ -468,7 +557,7 @@ function buildListDirAdapter(
 }
 
 
-// ─── Utility ─────────────────────────────────────────────────────────────────
+// \u2500\u2500\u2500 Utility \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
 
 function getParentDir(uri: string): string {
 	const normalised = uri.replace(/\\/g, '/');

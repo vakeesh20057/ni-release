@@ -8,7 +8,7 @@
  *
  * Maintains a profile for every source language the FingerprintService supports.
  * A language profile maps:
- *   - Aliases → canonical key (so 'COBOL', 'cobol', 'cob' all resolve to 'cobol')
+ *   - Aliases \u2192 canonical key (so 'COBOL', 'cobol', 'cob' all resolve to 'cobol')
  *   - Whether the language has Layer 1 deterministic patterns in legacyPatternRegistry
  *   - The registry key used to look up patterns (may differ from canonical key)
  *   - Language-specific terminology used in compliance explanations
@@ -18,10 +18,10 @@
  *
  * 1. Add its patterns to legacyPatternRegistry.ts (Layer 1 support)
  * 2. Add a ILanguageProfile entry here
- * 3. No other changes required — the FingerprintService picks up registry entries automatically
+ * 3. No other changes required \u2014 the FingerprintService picks up registry entries automatically
  */
 
-// ─── Types ────────────────────────────────────────────────────────────────────
+// \u2500\u2500\u2500 Types \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
 
 /**
  * Language-specific terminology mapping for compliance descriptions.
@@ -45,7 +45,7 @@ export interface ILanguageTerminology {
  * A language profile registered in the registry.
  */
 export interface ILanguageProfile {
-	/** Canonical key — the normalised identifier used internally */
+	/** Canonical key \u2014 the normalised identifier used internally */
 	key: string;
 
 	/** Human-readable display name used in UI and logs */
@@ -75,16 +75,16 @@ export interface ILanguageProfile {
 
 	/**
 	 * Primary compliance framework(s) associated with this language in typical deployments.
-	 * Informational only — used to enrich the LLM prompt context.
+	 * Informational only \u2014 used to enrich the LLM prompt context.
 	 */
 	primaryFrameworks: string[];
 }
 
-// ─── Language Profiles ────────────────────────────────────────────────────────
+// \u2500\u2500\u2500 Language Profiles \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
 
 const LANGUAGE_PROFILES: ILanguageProfile[] = [
 
-	// ── COBOL (IBM z/OS) ──────────────────────────────────────────────────────
+	// \u2500\u2500 COBOL (IBM z/OS) \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
 	{
 		key: 'cobol',
 		displayName: 'COBOL (IBM z/OS)',
@@ -101,7 +101,7 @@ const LANGUAGE_PROFILES: ILanguageProfile[] = [
 		primaryFrameworks: ['financial-core', 'pci-dss', 'sox', 'telecom-billing'],
 	},
 
-	// ── PL/SQL (Oracle) ───────────────────────────────────────────────────────
+	// \u2500\u2500 PL/SQL (Oracle) \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
 	{
 		key: 'plsql',
 		displayName: 'PL/SQL (Oracle)',
@@ -118,7 +118,7 @@ const LANGUAGE_PROFILES: ILanguageProfile[] = [
 		primaryFrameworks: ['financial-core', 'tax-compliance', 'sox'],
 	},
 
-	// ── RPG (IBM AS/400) ──────────────────────────────────────────────────────
+	// \u2500\u2500 RPG (IBM AS/400) \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
 	{
 		key: 'rpg',
 		displayName: 'RPG (IBM AS/400 / IBM i)',
@@ -135,7 +135,7 @@ const LANGUAGE_PROFILES: ILanguageProfile[] = [
 		primaryFrameworks: ['financial-core', 'telecom-billing'],
 	},
 
-	// ── NATURAL / ADABAS ──────────────────────────────────────────────────────
+	// \u2500\u2500 NATURAL / ADABAS \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
 	{
 		key: 'natural',
 		displayName: 'NATURAL (ADABAS)',
@@ -147,12 +147,12 @@ const LANGUAGE_PROFILES: ILanguageProfile[] = [
 			variableTerm: 'variable',
 			precisionTerm: 'packed numeric (P format)',
 			transactionTerm: 'END TRANSACTION / BACKOUT TRANSACTION',
-			complianceNotes: 'NATURAL P-format variables are packed decimal. ADABAS FIND/STORE operations are the data access layer — transactional semantics must be preserved.',
+			complianceNotes: 'NATURAL P-format variables are packed decimal. ADABAS FIND/STORE operations are the data access layer \u2014 transactional semantics must be preserved.',
 		},
 		primaryFrameworks: ['financial-core', 'sox'],
 	},
 
-	// ── Java EE ───────────────────────────────────────────────────────────────
+	// \u2500\u2500 Java EE \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
 	{
 		key: 'java',
 		displayName: 'Java EE',
@@ -169,7 +169,7 @@ const LANGUAGE_PROFILES: ILanguageProfile[] = [
 		primaryFrameworks: ['financial-core', 'pci-dss', 'gdpr-pii'],
 	},
 
-	// ── Python 2 ──────────────────────────────────────────────────────────────
+	// \u2500\u2500 Python 2 \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
 	{
 		key: 'python',
 		displayName: 'Python 2',
@@ -186,7 +186,7 @@ const LANGUAGE_PROFILES: ILanguageProfile[] = [
 		primaryFrameworks: ['financial-core', 'tax-compliance'],
 	},
 
-	// ── VB6 / VBA ─────────────────────────────────────────────────────────────
+	// \u2500\u2500 VB6 / VBA \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
 	{
 		key: 'vb6',
 		displayName: 'VB6 / VBA',
@@ -198,12 +198,12 @@ const LANGUAGE_PROFILES: ILanguageProfile[] = [
 			variableTerm: 'variable',
 			precisionTerm: 'Currency type',
 			transactionTerm: 'ADO transaction (BeginTrans/CommitTrans)',
-			complianceNotes: 'VB6 Currency type is a scaled 64-bit integer — exact decimal arithmetic. ADO BeginTrans/CommitTrans define transaction boundaries.',
+			complianceNotes: 'VB6 Currency type is a scaled 64-bit integer \u2014 exact decimal arithmetic. ADO BeginTrans/CommitTrans define transaction boundaries.',
 		},
 		primaryFrameworks: ['financial-core', 'tax-compliance'],
 	},
 
-	// ── PL/1 ──────────────────────────────────────────────────────────────────
+	// \u2500\u2500 PL/1 \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
 	{
 		key: 'pl1',
 		displayName: 'PL/1',
@@ -215,12 +215,12 @@ const LANGUAGE_PROFILES: ILanguageProfile[] = [
 			variableTerm: 'variable',
 			precisionTerm: 'FIXED DECIMAL precision attribute',
 			transactionTerm: 'COMMIT/ROLLBACK',
-			complianceNotes: 'PL/1 FIXED DECIMAL(p,q) attributes are monetary. Layer 1 pattern support pending — Layer 2 LLM extraction provides full coverage.',
+			complianceNotes: 'PL/1 FIXED DECIMAL(p,q) attributes are monetary. Layer 1 pattern support pending \u2014 Layer 2 LLM extraction provides full coverage.',
 		},
 		primaryFrameworks: ['financial-core', 'sox'],
 	},
 
-	// ── NATURAL/z (BS2000) ────────────────────────────────────────────────────
+	// \u2500\u2500 NATURAL/z (BS2000) \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
 	{
 		key: 'naturalz',
 		displayName: 'NATURAL/z (BS2000)',
@@ -237,7 +237,7 @@ const LANGUAGE_PROFILES: ILanguageProfile[] = [
 		primaryFrameworks: ['financial-core'],
 	},
 
-	// ── Assembler (z/OS) ──────────────────────────────────────────────────────
+	// \u2500\u2500 Assembler (z/OS) \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
 	{
 		key: 'assembler',
 		displayName: 'Assembler (z/OS)',
@@ -254,7 +254,7 @@ const LANGUAGE_PROFILES: ILanguageProfile[] = [
 		primaryFrameworks: ['financial-core', 'sox'],
 	},
 
-	// ── Fortran 77/90 ─────────────────────────────────────────────────────────
+	// \u2500\u2500 Fortran 77/90 \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
 	{
 		key: 'fortran',
 		displayName: 'Fortran 77/90',
@@ -266,12 +266,12 @@ const LANGUAGE_PROFILES: ILanguageProfile[] = [
 			variableTerm: 'variable',
 			precisionTerm: 'DOUBLE PRECISION',
 			transactionTerm: 'I/O operation',
-			complianceNotes: 'Fortran DOUBLE PRECISION and REAL(8) are used for monetary computations. COMMON blocks share state across routines — mutation order matters for compliance.',
+			complianceNotes: 'Fortran DOUBLE PRECISION and REAL(8) are used for monetary computations. COMMON blocks share state across routines \u2014 mutation order matters for compliance.',
 		},
 		primaryFrameworks: ['financial-core'],
 	},
 
-	// ── Angular 1 (JavaScript) ────────────────────────────────────────────────
+	// \u2500\u2500 Angular 1 (JavaScript) \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
 	{
 		key: 'angular1',
 		displayName: 'Angular 1 (JavaScript)',
@@ -283,12 +283,12 @@ const LANGUAGE_PROFILES: ILanguageProfile[] = [
 			variableTerm: 'property',
 			precisionTerm: 'Number / custom precision library',
 			transactionTerm: '$http call',
-			complianceNotes: 'JavaScript Number type uses IEEE 754 double precision — monetary arithmetic must use a decimal library (decimal.js, bignumber.js). REST calls are stateless — transactionality is server-side.',
+			complianceNotes: 'JavaScript Number type uses IEEE 754 double precision \u2014 monetary arithmetic must use a decimal library (decimal.js, bignumber.js). REST calls are stateless \u2014 transactionality is server-side.',
 		},
 		primaryFrameworks: ['financial-core', 'pci-dss'],
 	},
 
-	// ── C / C++ ───────────────────────────────────────────────────────────────
+	// \u2500\u2500 C / C++ (generic financial) \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
 	{
 		key: 'c',
 		displayName: 'C / C++',
@@ -300,19 +300,206 @@ const LANGUAGE_PROFILES: ILanguageProfile[] = [
 			variableTerm: 'variable',
 			precisionTerm: 'double / float monetary',
 			transactionTerm: 'database commit boundary',
-			complianceNotes: 'C/C++ double and float are IEEE 754 — monetary arithmetic requires explicit rounding. No native decimal type; regulated fields should use scaled integers or external libraries.',
+			complianceNotes: 'C/C++ double and float are IEEE 754 \u2014 monetary arithmetic requires explicit rounding. No native decimal type; regulated fields should use scaled integers or external libraries.',
 		},
 		primaryFrameworks: ['financial-core', 'sox'],
+	},
+
+	// \u2500\u2500 Embedded C (firmware) \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+	{
+		key: 'embedded-c',
+		displayName: 'Embedded C (firmware)',
+		aliases: ['embedded-c', 'embedded-cpp', 'embedded-c++', 'mcu-c', 'firmware-c', 'bare-metal-c'],
+		hasLayer1Support: true,
+		patternRegistryKey: 'embedded-c',
+		terminology: {
+			unitTerm: 'function',
+			variableTerm: 'variable',
+			precisionTerm: 'fixed-point arithmetic',
+			transactionTerm: 'ISR / critical section boundary',
+			complianceNotes: 'Safety-critical embedded C must comply with MISRA-C:2012 and IEC 61508. ISR handlers, watchdog refresh points, and peripheral register accesses are always regulated.',
+		},
+		primaryFrameworks: ['iec-61508', 'misra-c', 'iso-26262'],
+	},
+
+	// \u2500\u2500 IEC 61131-3 / PLC \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+	{
+		key: 'iec61131',
+		displayName: 'IEC 61131-3 (PLC / IPC)',
+		aliases: ['iec61131', 'iec-61131', 'plc', 'structured-text', 'st', 'ladder', 'ladder-diagram', 'ld', 'fbd', 'il', 'sfc', 'pou'],
+		hasLayer1Support: true,
+		patternRegistryKey: 'iec61131',
+		terminology: {
+			unitTerm: 'function block',
+			variableTerm: 'variable',
+			precisionTerm: 'REAL / LREAL fixed arithmetic',
+			transactionTerm: 'scan cycle boundary',
+			complianceNotes: 'IEC 61131-3 programs run in deterministic scan cycles. Safety function blocks (SF_ prefix) are normative IEC 61508 SIL-rated components and must never be simplified.',
+		},
+		primaryFrameworks: ['iec-61508', 'iec-61131', 'iec-62443'],
+	},
+
+	// \u2500\u2500 AUTOSAR \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+	{
+		key: 'autosar',
+		displayName: 'AUTOSAR Classic / Adaptive',
+		aliases: ['autosar', 'autosar-classic', 'autosar-adaptive', 'autosar-cp', 'autosar-ap', 'arxml'],
+		hasLayer1Support: true,
+		patternRegistryKey: 'autosar',
+		terminology: {
+			unitTerm: 'runnable',
+			variableTerm: 'port element',
+			precisionTerm: 'fixed-point or IEEE 754 with compu-method scaling',
+			transactionTerm: 'runnable execution / RTE activation',
+			complianceNotes: 'AUTOSAR SWCs communicate exclusively via the RTE (Classic) or ara::com (Adaptive). E2E protection checksums on safety-relevant signals are mandatory for ISO 26262 ASIL compliance.',
+		},
+		primaryFrameworks: ['autosar', 'iso-26262', 'misra-c'],
+	},
+
+	// \u2500\u2500 CAN DBC / CAN-FD \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+	{
+		key: 'can-dbc',
+		displayName: 'CAN DBC / CAN-FD Network',
+		aliases: ['can-dbc', 'dbc', 'can', 'can-fd', 'candb', 'lin-ldf', 'flexray'],
+		hasLayer1Support: false,
+		patternRegistryKey: 'embedded-c',
+		terminology: {
+			unitTerm: 'message',
+			variableTerm: 'signal',
+			precisionTerm: 'signal scaling (factor / offset)',
+			transactionTerm: 'frame transmission cycle',
+			complianceNotes: 'CAN DBC signals have scale factor and offset defining physical unit mapping. Safety-relevant signals require AUTOSAR E2E protection or CRC. Cycle time violations break real-time guarantees.',
+		},
+		primaryFrameworks: ['iso-26262', 'autosar', 'iec-61508'],
+	},
+
+	// \u2500\u2500 Assembly (embedded ARM/AVR) \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+	{
+		key: 'assembler',
+		displayName: 'Assembly (ARM / AVR / RISC-V)',
+		aliases: ['assembler', 'assembly', 'asm', 's', 'arm-asm', 'avr-asm', 'riscv-asm'],
+		hasLayer1Support: true,
+		patternRegistryKey: 'assembler',
+		terminology: {
+			unitTerm: 'subroutine',
+			variableTerm: 'register / storage location',
+			precisionTerm: 'integer arithmetic (no floating point)',
+			transactionTerm: 'interrupt return / SVC boundary',
+			complianceNotes: 'Assembly ISR handlers control interrupt entry/exit and must preserve all caller-saved registers. ARM SVC and AVR CLI/SEI instructions directly control safety-critical interrupt enable state.',
+		},
+		primaryFrameworks: ['iec-61508', 'misra-c'],
+	},
+
+	// \u2500\u2500 Rust (embedded) \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+	{
+		key: 'rust',
+		displayName: 'Rust (embedded)',
+		aliases: ['rust', 'rs', 'embedded-rust', 'rust-embedded'],
+		hasLayer1Support: false,
+		patternRegistryKey: 'embedded-c',
+		terminology: {
+			unitTerm: 'function',
+			variableTerm: 'binding',
+			precisionTerm: 'integer / fixed-point (no_std)',
+			transactionTerm: 'critical section / cortex-m::interrupt::free',
+			complianceNotes: 'Embedded Rust uses no_std. Critical sections use cortex_m::interrupt::free(). Unsafe blocks accessing volatile hardware registers are always safety-regulated.',
+		},
+		primaryFrameworks: ['iec-61508', 'misra-c'],
+	},
+
+	// \u2500\u2500 SVD (CMSIS peripheral description) \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+	{
+		key: 'svd',
+		displayName: 'CMSIS SVD (Peripheral Description)',
+		aliases: ['svd', 'cmsis-svd', 'peripheral-description'],
+		hasLayer1Support: false,
+		patternRegistryKey: 'embedded-c',
+		terminology: {
+			unitTerm: 'peripheral',
+			variableTerm: 'register / bit field',
+			precisionTerm: 'bit-field mask / reset value',
+			transactionTerm: 'register read-modify-write',
+			complianceNotes: 'SVD peripheral descriptions define the hardware register map. Bit fields with "read-write" access and reset values 0 are safety-critical configuration registers.',
+		},
+		primaryFrameworks: ['iec-61508'],
+	},
+
+	// \u2500\u2500 TTCN-3 (Telecom protocol testing) \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+	{
+		key: 'ttcn3',
+		displayName: 'TTCN-3 (3GPP Protocol Testing)',
+		aliases: ['ttcn3', 'ttcn', 'ttcn-3', 'ttcnpp'],
+		hasLayer1Support: false,
+		patternRegistryKey: 'telecom',
+		terminology: {
+			unitTerm: 'testcase',
+			variableTerm: 'component variable',
+			precisionTerm: 'integer / float (TTCN-3 basic types)',
+			transactionTerm: 'test verdict / port send-receive',
+			complianceNotes: '3GPP TTCN-3 test suites exercise protocol conformance. Subscriber identity (IMSI/TMSI) and security keys (K/Kenc/Kint) appearing in test data are regulated PII/cryptographic material.',
+		},
+		primaryFrameworks: ['iec-62443'],
+	},
+
+	// \u2500\u2500 Energy / Critical Infrastructure \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+	{
+		key: 'energy',
+		displayName: 'Energy / Critical Infrastructure (IEC 61850 / DNP3)',
+		aliases: ['energy', 'iec61850', 'iec-61850', 'dnp3', 'scada-ot', 'substation'],
+		hasLayer1Support: true,
+		patternRegistryKey: 'energy',
+		terminology: {
+			unitTerm: 'logical node',
+			variableTerm: 'data attribute',
+			precisionTerm: 'REAL32 / FLOAT process value',
+			transactionTerm: 'GOOSE / SV publication cycle',
+			complianceNotes: 'IEC 61850 GOOSE messages have sub-4ms timing requirements for protection relay functions. XCBR trip/close operations are always safety-regulated. IEC 62443 SL2+ required for external access.',
+		},
+		primaryFrameworks: ['iec-61508', 'iec-62443'],
+	},
+
+	// \u2500\u2500 Industrial IoT / OT \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+	{
+		key: 'iiot-ot',
+		displayName: 'Industrial IoT & OT (EtherCAT / CANopen / MQTT)',
+		aliases: ['iiot-ot', 'iiot', 'industrial-iot', 'ot', 'ethercat', 'canopen', 'profinet'],
+		hasLayer1Support: true,
+		patternRegistryKey: 'iiot-ot',
+		terminology: {
+			unitTerm: 'function block / process data object',
+			variableTerm: 'PDO signal',
+			precisionTerm: 'REAL32 / INT32 process value with scaling',
+			transactionTerm: 'PDO cycle / MQTT publish interval',
+			complianceNotes: 'EtherCAT/Profinet real-time field data has hard latency requirements. CANopen NMT state transitions are safety-critical for machine axes. MQTT cloud bridges must respect IEC 62443 Zone/Conduit boundaries.',
+		},
+		primaryFrameworks: ['iec-61508', 'iec-62443'],
+	},
+
+	// \u2500\u2500 Automotive (ISO 26262) \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+	{
+		key: 'automotive',
+		displayName: 'Automotive Software (ISO 26262 / AUTOSAR)',
+		aliases: ['automotive', 'iso26262', 'iso-26262', 'asil', 'vehicle-software'],
+		hasLayer1Support: true,
+		patternRegistryKey: 'automotive',
+		terminology: {
+			unitTerm: 'runnable / SWC',
+			variableTerm: 'port element / signal',
+			precisionTerm: 'fixed-point with compu-method',
+			transactionTerm: 'RTE activation / CAN frame transmission',
+			complianceNotes: 'ISO 26262 ASIL-D code requires formal verification and diverse redundancy. Safety mechanisms (diagnostic coverage, MPF independence) must be preserved across translation. CAN signals carry ASIL-rated torque/brake commands.',
+		},
+		primaryFrameworks: ['iso-26262', 'autosar', 'misra-c'],
 	},
 ];
 
 
-// ─── Registry Implementation ──────────────────────────────────────────────────
+// \u2500\u2500\u2500 Registry Implementation \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
 
-/** Alias map: lowercase alias → canonical profile key */
+/** Alias map: lowercase alias \u2192 canonical profile key */
 const ALIAS_MAP = new Map<string, string>();
 
-/** Profile map: canonical key → ILanguageProfile */
+/** Profile map: canonical key \u2192 ILanguageProfile */
 const PROFILE_MAP = new Map<string, ILanguageProfile>();
 
 for (const profile of LANGUAGE_PROFILES) {
@@ -323,7 +510,7 @@ for (const profile of LANGUAGE_PROFILES) {
 }
 
 
-// ─── Public API ───────────────────────────────────────────────────────────────
+// \u2500\u2500\u2500 Public API \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
 
 /**
  * Resolve a raw language string (user-supplied or from file extension) to a
