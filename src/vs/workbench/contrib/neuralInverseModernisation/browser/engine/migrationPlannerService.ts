@@ -4,7 +4,7 @@
  *--------------------------------------------------------------------------------------------*/
 
 /**
- * # Migration Planner Service — Stage 2
+ * # Migration Planner Service -- Stage 2
  *
  * Converts a Stage 1 `IDiscoveryResult` into a fully-structured
  * `IMigrationRoadmap` ready for developer review and plan approval.
@@ -13,26 +13,26 @@
  *
  * ```
  * generateRoadmap(discovery, pattern, sessionId)
- *   │
- *   ├─ Step 1: Build deterministic base roadmap
- *   │           roadmapBuilder.buildRoadmap(input without AI)
- *   │           ↳ topology + critical path + phases + blockers + gates
- *   │
- *   ├─ Step 2: Build rich LLM prompt from the base roadmap + full discovery data
- *   │           ↳ Phase breakdown, critical path units, effort summary,
- *   │             API surface, regulated data, tech debt, GRC snapshots,
- *   │             cross-project pairing confidence scores
- *   │
- *   ├─ Step 3: Call LLM via IContractReasonService.sendOneShotQuery()
- *   │           ↳ Rate-limited, exponential backoff, non-blocking on failure
- *   │
- *   ├─ Step 4: Parse LLM response into IAISupplement
- *   │           ↳ phaseOverrides, riskOverrides, complianceNotes, riskNarrative,
- *   │             estimatedEffort, additionalBlockers
- *   │
- *   └─ Step 5: Rebuild roadmap with AI supplement applied
+ *   |
+ *   +-- Step 1: Build deterministic base roadmap
+ *   |           roadmapBuilder.buildRoadmap(input without AI)
+ *   |           -> topology + critical path + phases + blockers + gates
+ *   |
+ *   +-- Step 2: Build rich LLM prompt from the base roadmap + full discovery data
+ *   |           -> Phase breakdown, critical path units, effort summary,
+ *   |             API surface, regulated data, tech debt, GRC snapshots,
+ *   |             cross-project pairing confidence scores
+ *   |
+ *   +-- Step 3: Call LLM (sector-aware prompt with compliance guidance)
+ *   |           -> Rate-limited, exponential backoff, non-blocking on failure
+ *   |
+ *   +-- Step 4: Parse LLM response into IAISupplement
+ *   |           -> phaseOverrides, riskOverrides, complianceNotes, riskNarrative,
+ *   |             estimatedEffort, additionalBlockers
+ *   |
+ *   +-- Step 5: Rebuild roadmap with AI supplement applied
  *               roadmapBuilder.buildRoadmap(input WITH aiSupplement)
- *               ↳ Returns final IMigrationRoadmap with generationMethod='ai-guided'
+ *               -> Returns final IMigrationRoadmap with generationMethod='ai-guided'
  * ```
  *
  * ## Graceful Degradation
@@ -64,10 +64,11 @@ import {
 	MigrationRiskLevel,
 	MigrationPhaseType,
 } from '../../common/modernisationTypes.js';
-import { IDiscoveryResult } from './discovery/discoveryTypes.js';
-import { MigrationPattern } from '../modernisationSessionService.js';
+import { IDiscoveryResult, IProjectScanResult, IGRCSnapshot } from './discovery/discoveryTypes.js';
+import { MigrationPattern, MIGRATION_PATTERN_LABELS } from '../modernisationSessionService.js';
 import { buildRoadmap } from './planning/roadmapBuilder.js';
 import { IAISupplement } from './planning/planningTypes.js';
+import { getSectorProfile } from './sectorRegistry.js';
 
 
 // ─── Service Interface ────────────────────────────────────────────────────────
@@ -115,7 +116,9 @@ class MigrationPlannerService extends Disposable implements IMigrationPlannerSer
 		sessionId: string,
 	): Promise<IMigrationRoadmap> {
 		// ── Step 1: Deterministic base roadmap ────────────────────────────────
-		this._fire('Analysing discovery results and building dependency graph…');
+		const sectorProfile = getSectorProfile(pattern);
+		const sectorLabel = sectorProfile ? sectorProfile.label : 'General';
+		this._fire(`Analysing discovery results [sector: ${sectorLabel}] and building dependency graph...`);
 		const baseRoadmap = buildRoadmap({ discovery, pattern, sessionId });
 
 		const totalUnits     = baseRoadmap.totalUnits;
@@ -128,29 +131,33 @@ class MigrationPlannerService extends Disposable implements IMigrationPlannerSer
 			`Base roadmap built: ${totalUnits} units across ${phaseCount} phases, ` +
 			`${critPathLen} critical-path units, ` +
 			`${blockerCount} blockers, ~${effortHigh}h estimated. ` +
-			`Sending to AI for semantic refinement…`
+			`Sending to AI for semantic refinement...`
 		);
 
-		// ── Step 2 & 3: LLM-refined roadmap not available in community edition ──
-		this._fire('Generating AI-refined migration roadmap…');
+		// ── Step 2: Build prompt (sector-aware) ──────────────────────────────
+		const _prompt = this._buildPrompt(discovery, pattern, baseRoadmap);
+		void _prompt; // prompt prepared for future LLM integration
+
+		// ── Step 3: LLM call (not available in community edition) ─────────────
+		this._fire('Generating AI-refined migration roadmap...');
 		const aiResponse: string | undefined = undefined;
 
 		if (!aiResponse) {
-			this._fire('AI call failed — returning deterministic roadmap.');
+			this._fire('AI refinement unavailable -- returning deterministic roadmap.');
 			return baseRoadmap;
 		}
 
 		// ── Step 4: Parse AI response ─────────────────────────────────────────
-		this._fire('Parsing AI supplement and applying overrides…');
+		this._fire('Parsing AI supplement and applying overrides...');
 		const aiSupplement = this._parseAISupplement(aiResponse);
 
 		if (!aiSupplement) {
-			this._fire('AI response could not be parsed — returning deterministic roadmap.');
+			this._fire('AI response could not be parsed -- returning deterministic roadmap.');
 			return baseRoadmap;
 		}
 
 		// ── Step 5: Rebuild with AI supplement ───────────────────────────────
-		this._fire('Rebuilding roadmap with AI refinements…');
+		this._fire('Rebuilding roadmap with AI refinements...');
 		const finalRoadmap = buildRoadmap({ discovery, pattern, sessionId, aiSupplement });
 
 		this._fire(
@@ -160,6 +167,216 @@ class MigrationPlannerService extends Disposable implements IMigrationPlannerSer
 		);
 
 		return finalRoadmap;
+	}
+
+
+	// --- Prompt Builder ----------------------------------------------------------
+
+	private _buildPrompt(
+		discovery: IDiscoveryResult,
+		pattern: MigrationPattern,
+		baseRoadmap: IMigrationRoadmap,
+	): string {
+		const patternLabel = MIGRATION_PATTERN_LABELS[pattern] ?? pattern;
+		const sectorProfile = getSectorProfile(pattern);
+
+		const srcSummaries = discovery.sources.map(s => this._summariseProject(s)).join('\n');
+		const tgtSummaries = discovery.targets.map(t => this._summariseProject(t)).join('\n');
+
+		// Phase breakdown (compact)
+		const phaseSummary = (baseRoadmap.phases ?? []).map(p =>
+			`  Phase ${p.index} [${p.phaseType}]: ${p.unitIds.length} units, ` +
+			`${p.estimatedHoursLow}-${p.estimatedHoursHigh}h, ` +
+			`${p.riskDistribution.critical} critical, ${p.riskDistribution.high} high risk` +
+			(p.hasComplianceGate ? ', COMPLIANCE GATE' : '') +
+			(p.hasAPICompatibilityGate ? ', API GATE' : '')
+		).join('\n');
+
+		// Critical path (max 20 units)
+		const critPathStr = (baseRoadmap.criticalPath ?? [])
+			.slice(0, 20)
+			.map(n => `  "${n.unitName}" [${n.phaseType}] -- ${n.effortHoursHigh}h, slack=${n.slack}h`)
+			.join('\n');
+
+		// Migration blockers (max 15)
+		const blockerStr = (baseRoadmap.migrationBlockers ?? [])
+			.filter(b => b.severity === 'blocking')
+			.slice(0, 15)
+			.map(b => `  [${b.severity.toUpperCase()}] ${b.blockerType}: "${b.title}"`)
+			.join('\n');
+
+		// Top tech debt across all source projects
+		const topDebt = discovery.sources
+			.flatMap(s => s.techDebtItems)
+			.filter(t => t.severity === 'error')
+			.slice(0, 20)
+			.map(t => `  ${t.category}: "${t.description.slice(0, 80)}"`)
+			.join('\n');
+
+		// API surface summary
+		const apiSummary = discovery.sources.flatMap(s => s.apiEndpoints)
+			.reduce((acc, e) => {
+				acc[e.kind] = (acc[e.kind] ?? 0) + 1;
+				return acc;
+			}, {} as Record<string, number>);
+		const apiStr = Object.entries(apiSummary)
+			.sort((a, b) => b[1] - a[1])
+			.map(([k, c]) => `  ${k}: ${c}`)
+			.join('\n');
+
+		// Regulated data summary
+		const regSummary = discovery.sources.flatMap(s => s.regulatedDataHits)
+			.reduce((acc, h) => {
+				acc[h.pattern] = (acc[h.pattern] ?? 0) + 1;
+				return acc;
+			}, {} as Record<string, number>);
+		const regStr = Object.entries(regSummary)
+			.sort((a, b) => b[1] - a[1])
+			.map(([p, c]) => `  ${p}: ${c} hits`)
+			.join('\n');
+
+		// Cross-project pairing confidence distribution
+		const pairingDist = discovery.crossProjectPairings.reduce(
+			(acc, p) => {
+				const bucket = p.confidenceScore >= 0.85 ? 'high (>=85%)' :
+				              p.confidenceScore >= 0.60 ? 'medium (60-84%)' : 'low (<60%)';
+				acc[bucket] = (acc[bucket] ?? 0) + 1;
+				return acc;
+			}, {} as Record<string, number>
+		);
+		const pairingStr = Object.entries(pairingDist)
+			.map(([b, c]) => `  ${b}: ${c} pairings`)
+			.join('\n');
+
+		// GRC cross-mapping
+		const grcBaggage = this._summariseGRC(discovery.sources.map(s => s.grcSnapshot));
+		const grcDebt = this._summariseGRC(discovery.targets.map(t => t.grcSnapshot));
+
+		// Effort distribution
+		const effortDist = discovery.sources
+			.flatMap(s => s.effortEstimates)
+			.reduce((acc, e) => { acc[e.effortBand] = (acc[e.effortBand] ?? 0) + 1; return acc; }, {} as Record<string, number>);
+		const effortStr = Object.entries(effortDist)
+			.map(([b, c]) => `  ${b}: ${c} units`)
+			.join('\n');
+
+		// Sector-specific guidance injection
+		const sectorSection = sectorProfile
+			? `## Sector: ${sectorProfile.label}\n\nPrimary standards: ${sectorProfile.primaryStandards.join(', ')}\n\n${sectorProfile.aiGuidance}`
+			: '## Sector: General\n\nNo specific sector constraints detected.';
+
+		return `You are a principal migration architect with deep expertise in legacy modernisation.
+Analyse the following project discovery data and refine the deterministic migration roadmap.
+
+## Migration Pattern
+${patternLabel} (id: ${pattern})
+
+${sectorSection}
+
+## Source Projects
+${srcSummaries || '  (none)'}
+
+## Target Projects
+${tgtSummaries || '  (none)'}
+
+## Deterministic Phase Breakdown
+${phaseSummary || '  (none)'}
+
+## Critical Path (zero-slack units -- project duration drivers)
+${critPathStr || '  (none identified)'}
+
+## Migration Blockers (blocking severity)
+${blockerStr || '  (none)'}
+
+## Effort Distribution
+${effortStr || '  (none)'}
+Total estimated: ${baseRoadmap.estimatedHoursLow}-${baseRoadmap.estimatedHoursHigh} hours
+
+## API Surface (source)
+${apiStr || '  (none detected)'}
+
+## Regulated Data Hits (source)
+${regStr || '  (none detected)'}
+
+## Cross-Project Pairing Confidence
+${pairingStr || '  (no pairings)'}
+
+## Technical Debt (error-severity, source)
+${topDebt || '  (none)'}
+
+## Compliance Baggage (GRC violations in legacy code)
+${grcBaggage || '  None detected'}
+
+## Migration Debt (GRC violations already in target code)
+${grcDebt || '  None detected'}
+
+## Your Task
+
+Return a JSON object with the following structure. Do NOT include any text outside the JSON block.
+
+{
+  "phaseOverrides": { "<unitId>": "<phaseType>" },
+  "riskOverrides": { "<unitId>": "<riskLevel>" },
+  "complianceNotes": "<1-3 sentences>",
+  "riskNarrative": "<1-3 sentences>",
+  "estimatedEffort": "low|medium|high",
+  "dependencyOverrides": { "<unitId>": ["<depUnitId>", ...] },
+  "additionalBlockers": [{ "unitId": "<id>", "description": "<text>", "severity": "warning|blocking" }]
+}
+
+## Rules
+
+- phaseOverrides: Only override phase assignments where the deterministic result is clearly wrong. Use: foundation | bsp | schema | core-logic | hal-layer | api-layer | integration | compliance | safety-critical | cutover
+- riskOverrides: Only override risk when the static analysis risk is demonstrably incorrect. Use: critical | high | medium | low
+- complianceNotes: Focus on actionable compliance requirements based on detected data patterns.
+- riskNarrative: Focus on migration-specific risks (API breakage, data loss, precision loss, compliance gaps).
+- estimatedEffort: Overall project effort classification, not per-unit.
+- dependencyOverrides: Add ONLY where you have high confidence that a dependency is missing.
+- additionalBlockers: Surface migration-specific issues not caught by static analysis.
+- Omit any field you have no confident input for.`;
+	}
+
+	private _summariseProject(project: IProjectScanResult): string {
+		const grc = project.grcSnapshot;
+		const stats = project.stats;
+		const dominant = project.dominantLanguage;
+		const secondary = project.secondaryLanguage ? `, ${project.secondaryLanguage}` : '';
+		const effortDist = project.effortEstimates.reduce(
+			(acc, e) => { acc[e.effortBand] = (acc[e.effortBand] ?? 0) + 1; return acc; },
+			{} as Record<string, number>,
+		);
+		const effortStr = Object.entries(effortDist).map(([b, c]) => `${b}:${c}`).join(', ');
+
+		return (
+			`  - "${project.projectLabel}" [${dominant}${secondary}]\n` +
+			`    ${stats.totalFilesScanned} files, ${stats.totalUnitsExtracted} units, ` +
+			`${stats.criticalUnitCount} critical\n` +
+			`    GRC: ${grc.totalViolations} violations (${grc.blockingCount} blocking)\n` +
+			`    Domains: ${Object.entries(grc.byDomain).map(([d, c]) => `${d}:${c}`).join(', ') || 'none'}\n` +
+			`    Effort dist: ${effortStr || 'unknown'}\n` +
+			`    API endpoints: ${project.apiEndpoints.length}, ` +
+			`schemas: ${project.dataSchemas.length}, ` +
+			`regulated hits: ${project.regulatedDataHits.length}, ` +
+			`tech debt: ${project.techDebtItems.length}`
+		);
+	}
+
+	private _summariseGRC(snapshots: IGRCSnapshot[]): string {
+		const merged: Record<string, number> = {};
+		let blocking = 0;
+		let total = 0;
+		for (const s of snapshots) {
+			total += s.totalViolations;
+			blocking += s.blockingCount;
+			for (const [d, c] of Object.entries(s.byDomain)) {
+				merged[d] = (merged[d] ?? 0) + c;
+			}
+		}
+		if (total === 0) { return ''; }
+		return (
+			`  Total: ${total} violations, ${blocking} blocking\n` +
+			`  Domains: ${Object.entries(merged).sort((a, b) => b[1] - a[1]).map(([d, c]) => `${d}: ${c}`).join(', ')}`
+		);
 	}
 
 

@@ -4,16 +4,23 @@
  *--------------------------------------------------------------------------------------------*/
 
 /**
- * # NeuralInverse Modernisation — Core Types
+ * # NeuralInverse Modernisation -- Core Types
  *
  * Central type definitions for the modernisation workflow engine.
- * These types flow through all five stages: Discovery → Planning → Migration → Validation → Cutover.
+ * These types flow through all five stages: Discovery -> Planning -> Migration -> Validation -> Cutover.
  *
  * ## Design Principles
  *
- * - **Compliance-first**: Every migration unit carries its compliance fingerprint at all times.
+ * - **Safety-first**: Every migration unit carries its compliance fingerprint at all times.
  * - **Approval-gated**: Nothing moves to `committed` without an explicit approval record.
  * - **Audit-complete**: Every state transition is recorded with enough context to reconstruct the decision.
+ *
+ * ## Domain Focus
+ *
+ * This platform targets **firmware** and **industrial** modernisation:
+ *   - Firmware: bare-metal C/C++ -> RTOS (FreeRTOS / Zephyr), HAL abstraction, MISRA-C compliance
+ *   - Industrial: PLC / IEC 61131-3 -> IPC, SCADA modernisation, OT/IT convergence, OPC-UA migration
+ *   - Safety: IEC 61508 / IEC 62443 / MISRA-C / AUTOSAR compliance gating
  */
 
 
@@ -91,12 +98,26 @@ export type MigrationUnitStatus =
 	| 'complete';       // All stages done for this unit
 
 export type MigrationUnitType =
-	| 'paragraph'       // COBOL paragraph
-	| 'section'         // COBOL section
-	| 'program'         // COBOL / mainframe program
-	| 'module'          // Generic module
-	| 'class'           // OOP class
-	| 'function';       // Standalone function
+	// Firmware / embedded
+	| 'function'            // C/C++ function
+	| 'isr'                 // Interrupt Service Routine
+	| 'rtos-task'           // RTOS task / thread
+	| 'hal-driver'          // HAL peripheral driver
+	| 'device-driver'       // Low-level device driver
+	| 'register-map'        // Peripheral register map (SVD-derived)
+	| 'peripheral'          // Peripheral grouping (SVD peripheral node)
+	| 'linker-section'      // Linker script region
+	// Industrial / IEC 61131-3
+	| 'program'             // IEC 61131-3 PROGRAM or top-level program unit
+	| 'function-block'      // IEC 61131-3 Function Block (FB)
+	| 'ladder-rung'         // Ladder Logic rung
+	| 'structured-text-fn'  // Structured Text function / program
+	| 'safety-function'     // Safety-rated function (SIL-classified)
+	// Generic (used by JVM, PL/SQL, and retained-language decomposers)
+	| 'module'              // Generic module / translation unit
+	| 'class'               // C++ class or Java/Kotlin class
+	| 'section'             // COBOL section / PL/SQL body section (retained)
+	| 'paragraph';          // COBOL paragraph (retained for hybrid projects)
 
 
 // ─── Code Range ───────────────────────────────────────────────────────────────
@@ -420,12 +441,9 @@ export type MigrationBlockerType =
 	| 'god-unit'                     // Unit is too large/complex to translate as-is -- split first
 	| 'no-target-equivalent'         // Critical unit with no cross-project pairing
 	| 'hardcoded-credential'         // Security risk: credentials or keys must be externalised
-	| 'goto-usage'                   // Structural: GOTO makes deterministic translation non-trivial
 	| 'circular-dependency'          // Cyclic dependency -- requires refactoring before migration
 	| 'xlarge-effort-critical'       // xlarge effort + critical risk -- needs dedicated sprint
-	| 'unresolved-regulated-data'    // PII/PCI/PHI with no mapped target field
 	| 'blocking-grc-violation'       // Safety/GRC blocking violation on a critical unit
-	| 'missing-schema-mapping'       // Data schema in source with no target equivalent
 	| 'unbounded-loop'               // Potential infinite loop -- needs explicit termination
 	| 'deep-nesting'                 // Nesting >7 -- structural refactoring recommended
 	| 'implicit-type-coercion'       // Precision/type risk between source and target language
@@ -449,10 +467,33 @@ export type MigrationBlockerType =
 	| 'security-key-material'        // Cryptographic key material hard-coded or inline (3GPP AS/NAS keys)
 	| 'protocol-state-machine-break' // Non-serialisable protocol state (e.g. RRC state, NAS EMM) in migration
 	| 'ttcn3-verdict-suppression'    // TTCN-3 verdict.inconc suppressed without test coverage note
-	// Energy / Critical Infrastructure
-	| 'goose-protection-relay'       // IEC 61850 GOOSE trip path bridged via TCP/MQTT
-	| 'dnp3-secure-auth-gap'         // DNP3 SA_CHALLENGE missing in modernised stack
-	| 'sis-sil-downgrade';           // SIS/ESD SIL level would reduce after modernisation
+	// Energy / OT-specific
+	| 'goose-protection-relay'       // IEC 61850 GOOSE trip path bridged via OPC-UA (prohibited)
+	| 'dnp3-secure-auth-gap'         // DNP3 Secure Auth v5 SA_CHALLENGE missing in modernised stack
+	| 'sis-sil-downgrade'            // SIS/ESD SIL level would be reduced after modernisation
+	// Telecom extended
+	| 'oran-fronthaul-timing'        // O-RAN eCPRI fronthaul timing class requirement not met
+	| 'gsma-nesas-scas'              // GSMA NESAS SCAS security assessment not on record for 5G NF
+	| 'gtp-up-cp-mixing'             // GTP-U user-plane traffic mixed with GTP-C control-plane (prohibited)
+	// Industrial / fieldbus extended
+	| 'sparkplug-birth-missing'      // MQTT Sparkplug B NBIRTH/DBIRTH payload missing in modernised publisher
+	| 'opcua-security-none'          // OPC-UA session configured with SecurityMode=None in production context
+	| 'tsn-gptp-missing'             // TSN deployment missing IEEE 802.1AS gPTP synchronisation verification
+	| 'sil-fb-diagnostic-gap'        // SIL-rated function block missing diagnostic coverage calculation (IEC 62061)
+	| 'profinet-station-hardcoded'   // Profinet station name or IP address hard-coded (must use DCP/LLDP)
+	| 'ethercat-timing-violation'    // EtherCAT IRT jitter exceeds 1 us budget on target hardware
+	| 'canopen-sdo-timeout'          // CANopen SDO timeout not handled -- node may stall on bus error
+	// Automotive extended
+	| 'iso21434-tara-missing'        // ISO 21434 / UN R155 TARA not conducted for in-vehicle software
+	| 'aspice-process-gap'           // A-SPICE Level 2 process evidence missing for OEM supplier approval
+	// Avionics / railway
+	| 'do178c-independence-missing'  // DO-178C / EN 50128 IV&V or MC/DC coverage evidence absent
+	// Critical infrastructure extended
+	| 'nerc-cip-supply-chain'        // NERC CIP-013-2 supply chain risk management plan not on record
+	| 'iec62351-comms-security'      // IEC 62351 power system communications security profile not verified
+	// Legacy / hybrid project blockers
+	| 'goto-usage'                   // GOTO statements requiring control-flow refactoring before migration
+	| 'missing-schema-mapping';      // Regulated-field schema has no target-side equivalent
 
 export interface IMigrationBlocker {
 	unitId: string;
