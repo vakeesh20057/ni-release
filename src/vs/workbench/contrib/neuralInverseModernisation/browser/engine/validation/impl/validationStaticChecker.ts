@@ -10,20 +10,20 @@
  *
  * ## Checks performed
  *
- *  1. line-count-ratio    — target line count is not drastically shorter than source
- *  2. branch-coverage     — conditional keywords (if/else/switch/when/case) are present
- *  3. api-surface         — exported/public entry points from source are reflected in target
- *  4. field-coverage      — source field/variable names appear (verbatim or transformed) in target
- *  5. loop-coverage       — loop constructs (for/while/do/perform) are present
- *  6. error-handling      — error handling patterns (try/catch/on-exception) are present
- *  7. no-placeholders     — target contains no TODO/FIXME/PLACEHOLDER/NOT IMPLEMENTED stubs
- *  8. non-empty-target    — target is not empty or just comments
+ *  1. line-count-ratio    -- target line count is not drastically shorter than source
+ *  2. branch-coverage     -- conditional keywords (if/else/switch/when/case) are present
+ *  3. api-surface         -- exported/public entry points from source are reflected in target
+ *  4. field-coverage      -- source field/variable names appear (verbatim or transformed) in target
+ *  5. loop-coverage       -- loop constructs (for/while/do/perform) are present
+ *  6. error-handling      -- error handling patterns (try/catch/on-exception) are present
+ *  7. no-placeholders     -- target contains no TODO/FIXME/PLACEHOLDER/NOT IMPLEMENTED stubs
+ *  8. non-empty-target    -- target is not empty or just comments
  *
  * ## Severity policy
  *
- *  - 'fail'  → at least one check failed → short-circuit: skip LLM analysis if includeLLMAnalysis=false
- *  - 'warn'  → suspicious but not conclusive → proceed to LLM; flag in result
- *  - 'pass'  → check passed
+ *  - 'fail'  -> at least one check failed -> short-circuit: skip LLM analysis if includeLLMAnalysis=false
+ *  - 'warn'  -> suspicious but not conclusive -> proceed to LLM; flag in result
+ *  - 'pass'  -> check passed
  *
  * ## Language-awareness
  *
@@ -34,7 +34,7 @@
 import { IStaticCheckResult, StaticCheckStatus } from './validationTypes.js';
 
 
-// ─── Language keyword tables ───────────────────────────────────────────────────
+// --- Language keyword tables ---------------------------------------------------
 
 interface ILanguageKeywords {
 	branch:   string[];
@@ -110,6 +110,49 @@ const LANGUAGE_KEYWORDS: Record<string, ILanguageKeywords> = {
 		error:   ['MONITOR', 'ON-ERROR', 'ENDMON'],
 		export:  [/\bDCL-PROC\b/gi, /\bPROCEDURE\b/gi],
 	},
+	// -- Firmware & Embedded --------------------------------------------------
+	c: {
+		branch:  ['if', 'else', 'switch', 'case'],
+		loop:    ['for', 'while', 'do'],
+		error:   ['assert', 'configASSERT', 'Error_Handler', 'HAL_ERROR'],
+		export:  [/\bvoid\s+\w+\s*\(/g, /\b\w+\s+\w+_IRQHandler\s*\(/g],
+	},
+	cpp: {
+		branch:  ['if', 'else', 'switch', 'case'],
+		loop:    ['for', 'while', 'do'],
+		error:   ['try', 'catch', 'assert', 'configASSERT', 'static_assert'],
+		export:  [/\bpublic:/g, /\b\w+\s+\w+::\w+\s*\(/g],
+	},
+	'embedded-c': {
+		branch:  ['if', 'else', 'switch', 'case'],
+		loop:    ['for', 'while', 'do'],
+		error:   ['assert', 'configASSERT', '__ASSERT', 'Error_Handler', 'ASSERT'],
+		export:  [/\bvoid\s+\w+\s*\(/g, /\bvoid\s+\w+_IRQHandler\s*\(/g],
+	},
+	'embedded-cpp': {
+		branch:  ['if', 'else', 'switch', 'case'],
+		loop:    ['for', 'while', 'do'],
+		error:   ['assert', 'configASSERT', 'static_assert', 'noexcept'],
+		export:  [/\bpublic:/g, /\bvirtual\s+\w+/g],
+	},
+	assembler: {
+		branch:  ['BEQ', 'BNE', 'BGT', 'BLT', 'BGE', 'BLE', 'CBZ', 'CBNZ', 'BREQ', 'BRNE'],
+		loop:    ['B', 'BX', 'RJMP', 'RCALL'],
+		error:   ['SVC', 'BKPT', 'B HardFault', 'Error_Handler'],
+		export:  [/^[A-Za-z_]\w*:\s*$/gm],
+	},
+	iec61131: {
+		branch:  ['IF', 'ELSIF', 'ELSE', 'END_IF', 'CASE', 'OF', 'ELSE', 'END_CASE'],
+		loop:    ['FOR', 'TO', 'BY', 'DO', 'END_FOR', 'WHILE', 'DO', 'END_WHILE', 'REPEAT', 'UNTIL', 'END_REPEAT'],
+		error:   ['SF_EmergencyStop', 'ALARM', 'FAULT', 'E_STOP'],
+		export:  [/\bPROGRAM\s+\w+/gi, /\bFUNCTION_BLOCK\s+\w+/gi, /\bFUNCTION\s+\w+/gi],
+	},
+	autosar: {
+		branch:  ['if', 'else', 'switch', 'case'],
+		loop:    ['for', 'while', 'do'],
+		error:   ['Dem_SetEventStatus', 'DET_REPORT', 'assert', 'configASSERT'],
+		export:  [/\bRte_\w+/g, /\bRUNNABLE_DEFINE\b/g],
+	},
 };
 
 const GENERIC_KEYWORDS: ILanguageKeywords = {
@@ -124,9 +167,10 @@ function getKeywords(lang: string): ILanguageKeywords {
 }
 
 
-// ─── Placeholder detection ────────────────────────────────────────────────────
+// --- Placeholder detection ----------------------------------------------------
 
 const PLACEHOLDER_PATTERNS = [
+	// Generic
 	/\bTODO\b/i,
 	/\bFIXME\b/i,
 	/\bPLACEHOLDER\b/i,
@@ -135,10 +179,24 @@ const PLACEHOLDER_PATTERNS = [
 	/\bthrow\s+new\s+UnsupportedOperationException/,
 	/NotImplementedError/,
 	/raise\s+NotImplementedError/,
+	// Firmware / embedded C stubs
+	/\/\*\s*TRANSLATE\s+ME\s*\*\//i,
+	/\/\*\s*STUB\s*\*\//i,
+	/\/\/\s*STUB/i,
+	/\/\/\s*TODO:\s*implement/i,
+	/Error_Handler\s*\(\s*\)\s*;\s*\/\/\s*(stub|placeholder|todo)/i,
+	// IEC 61131-3 stubs
+	/\(\*\s*STUB\s*\*\)/i,
+	/\(\*\s*TODO\s*\*\)/i,
+	/\(\*\s*NOT\s+IMPLEMENTED\s*\*\)/i,
+	/\(\*\s*TRANSLATE\s+ME\s*\*\)/i,
+	// AUTOSAR / Safety stubs
+	/\/\*\s*AUTOSAR_STUB\s*\*\//i,
+	/Rte_IWrite_\w+\s*\(\s*0\s*\)\s*;\s*\/\/\s*(stub|todo)/i,
 ];
 
 
-// ─── Field extraction ─────────────────────────────────────────────────────────
+// --- Field extraction ---------------------------------------------------------
 
 /**
  * Extract candidate field/variable names from COBOL-style source (PIC clauses, FD entries)
@@ -187,7 +245,7 @@ const KEYWORD_BLOCKLIST = new Set([
 ]);
 
 
-// ─── Main entry ───────────────────────────────────────────────────────────────
+// --- Main entry ---------------------------------------------------------------
 
 /**
  * Run all Layer 1 static checks for a unit.
@@ -196,7 +254,7 @@ const KEYWORD_BLOCKLIST = new Set([
  * @param targetCode   Translated target code
  * @param sourceLang   Source language (for keyword lookup)
  * @param targetLang   Target language (for keyword lookup)
- * @returns            Array of IStaticCheckResult — all checks, in order
+ * @returns            Array of IStaticCheckResult -- all checks, in order
  */
 export function runStaticChecks(
 	sourceCode: string,
@@ -225,7 +283,7 @@ export function aggregateStaticStatus(checks: IStaticCheckResult[]): StaticCheck
 }
 
 
-// ─── Individual checks ────────────────────────────────────────────────────────
+// --- Individual checks --------------------------------------------------------
 
 function _checkNonEmpty(target: string): IStaticCheckResult {
 	const codeLines = target.split('\n').filter(l => {
@@ -244,7 +302,7 @@ function _checkNonEmpty(target: string): IStaticCheckResult {
 		status,
 		detail:   status === 'pass'
 			? `Target has ${codeLines.length} non-comment lines.`
-			: 'Target code is empty or contains only comments — translation appears incomplete.',
+			: 'Target code is empty or contains only comments -- translation appears incomplete.',
 		measured: String(codeLines.length),
 	};
 }
@@ -267,7 +325,7 @@ function _checkLineCountRatio(source: string, target: string): IStaticCheckResul
 
 	if (srcLines === 0) {
 		return { checkId: 'line-count-ratio', label: 'Line count ratio', status: 'warn',
-			detail: 'Source code is empty — cannot compute ratio.', measured: 'N/A' };
+			detail: 'Source code is empty -- cannot compute ratio.', measured: 'N/A' };
 	}
 
 	const ratio = tgtLines / srcLines;
@@ -281,10 +339,10 @@ function _checkLineCountRatio(source: string, target: string): IStaticCheckResul
 		label:    'Line count ratio (target / source)',
 		status,
 		detail:   status === 'pass'
-			? `Target (${tgtLines} lines) / Source (${srcLines} lines) = ${ratio.toFixed(2)} — reasonable coverage.`
+			? `Target (${tgtLines} lines) / Source (${srcLines} lines) = ${ratio.toFixed(2)} -- reasonable coverage.`
 			: status === 'warn'
-			? `Target (${tgtLines} lines) / Source (${srcLines} lines) = ${ratio.toFixed(2)} — suspiciously low, review needed.`
-			: `Target (${tgtLines} lines) is only ${(ratio * 100).toFixed(0)}% of source length — likely incomplete translation.`,
+			? `Target (${tgtLines} lines) / Source (${srcLines} lines) = ${ratio.toFixed(2)} -- suspiciously low, review needed.`
+			: `Target (${tgtLines} lines) is only ${(ratio * 100).toFixed(0)}% of source length -- likely incomplete translation.`,
 		measured: ratio.toFixed(2),
 	};
 }
@@ -300,7 +358,7 @@ function _checkBranchCoverage(
 
 	if (srcBranches === 0) {
 		return { checkId: 'branch-coverage', label: 'Branch coverage',
-			status: 'pass', detail: 'Source has no conditional branches — nothing to verify.', measured: '0' };
+			status: 'pass', detail: 'Source has no conditional branches -- nothing to verify.', measured: '0' };
 	}
 
 	const ratio = tgtBranches / srcBranches;
@@ -311,8 +369,8 @@ function _checkBranchCoverage(
 		label:    'Conditional branch coverage',
 		status,
 		detail:   `Source: ${srcBranches} branch keywords, Target: ${tgtBranches}. Ratio: ${ratio.toFixed(2)}.`
-			+ (status === 'fail' ? ' Target is missing most conditional branches — logic may be lost.'
-			:  status === 'warn' ? ' Target has fewer branches — review for missing conditions.'
+			+ (status === 'fail' ? ' Target is missing most conditional branches -- logic may be lost.'
+			:  status === 'warn' ? ' Target has fewer branches -- review for missing conditions.'
 			:  ' Branch coverage looks adequate.'),
 		measured: `${tgtBranches}/${srcBranches}`,
 	};
@@ -329,7 +387,7 @@ function _checkLoopCoverage(
 
 	if (srcLoops === 0) {
 		return { checkId: 'loop-coverage', label: 'Loop coverage',
-			status: 'pass', detail: 'Source has no loop constructs — nothing to verify.', measured: '0' };
+			status: 'pass', detail: 'Source has no loop constructs -- nothing to verify.', measured: '0' };
 	}
 
 	const ratio = tgtLoops / srcLoops;
@@ -340,8 +398,8 @@ function _checkLoopCoverage(
 		label:    'Loop construct coverage',
 		status,
 		detail:   `Source: ${srcLoops} loop keywords, Target: ${tgtLoops}. Ratio: ${ratio.toFixed(2)}.`
-			+ (status === 'fail' ? ' Most loops appear untranslated — iteration logic may be lost.'
-			:  status === 'warn' ? ' Fewer loops in target — confirm no logic was dropped.'
+			+ (status === 'fail' ? ' Most loops appear untranslated -- iteration logic may be lost.'
+			:  status === 'warn' ? ' Fewer loops in target -- confirm no logic was dropped.'
 			:  ' Loop coverage looks adequate.'),
 		measured: `${tgtLoops}/${srcLoops}`,
 	};
@@ -368,7 +426,7 @@ function _checkErrorHandling(
 		label:    'Error handling coverage',
 		status,
 		detail:   `Source: ${srcError} error constructs, Target: ${tgtError}.`
-			+ (status === 'warn' ? ' Target has no error handling — exceptions may go unhandled.' : ' Error handling present.'),
+			+ (status === 'warn' ? ' Target has no error handling -- exceptions may go unhandled.' : ' Error handling present.'),
 		measured: `${tgtError}/${srcError}`,
 	};
 }
@@ -380,7 +438,7 @@ function _checkFieldCoverage(
 
 	if (fields.length === 0) {
 		return { checkId: 'field-coverage', label: 'Data field coverage',
-			status: 'pass', detail: 'No source field names extractable — skipped.', measured: 'N/A' };
+			status: 'pass', detail: 'No source field names extractable -- skipped.', measured: 'N/A' };
 	}
 
 	// Convert COBOL-style names to camelCase for matching against modern targets
@@ -402,13 +460,13 @@ function _checkFieldCoverage(
 		label:    'Data field coverage',
 		status,
 		detail:   `${covered}/${fields.length} source field names found in target (ratio ${ratio.toFixed(2)}).`
-			+ (status === 'warn' ? ' Many source fields are missing — check for data loss.' : ' Field coverage adequate.'),
+			+ (status === 'warn' ? ' Many source fields are missing -- check for data loss.' : ' Field coverage adequate.'),
 		measured: `${covered}/${fields.length}`,
 	};
 }
 
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
+// --- Helpers ------------------------------------------------------------------
 
 function _countKeywords(code: string, keywords: string[]): number {
 	if (keywords.length === 0) { return 0; }
@@ -420,7 +478,7 @@ function _countKeywords(code: string, keywords: string[]): number {
 	}, 0);
 }
 
-/** Convert COBOL hyphenated names to camelCase: CUST-BILL-ADDR → custBillAddr */
+/** Convert COBOL hyphenated names to camelCase: CUST-BILL-ADDR -> custBillAddr */
 function _cobolToCamel(name: string): string {
 	return name.toLowerCase()
 		.split('-')

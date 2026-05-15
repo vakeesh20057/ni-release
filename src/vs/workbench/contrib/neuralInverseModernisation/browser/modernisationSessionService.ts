@@ -29,7 +29,7 @@ import { IWorkspaceContextService } from '../../../../platform/workspace/common/
 import { IModernisationProjectFile, MODERNISATION_INVERSE_FILENAME } from '../common/modernisationTypes.js';
 import { IMetricsService } from '../../void/common/metricsService.js';
 
-// ─── Types ────────────────────────────────────────────────────────────────────
+// --- Types --------------------------------------------------------------------
 
 export type ModernisationStage = 'discovery' | 'planning' | 'migration' | 'validation' | 'cutover';
 
@@ -44,19 +44,19 @@ export const STAGE_LABELS: Record<ModernisationStage, string> = {
 export const STAGES: ModernisationStage[] = ['discovery', 'planning', 'migration', 'validation', 'cutover'];
 
 /**
- * Migration pattern — open string, not a fixed enum.
+ * Migration pattern -- open string, not a fixed enum.
  * Preset suggestions are in MIGRATION_PATTERN_PRESETS (data-driven).
  * Users can type any free-form pattern name for a custom migration.
  */
 export type MigrationPattern = string;
 
 /**
- * Topology of a migration pattern — defines how many source and target
+ * Topology of a migration pattern -- defines how many source and target
  * projects are involved.
  *
- *  'one'      — exactly one project on this side
- *  'many'     — user defines N ≥ 1 projects on this side
- *  'flexible' — 1 or more; user decides
+ *  'one'      -- exactly one project on this side
+ *  'many'     -- user defines N >= 1 projects on this side
+ *  'flexible' -- 1 or more; user decides
  */
 export interface IPatternTopology {
 	sourceCount: 'one' | 'many' | 'flexible';
@@ -76,7 +76,7 @@ export interface IMigrationPatternPreset {
 }
 
 /**
- * A single project within a session — either a source (legacy/input)
+ * A single project within a session -- either a source (legacy/input)
  * or a target (modern/output).
  */
 export interface IProjectTarget {
@@ -162,27 +162,34 @@ export const MIGRATION_PATTERN_PRESETS: IMigrationPatternPreset[] = [
 	{ id: 'autosar-cp-to-ap',            category: 'Automotive',                  label: 'AUTOSAR Classic \u2192 Adaptive (Full)', description: 'Full migration of AUTOSAR Classic CP SWCs and RTE to AUTOSAR Adaptive (ARA) executables with SOME/IP, ara::com, ara::diag, and ara::per.', topology: { ...T_ONE_ONE, sourceLabel: 'AUTOSAR Classic Project', targetLabel: 'AUTOSAR Adaptive Project' } },
 	{ id: 'can-dbc-to-canopen',          category: 'Automotive',                  label: 'CAN DBC \u2192 CANopen / CAN-FD',      description: 'Migrate legacy fixed-frame CAN DBC signal databases to CANopen (CiA 301/DS-402) object dictionary design with CAN-FD support.', topology: { ...T_ONE_ONE, sourceLabel: 'Legacy CAN DBC Database', targetLabel: 'CANopen Network Definition' } },
 	{ id: 'iso26262-asil-uplift',        category: 'Automotive',                  label: 'ISO 26262 ASIL Uplift',           description: 'Refactor automotive firmware and SWCs to meet a higher ASIL level under ISO 26262 (ASIL A through ASIL D).', topology: { ...T_ONE_ONE, sourceLabel: 'Non-ASIL Automotive Code', targetLabel: 'ISO 26262 ASIL-rated Code' } },
+	{ id: 'mcu-platform-to-nxp',         category: 'Automotive',                  label: 'MCU Migration -> NXP S32K / i.MX RT', description: 'Migrate bare-metal or STM32-based firmware to NXP S32K (automotive) or NXP i.MX RT (industrial) using MCUXpresso SDK.', topology: { ...T_ONE_ONE, sourceLabel: 'Source MCU Firmware', targetLabel: 'NXP Target Firmware' } },
 	// Critical Infrastructure (Energy / Oil & Gas)
 	{ id: 'iec61850-to-opcua',           category: 'Critical Infrastructure',     label: 'IEC 61850 \u2192 OPC-UA (Substation)', description: 'Migrate IEC 61850 substation automation SCL models and GOOSE/SV to OPC-UA information models with IEC 62443 hardening.', topology: { ...T_ONE_ONE, sourceLabel: 'IEC 61850 Substation System', targetLabel: 'OPC-UA + IEC 62443 System' } },
 	{ id: 'scada-dnp3-to-opcua',         category: 'Critical Infrastructure',     label: 'SCADA / DNP3 \u2192 OPC-UA + MQTT',   description: 'Replace DNP3/Modbus SCADA polling with OPC-UA subscriptions and MQTT SparkplugB for OT/IT convergence.', topology: { ...T_ONE_ONE, sourceLabel: 'SCADA / DNP3 RTU System', targetLabel: 'OPC-UA + MQTT Integration' } },
 	{ id: 'sis-esd-modernisation',       category: 'Critical Infrastructure',     label: 'SIS / ESD System Modernisation', description: 'Modernise Safety Instrumented System (SIS) or Emergency Shutdown (ESD) PLC programs to modern IEC 61511 / IEC 62443-compliant platforms.', topology: { ...T_ONE_ONE, sourceLabel: 'Legacy SIS / ESD PLC', targetLabel: 'Modern SIS / ESD Platform' } },
+	{ id: 'iec62443-ot-hardening',       category: 'Critical Infrastructure',     label: 'IEC 62443 OT Cybersecurity Hardening', description: 'Harden OT control system firmware and network interfaces to IEC 62443 SecurityLevel 2/3 requirements including zone/conduit modelling.', topology: { ...T_ONE_ONE, sourceLabel: 'Unprotected OT Control System', targetLabel: 'IEC 62443 SL2/SL3 Hardened System' } },
 	// Telecom & 5G
 	{ id: 'lte-enb-to-oran',             category: 'Telecom & 5G',                label: 'LTE eNB \u2192 O-RAN Disaggregated',  description: 'Disaggregate a monolithic LTE eNB stack into O-RAN-compliant CU/DU components with F1-AP, E1-AP, and NG-AP interfaces.', topology: { ...T_ONE_MANY, sourceLabel: 'Monolithic LTE eNB', targetLabel: 'O-RAN CU/DU Component' } },
 	{ id: 'ttcn3-to-pytest',             category: 'Telecom & 5G',                label: 'TTCN-3 Test Suite \u2192 PyTest / Robot Framework', description: 'Migrate 3GPP TTCN-3 protocol conformance test suites to Python-based PyTest or Robot Framework integration tests with Scapy codecs.', topology: { ...T_ONE_ONE, sourceLabel: 'TTCN-3 Test Suite', targetLabel: 'PyTest / Robot Framework Suite' } },
 	{ id: 'ss7-sigtran-to-diameter',     category: 'Telecom & 5G',                label: 'SS7 / SIGTRAN \u2192 Diameter / SIP', description: 'Migrate legacy SS7 / SIGTRAN signalling stack implementations to Diameter (EPC) and SIP/IMS protocols for 4G/5G core network migration.', topology: { ...T_ONE_ONE, sourceLabel: 'SS7 / SIGTRAN Stack', targetLabel: 'Diameter / SIP Core Network' } },
+	{ id: '4g-to-5g-ran',               category: 'Telecom & 5G',                label: '4G RAN -> 5G NR (gNB)',            description: 'Port LTE eNB L2/L3 stack components to 5G NR gNB equivalents following 3GPP TS 38.xxx specifications and O-RAN functional split.', topology: { ...T_ONE_ONE, sourceLabel: '4G LTE RAN Software', targetLabel: '5G NR gNB Software' } },
 	// Industrial IoT & OT
 	{ id: 'ethercat-to-profinet',        category: 'Industrial IoT & OT',         label: 'EtherCAT \u2192 Profinet RT',          description: 'Migrate EtherCAT master/slave application logic to Profinet RT with equivalent process data exchange and alarm handling.', topology: { ...T_ONE_ONE, sourceLabel: 'EtherCAT Application', targetLabel: 'Profinet RT Application' } },
 	{ id: 'canopen-to-ethercat',         category: 'Industrial IoT & OT',         label: 'CANopen \u2192 EtherCAT CoE',          description: 'Migrate CANopen (CiA 301) object dictionary and PDO/SDO communication to EtherCAT CoE (CANopen over EtherCAT) with CoE mailbox.', topology: { ...T_ONE_ONE, sourceLabel: 'CANopen Slave/Master', targetLabel: 'EtherCAT CoE Slave' } },
-	{ id: 'ot-cloud-bridge',             category: 'Industrial IoT & OT',         label: 'OT Field \u2192 Cloud IoT Bridge',     description: 'Build an OT/IT convergence bridge from PLC/SCADA field data to cloud IoT platforms via MQTT SparkplugB.', topology: { ...T_ONE_MANY, sourceLabel: 'OT Field Device / PLC', targetLabel: 'Cloud IoT Integration' } },
+	{ id: 'ot-cloud-bridge',             category: 'Industrial IoT & OT',         label: 'OT Field -> Cloud IoT Bridge',     description: 'Build an OT/IT convergence bridge from PLC/SCADA field data to cloud IoT platforms (AWS IoT, Azure IoT Hub, GCP IoT Core) via MQTT SparkplugB.', topology: { ...T_ONE_MANY, sourceLabel: 'OT Field Device / PLC', targetLabel: 'Cloud IoT Integration' } },
+	{ id: 'iec62061-sil-uplift',         category: 'Industrial IoT & OT',         label: 'IEC 62061 / PLe Safety Uplift',  description: 'Uplift machine safety control software to IEC 62061 SIL 2/3 or ISO 13849 Performance Level PLd/PLe with validated safety function blocks.', topology: { ...T_ONE_ONE, sourceLabel: 'Non-SIL Machine Control', targetLabel: 'IEC 62061 SIL-rated Control' } },
+	// Architecture
+	{ id: 'monolith-firmware-modular',   category: 'Architecture',                label: 'Monolithic Firmware -> Modular',   description: 'Decompose a flat, single-binary firmware into modular components with clear HAL/application boundaries.',  topology: { ...T_ONE_ONE,   sourceLabel: 'Monolithic Firmware',  targetLabel: 'Modular Firmware' } },
+	{ id: 'rtos-migration',              category: 'Architecture',                label: 'RTOS Platform Migration',         description: 'Migrate between RTOS platforms (e.g. FreeRTOS -> Zephyr, RTEMS -> VxWorks) with API translation.',         topology: { ...T_ONE_ONE,   sourceLabel: 'Legacy RTOS Project',  targetLabel: 'Target RTOS Project' } },
 	// Other
 	{ id: 'custom',                       category: 'Other',                       label: 'Custom',                              description: 'Define your own migration scope, unit decomposition, and compliance rules.',                                      topology: T_FLEX },
 ];
 
-/** Lookup label by pattern id — derived from MIGRATION_PATTERN_PRESETS. */
+/** Lookup label by pattern id -- derived from MIGRATION_PATTERN_PRESETS. */
 export const MIGRATION_PATTERN_LABELS: Record<string, string> =
 	Object.fromEntries(MIGRATION_PATTERN_PRESETS.map(p => [p.id, p.label]));
 
-/** Lookup description by pattern id — derived from MIGRATION_PATTERN_PRESETS. */
+/** Lookup description by pattern id -- derived from MIGRATION_PATTERN_PRESETS. */
 export const MIGRATION_PATTERN_DESCRIPTIONS: Record<string, string> =
 	Object.fromEntries(MIGRATION_PATTERN_PRESETS.map(p => [p.id, p.description]));
 
@@ -239,11 +246,89 @@ export interface IFirmwareModuleConfig {
 	targetCompiler?: string;
 	/** Active compliance frameworks (e.g. "iec-61508", "misra-c-2012", "iso-26262") */
 	complianceFrameworks: string[];
+
+	// --- Automotive ----------------------------------------------------------
+	/** AUTOSAR schema version: "R22-11" | "R20-11" | "Classic-4.3" | ... */
+	autosarSchemaVersion?: string;
+	/** ASIL decomposition target: "QM" | "ASIL-A" | "ASIL-B" | "ASIL-C" | "ASIL-D" | "ASIL-D/D" */
+	asilTarget?: string;
+	/** Source ECU MCU variant */
+	ecuSourceVariant?: string;
+	/** Target ECU MCU variant */
+	ecuTargetVariant?: string;
+	/** Target automotive OS: "AUTOSAR OS" | "QNX" | "INTEGRITY" | "Linux PREEMPT_RT" | "VxWorks" */
+	targetAutomotiveOS?: string;
+	/** SOME/IP service discovery mode: "multicast" | "unicast" | "hybrid" */
+	someIpMode?: string;
+	/** Whether CAN-FD is required in the target network */
+	canFdEnabled?: boolean;
+	/** Diagnostic protocol: "UDS ISO 14229" | "OBD-II" | "KWP2000" | "XCP" */
+	diagnosticProtocol?: string;
+
+	// --- Critical Infrastructure (Energy / Oil & Gas) ------------------------
+	/** IEC 61850 edition: "Edition 1" | "Edition 2" | "Edition 2.1" */
+	iec61850Edition?: string;
+	/** IEC 61850 communication model used: "GOOSE" | "SV" | "MMS" | "XMPP" | "mixed" */
+	iec61850CommunicationModel?: string;
+	/** SCL file path (.ssd / .scd / .icd) */
+	sclFilePath?: string;
+	/** Protection relay legacy protocol: "IEC 60870-5-101" | "IEC 60870-5-104" | "DNP3" | "Modbus" */
+	protectionRelayProtocol?: string;
+	/** SIL target: "SIL 1" | "SIL 2" | "SIL 3" | "SIL 4" */
+	silTarget?: string;
+	/** OPC-UA information model namespace URI */
+	opcuaNamespaceUri?: string;
+	/** IEC 62443 Security Level target: "SL 1" | "SL 2" | "SL 3" | "SL 4" */
+	iec62443SecurityLevel?: string;
+	/** Communication redundancy: "HSR" | "PRP" | "RSTP" | "MRP" | "none" */
+	communicationRedundancy?: string;
+	/** NERC CIP version: "CIP-013-2" | "CIP-014-3" | "CIP-007-6" | "CIP-010-4" */
+	nercCipVersion?: string;
+
+	// --- Telecom & 5G Infrastructure -----------------------------------------
+	/** 3GPP release: "Rel-15" | "Rel-16" | "Rel-17" | "Rel-18" */
+	release3gpp?: string;
+	/** O-RAN functional split option */
+	oranSplitOption?: string;
+	/** Radio access technology: "NR" | "LTE" | "NR-U" | "NTN" | "NR-RedCap" */
+	rat?: string;
+	/** Core network mode: "5GC (5G SA)" | "EPC (4G)" | "NSA" */
+	coreNetworkMode?: string;
+	/** Network function type: "AMF" | "SMF" | "UPF" | "PCF" | "UDM" | "AUSF" | "NRF" | "NSSF" | "NEF" | "gNB" | "DU" | "CU-CP" | "CU-UP" */
+	networkFunctionType?: string;
+	/** Deployment model: "Bare Metal" | "VM (KVM)" | "Container/K8s" | "Cloud Native (CNTT)" */
+	deploymentModel?: string;
+	/** Whether HSM/TEE key material externalisation is required */
+	keyMaterialExternalised?: boolean;
+	/** Network slicing enabled */
+	networkSlicingEnabled?: boolean;
+	/** O-RAN RIC integration: "Near-RT RIC" | "Non-RT RIC" | "both" | "none" */
+	ricIntegration?: string;
+
+	// --- Industrial IoT & OT -------------------------------------------------
+	/** EtherCAT master stack */
+	ethercatMasterStack?: string;
+	/** Profinet conformance class: "CC-A" | "CC-B" | "CC-C" */
+	profinetConformanceClass?: string;
+	/** CANopen device profile */
+	canopenProfile?: string;
+	/** MQTT broker / SparkplugB version */
+	mqttVersion?: string;
+	/** OPC-UA PubSub over MQTT/UADP */
+	opcuaPubSubEnabled?: boolean;
+	/** Time-Sensitive Networking enabled */
+	tsnEnabled?: boolean;
+	/** Target cloud IoT platform */
+	cloudIotPlatform?: string;
+	/** IEC 62443 zone separation level: "Zone 0" | "Zone 1" | "Zone 2" | "Zone 3" | "Zone 4" */
+	zoneSeparationLevel?: string;
+	/** Whether a IDMZ / data diode is required for OT/IT boundary */
+	idmzRequired?: boolean;
 }
 
 export interface IModernisationSessionData {
 	isActive: boolean;
-	/** Stable ID shared with the Modernisation.inverse file — used to key the KB. */
+	/** Stable ID shared with the Modernisation.inverse file -- used to key the KB. */
 	sessionId?: string;
 	/** All source (legacy / input) projects in this session. */
 	sources: IProjectTarget[];
@@ -257,20 +342,20 @@ export interface IModernisationSessionData {
 	migrationPattern?: MigrationPattern;
 	/** Whether the Stage 2 (Planning) roadmap has been approved by the user */
 	planApproved?: boolean;
-	/** Unix ms when the session became active — used for duration telemetry */
+	/** Unix ms when the session became active -- used for duration telemetry */
 	sessionStartedAt?: number;
 	/** Optional firmware / hardware context for the source codebase */
 	firmwareConfig?: IFirmwareModuleConfig;
 }
 
-// ─── Service interface ────────────────────────────────────────────────────────
+// --- Service interface --------------------------------------------------------
 
 export const IModernisationSessionService = createDecorator<IModernisationSessionService>('modernisationSessionService');
 
 export interface IModernisationSessionService {
 	readonly _serviceBrand: undefined;
 
-	/** Current session snapshot. Mutates reactively — listen to onDidChangeSession for updates. */
+	/** Current session snapshot. Mutates reactively -- listen to onDidChangeSession for updates. */
 	readonly session: IModernisationSessionData;
 
 	/** Fires whenever session state changes. */
@@ -299,7 +384,7 @@ export interface IModernisationSessionService {
 	openExistingProject(folderUri: URI): Promise<boolean>;
 
 	/**
-	 * Start a session directly (no file creation — use createProject for new projects).
+	 * Start a session directly (no file creation -- use createProject for new projects).
 	 * Persists to workspace storage and emits onDidChangeSession.
 	 */
 	startSession(sources: IProjectTarget[], targets: IProjectTarget[], pattern?: MigrationPattern): void;
@@ -313,7 +398,7 @@ export interface IModernisationSessionService {
 	/** Set the migration architecture pattern. */
 	setMigrationPattern(pattern: MigrationPattern): void;
 
-	/** Mark the Stage 2 plan as approved by the user — allows Stage 3 to begin. */
+	/** Mark the Stage 2 plan as approved by the user -- allows Stage 3 to begin. */
 	approvePlan(): void;
 
 	/**
@@ -326,11 +411,11 @@ export interface IModernisationSessionService {
 	endSession(): void;
 }
 
-// ─── Storage ──────────────────────────────────────────────────────────────────
+// --- Storage ------------------------------------------------------------------
 
 const SESSION_STORAGE_KEY = 'neuralInverseModernisation.session';
 
-// ─── Implementation ───────────────────────────────────────────────────────────
+// --- Implementation -----------------------------------------------------------
 
 class ModernisationSessionService extends Disposable implements IModernisationSessionService {
 	readonly _serviceBrand: undefined;
@@ -363,20 +448,20 @@ class ModernisationSessionService extends Disposable implements IModernisationSe
 	}
 
 	/**
-	 * Single reconciliation point — called on startup and whenever the VS Code
+	 * Single reconciliation point -- called on startup and whenever the VS Code
 	 * workspace folders change (e.g. File > Open Folder replaces the workspace).
 	 *
 	 * Two cases:
 	 *
 	 *  A. Session is currently "active" in memory / storage:
 	 *     Walk the stored source folders and look for Modernisation.inverse.
-	 *     If found → session is legitimate, leave it alone.
-	 *     If NOT found → the session belongs to a different project (stale storage
+	 *     If found -> session is legitimate, leave it alone.
+	 *     If NOT found -> the session belongs to a different project (stale storage
 	 *     or workspace switch); clear it so the status bar stays clean.
 	 *
 	 *  B. Session is NOT active:
 	 *     Walk the current workspace root folders and look for Modernisation.inverse.
-	 *     If found → auto-restore the session so the badge lights up without the
+	 *     If found -> auto-restore the session so the badge lights up without the
 	 *     user having to manually re-open the modernisation console.
 	 */
 	private async _reconcileWithWorkspace(): Promise<void> {
@@ -384,9 +469,9 @@ class ModernisationSessionService extends Disposable implements IModernisationSe
 		// look for Modernisation.inverse in the CURRENT workspace root folders.
 		//
 		// Case A (session active): if the current workspace has no .inverse file
-		//   the session belongs to a different project — clear it immediately.
+		//   the session belongs to a different project -- clear it immediately.
 		//   (The stored source folders may legitimately have .inverse, but they
-		//   are not this workspace — checking them would give a false positive.)
+		//   are not this workspace -- checking them would give a false positive.)
 		//
 		// Case B (session not active): if a .inverse file is found, restore it.
 
@@ -396,7 +481,7 @@ class ModernisationSessionService extends Disposable implements IModernisationSe
 			try {
 				const inverseUri = URI.joinPath(folder.uri, MODERNISATION_INVERSE_FILENAME);
 				if (await this.fileService.exists(inverseUri)) {
-					// This workspace contains a .inverse file — restore / keep session.
+					// This workspace contains a .inverse file -- restore / keep session.
 					if (!this._session.isActive) {
 						await this.openExistingProject(folder.uri);
 					}
@@ -406,7 +491,7 @@ class ModernisationSessionService extends Disposable implements IModernisationSe
 		}
 
 		// No .inverse file found in any current workspace root.
-		// If a session was active it is stale — clear it.
+		// If a session was active it is stale -- clear it.
 		if (this._session.isActive) {
 			this.endSession();
 		}
@@ -494,7 +579,7 @@ class ModernisationSessionService extends Disposable implements IModernisationSe
 					sources = paired.filter(p => p.role === 'source');
 				}
 			} else if (data.pairedProject?.uri) {
-				// v1 backwards compat: legacy → source, modern → target
+				// v1 backwards compat: legacy -> source, modern -> target
 				// pairedProject.role tells us the OTHER side; if it's 'modern', this file is legacy/source
 				const isLegacy = data.pairedProject?.role === 'modern' || (!data.role && !!data.projectName);
 				const thisId = this._generateId();
