@@ -317,6 +317,16 @@ export interface IBuiltTranslationContext {
 	 * the user message to inform the AI of its position in the overall unit.
 	 */
 	chunkHeader?: string;
+
+	// ── Tech debt & blocking context ──────────────────────────────────────────
+	/** Formatted tech debt items from static analysis (for AI awareness) */
+	techDebtSummary?: string;
+	/** Formatted locked/resolved decisions (prevents AI from re-raising them) */
+	blockingDecisionsContext?: string;
+	/** Formatted dependency health (blocked/pending status of called units) */
+	calledUnitHealthContext?: string;
+	/** Sector-specific AI guidance from the sector registry (if pattern matched) */
+	sectorGuidance?: string;
 }
 
 

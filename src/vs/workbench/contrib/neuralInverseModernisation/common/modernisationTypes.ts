@@ -52,6 +52,20 @@ export const MODERNISATION_INVERSE_FILENAME = 'Modernisation.inverse';
 /**
  * v2: supports N sources + M targets (1:1, 1:N, N:1, N:M topologies).
  * v1 shape is still accepted by openExistingProject for backwards compatibility.
+ *
+ * Example (firmware bare-metal source side):
+ * ```json
+ * {
+ *   "neuralInverseModernisation": true,
+ *   "version": "2",
+ *   "role": "source",
+ *   "projectLabel": "STM32-H743-BSP",
+ *   "pairedProjects": [{ "role": "target", "label": "stm32-zephyr-bsp", "uri": "file:///..." }],
+ *   "migrationPattern": "bare-metal-to-rtos",
+ *   "sessionId": "c4d9e82b",
+ *   "createdAt": 1744000000000
+ * }
+ * ```
  */
 export interface IModernisationProjectFile {
 	readonly neuralInverseModernisation: true;
@@ -401,11 +415,11 @@ export interface IMigrationPhase {
 	hasComplianceGate: boolean;
 	/** If true, HIL/SIL validation tests must pass at the end of this phase. */
 	hasValidationGate: boolean;
-	/** If true, any unit in this phase exposes an API endpoint requiring compatibility verification. */
-	hasAPICompatibilityGate: boolean;
 	/** Number of migration blockers that must be resolved before this phase can start. */
 	blockerCount: number;
-	/** AI or heuristic compliance notes for this specific phase. */
+	/** If true, any unit in this phase exposes an API endpoint requiring compatibility verification. */
+	hasAPICompatibilityGate: boolean;
+	/** AI or heuristic safety/compliance notes for this specific phase. */
 	complianceNotes: string;
 }
 

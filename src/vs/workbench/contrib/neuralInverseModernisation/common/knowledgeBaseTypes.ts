@@ -12,15 +12,22 @@
  *
  * This is NOT a stats dashboard. It is a data platform queried and written by agents.
  *
+ * ## Domain
+ *
+ * This KB is purpose-built for firmware and industrial modernisation:
+ *   - Firmware: bare-metal C/C++ -> RTOS/HAL (FreeRTOS, Zephyr, STM32 HAL, NXP SDK)
+ *   - Industrial: IEC 61131-3 PLC -> IPC, SCADA, OPC-UA, Modbus -> MQTT/OPC-UA
+ *   - Safety-critical: IEC 61508, IEC 62443, MISRA-C, AUTOSAR compliance gating
+ *
  * Architecture:
  *   IModernisationKnowledgeBase
- *     ├── units:     Map<id, IKnowledgeUnit>     — atoms of the migration
- *     ├── files:     Map<path, IKnowledgeFile>   — source file registry
- *     ├── decisions: IDecisionLog                — type mappings, naming, interpretations
- *     ├── glossary:  IBusinessGlossary           — what the AI has learned about this codebase
- *     ├── progress:  IProgressState              — what is done, in-progress, blocked
- *     ├── auditLog:  IKnowledgeAuditEntry[]      — tamper-evident change trail
- *     └── ext:       IKnowledgeBaseExtensions    — production features (locks, drift, etc.)
+ *     |-- units:     Map<id, IKnowledgeUnit>     -- atoms of the migration
+ *     |-- files:     Map<path, IKnowledgeFile>   -- source file registry
+ *     |-- decisions: IDecisionLog                -- type mappings, naming, interpretations
+ *     |-- glossary:  IBusinessGlossary           -- what the AI has learned about this codebase
+ *     |-- progress:  IProgressState              -- what is done, in-progress, blocked
+ *     |-- auditLog:  IKnowledgeAuditEntry[]      -- tamper-evident change trail
+ *     +-- ext:       IKnowledgeBaseExtensions    -- production features (locks, drift, etc.)
  */
 
 import {
@@ -49,7 +56,19 @@ export type UnitType =
 	| 'function'
 	| 'package'
 	| 'trigger'
-	// OOP (Java, C#, TypeScript)
+	// Firmware / embedded C/C++
+	| 'isr'                  // Interrupt Service Routine (e.g. void UART1_IRQHandler(void))
+	| 'rtos-task'            // RTOS task / thread body
+	| 'hal-driver'           // HAL peripheral driver (e.g. HAL_UART_Init)
+	| 'device-driver'        // Low-level device driver (SPI, I2C, CAN)
+	| 'register-map'         // SVD-derived peripheral register map
+	| 'linker-section'       // Linker script memory region
+	// Industrial / IEC 61131-3
+	| 'function-block'       // IEC 61131-3 Function Block (FB)
+	| 'ladder-rung'          // Ladder Logic rung
+	| 'structured-text-fn'   // Structured Text function or program unit
+	| 'safety-function'      // Safety-rated function (SIL-classified)
+	// OOP (Java, C#, TypeScript, C++)
 	| 'class'
 	| 'interface'
 	| 'enum'
