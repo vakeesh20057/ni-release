@@ -100,7 +100,7 @@ See [HOW_TO_CONTRIBUTE.md](./HOW_TO_CONTRIBUTE.md) for full setup instructions i
 
 ## License
 
-Copyright 2025 Neural Inverse Inc. Licensed under the Apache License 2.0. See [License.txt](./License.txt) for details.
+Copyright 2026 Neural Inverse Inc. Licensed under the Apache License 2.0. See [License.txt](./License.txt) for details.
 
 
 ## Support
