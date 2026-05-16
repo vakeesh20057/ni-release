@@ -1,6 +1,6 @@
-This is a fork of the VSCode repo called Void.
+This is the NeuralInverse CE codebase, built on VS Code.
 
-Most code we care about lives in src/vs/workbench/contrib/void.
+Most code we care about lives in src/vs/workbench/contrib/.
 
 You may often need to explore the full repo to find relevant parts of code.
 Look for services and built-in functions that you might need to use to solve the problem.
