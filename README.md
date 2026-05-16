@@ -51,13 +51,48 @@ Purpose-built for embedded engineers - not just syntax highlighting:
 - **Compliance-aware**: MISRA C:2012, CERT C, IEC 62304, ISO 26262 rules injected into the agent context so generated code respects safety constraints
 
 ### Legacy Modernization
-Migrate legacy codebases to modern languages without losing business logic:
-- **Discovery**: scans source trees across 20+ languages - COBOL, PL/SQL, RPG, Natural, FORTRAN, Assembler, AUTOSAR ARXML, CAN DBC, IEC 61131, TTCN-3, and more - extracting dependencies, complexity metrics, tech debt, and regulated data patterns
-- **Semantic fingerprinting**: extracts business rules, type mappings, regulated fields (PCI-DSS, financial-core, tax-compliance), and naming conventions from legacy code using a deterministic + LLM two-layer pipeline
-- **Migration planning**: CPM critical path scheduling across 7 phases (foundation through cutover), 12 blocker types, API compatibility gates, compliance ordering, effort estimation with safety-critical language surcharges
-- **Translation engine**: language-pair profiles with idiom mappings (COBOL to Java: 32 idioms; PL/SQL to TypeScript; RPG to Java; Angular 1 to 18; and more), 6-priority context budget, verification checks, and decision tracking
-- **Knowledge base**: persistent store for every translation decision, type mapping, glossary term, annotation, and compliance gate result - survives IDE restarts, importable/exportable
-- **Cutover engine**: readiness gate checks, audit bundle export with chain integrity (FNV-1a hash), committed file writing to target tree
+A full 5-stage migration platform built into the IDE. Open it with `Cmd+Alt+M`.
+
+**Stage 1 - Discovery**
+Scans source trees across 30+ languages and build systems - COBOL, PL/SQL, RPG, Natural, FORTRAN, Assembler, AUTOSAR ARXML, CAN DBC, IEC 61131-3, TTCN-3, and all mainstream languages. Extracts:
+- Dependency graphs, cyclomatic complexity, tech debt categories (17 generic + 14 firmware/industrial)
+- Regulated data patterns: PCI-DSS, GDPR, HIPAA, SOX, financial-core, tax-compliance, ISO 26262, IEC 61850 GOOSE, 3GPP key material, CAN signal IDs
+- GRC snapshot: violation counts by domain and severity, blocking violations, top rule violations
+- Market-vertical detection: automotive (AUTOSAR/MISRA), safety (IEC 61508/61511), telecom (3GPP/GSMA), energy (IEC 61850/DNP3), industrial OT (IEC 62443), embedded MCU
+
+**Stage 2 - Planning**
+CPM critical path scheduling across 7 phases (foundation -> schema -> core-logic -> API layer -> integration -> compliance -> cutover):
+- 12+ blocker types including AUTOSAR RTE dependency, E2E protection gap, ASIL decomposition break, GOOSE protection relay, SIS/SIL downgrade
+- Market-vertical compliance gates: automotive ASIL-D formal verification, energy GOOSE path isolation, telecom 3GPP key externalisation, IIoT/OT IEC 62443 zone/conduit isolation
+- Effort estimation with safety-critical language surcharges (embedded-C, AUTOSAR, assembler, IEC 61131)
+- Stage 3 locked behind plan approval gate
+
+**Stage 3 - Source Resolution**
+Prepares each migration unit for translation by inlining dependencies:
+- COBOL copybook inliner with cycle detection, CALL graph resolver
+- PL/SQL %TYPE/%ROWTYPE inliner, Java @EJB/@Autowired context injection
+- RPG /COPY+/INCLUDE expansion, Natural USING DA/CALLNAT resolution
+- Generic import inliner for TypeScript, Python, Go, Rust, C#, Kotlin, Scala and more
+- Leaf-node-first scheduling with risk priority and concurrency control
+
+**Stage 4 - Translation**
+Language-pair profiles with deep idiom mappings:
+- 36 profiles including: COBOL->Java (32 idioms), PL/SQL->TypeScript, RPG->Java, Natural->Java, FORTRAN->Python, Angular 1->18, Vue 2->3
+- 25 firmware profiles: bare-metal C->FreeRTOS, bare-metal C->Zephyr, AUTOSAR CP->AP, CAN DBC->CANopen, IEC 61850->OPC-UA, O-RAN C->Go, EtherCAT->EtherCAT NG, TTCN-3->pytest, and more
+- 6-priority context budget (source, type/naming, interfaces, rule patterns, rules/glossary, annotations)
+- Verification checks: non-empty, no placeholders, no truncation, balanced braces, length sanity
+- Decision tracking: every IRaisedDecision (naming, type, rule interpretation) stored and reviewable
+
+**Knowledge Base**
+Persistent store surviving IDE restarts - every translation decision, type mapping, glossary term, annotation, compliance gate result, checkpoint, and audit log entry. Importable/exportable.
+
+**Stage 5 - Cutover**
+- 8-point readiness gate (4 blocking, 2 warning, 2 info)
+- Audit bundle export with FNV-1a chain integrity hash and verifiable bundle integrity
+- Committed file writing to target tree via VS Code file service
+
+**Autonomy Engine**
+Optional autonomous execution: auto-approval policies, concurrent sub-task scheduling, batch progress events, configurable iteration limits and command blocklists via `.neuralinverseagent` config.
 
 ### Multi-model
 Switch models per task - use a fast model for chat, a powerful one for agentic runs.
