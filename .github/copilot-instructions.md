@@ -1,7 +1,7 @@
-# Void Codebase AI Agent Instructions
+# NeuralInverse CE Codebase AI Agent Instructions
 
 ## Overview
-Void is an open-source VS Code fork focused on AI-powered coding assistance. It enables AI agents to work directly on codebases with features like checkpointing, change visualization, and local model support. The codebase is a fork of VS Code with AI-specific additions in `src/vs/workbench/contrib/void/`.
+NeuralInverse CE is an open-source AI-native IDE built on VS Code, focused on legacy modernization, firmware development, and regulated codebase migration. CE-specific code lives in `src/vs/workbench/contrib/`.
 
 ## Architecture
 
@@ -10,8 +10,14 @@ Void is an open-source VS Code fork focused on AI-powered coding assistance. It 
 - **Common** (`src/vs/workbench/contrib/void/common/`): Shared services and types used by both processes
 - **Electron Main** (`src/vs/workbench/contrib/void/electron-main/`): Backend services, LLM communication, file system operations
 
+### Key Modules
+- `contrib/void/` - AI chat and agent infrastructure
+- `contrib/powerMode/` - Power Mode agentic workflows
+- `contrib/neuralInverseModernisation/` - Legacy code modernization platform
+- `contrib/neuralInverseFirmware/` - Firmware datasheet knowledge base
+
 ### Key Services
-All Void services follow the VS Code singleton pattern:
+All services follow the VS Code singleton pattern:
 ```typescript
 registerSingleton(IServiceName, ServiceClass, InstantiationType.Eager);
 ```
@@ -19,7 +25,7 @@ registerSingleton(IServiceName, ServiceClass, InstantiationType.Eager);
 Essential services include:
 - `IEditCodeService`: Handles code modifications and diff visualization
 - `ILLMMessageService`: Manages AI provider communication
-- `IVoidSettingsService`: Stores provider configs, model selections, and Void preferences
+- `IVoidSettingsService`: Stores provider configs, model selections, and preferences
 - `IVoidModelService`: Handles file writing and model operations
 
 ### AI Integration
@@ -59,7 +65,7 @@ npm run test               # Run test suite
 ## Code Modification Patterns
 
 ### Apply System
-Void uses two code modification approaches:
+Two code modification approaches are supported:
 
 **Fast Apply** (preferred):
 - Uses search-replace blocks with conflict markers:
@@ -89,7 +95,7 @@ Void uses two code modification approaches:
 
 ## Communication Patterns
 
-### Main ↔ Browser IPC
+### Main <-> Browser IPC
 - Services communicate via channels (e.g., `sendLLMMessageChannel`)
 - Browser requests route to main process for privileged operations
 - Events flow back through registered hooks
@@ -131,6 +137,10 @@ constructor(
 - Use `InstantiationType.Eager` for critical services
 - Import service files to trigger registration
 
+### String Literals
+- All TypeScript/JavaScript string literals must be ASCII only
+- Non-ASCII characters break the release build (esbuild limitation)
+
 ### Error Handling
 - LLM operations use try/catch with `onError` callbacks
 - Network failures handled at provider level
@@ -164,5 +174,4 @@ constructor(
 1. Create React component in `react/` directory
 2. Build with custom script
 3. Mount via VS Code webview APIs
-4. Connect to services via context or props</content>
-<parameter name="filePath">/Users/sanjaysenthilkumar/Documents/IDE/void/.github/copilot-instructions.md
+4. Connect to services via context or props

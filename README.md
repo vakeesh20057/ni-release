@@ -74,12 +74,12 @@ The following features are available in [NeuralInverse Enterprise](https://neura
 
 ## Credits
 
-NeuralInverse CE is built on top of [Void](https://github.com/voideditor/void) - an open-source AI code editor. Void is itself forked from [VS Code](https://github.com/microsoft/vscode) by Microsoft. We are grateful to both projects and their contributors.
+NeuralInverse CE is built on top of [VS Code](https://github.com/microsoft/vscode) by Microsoft. We are grateful to the VS Code team and all upstream contributors.
 
 
 ## Architecture
 
-NeuralInverse CE is forked from [Void](https://github.com/voideditor/void), which itself is a fork of [VS Code](https://github.com/microsoft/vscode).
+NeuralInverse CE is built on [VS Code](https://github.com/microsoft/vscode).
 
 Key modules:
 - `src/vs/workbench/contrib/void/` - AI agent and chat infrastructure

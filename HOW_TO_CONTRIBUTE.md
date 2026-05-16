@@ -12,7 +12,7 @@ There are a few ways to contribute:
 
 ## Codebase overview
 
-NeuralInverse CE is forked from [Void](https://github.com/voideditor/void), which is itself forked from [VS Code](https://github.com/microsoft/vscode). The codebase is large but most CE-specific code lives in a few folders:
+NeuralInverse CE is built on [VS Code](https://github.com/microsoft/vscode). The codebase is large but most CE-specific code lives in a few folders:
 
 - `src/vs/workbench/contrib/void/` - AI chat and agent infrastructure
 - `src/vs/workbench/contrib/powerMode/` - Power Mode agentic workflows
