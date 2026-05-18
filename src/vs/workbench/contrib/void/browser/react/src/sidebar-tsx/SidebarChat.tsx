@@ -4621,33 +4621,68 @@ export const SidebarChat = () => {
 		</div>
 	</div>
 
-	const landingPageContent = <div
-		ref={sidebarRef}
-		className='w-full h-full max-h-full flex flex-col px-4'
-	>
-		<div className='flex-1 flex flex-col justify-center'>
-			<ErrorBoundary>
-				{landingPageInput}
-			</ErrorBoundary>
-		</div>
+	const _isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0;
+	const _openCmd = _isMac ? 'workbench.action.files.openFileFolder' : 'workbench.action.files.openFolder';
 
-		<div className='flex-shrink-0 pb-4'>
-			{Object.keys(chatThreadsState.allThreads).length > 1 ? // show if there are threads
-				<ErrorBoundary>
-					<div className='mb-2 text-void-fg-3 text-root select-none pointer-events-none font-medium opacity-80'></div>
-					<PastThreadsList />
-				</ErrorBoundary>
-				:
-				<ErrorBoundary>
-					<div className='mb-2 text-void-fg-3 text-root select-none pointer-events-none font-medium opacity-80'>Suggestions</div>
-					{initiallySuggestedPromptsHTML}
-				</ErrorBoundary>
-			}
-			<div className='mt-4 text-[10px] text-void-fg-4 opacity-60 select-none'>
-				AI may make mistakes. Double-check all generated code.
+	const landingPageContent = !isWorkspaceOpen ? (
+		<div
+			ref={sidebarRef}
+			className='w-full h-full flex flex-col justify-center items-center px-6'
+		>
+			<div className='flex flex-col gap-3 w-full max-w-[260px]'>
+				<div className='text-sm text-void-fg-3 opacity-50 select-none leading-relaxed mb-2'>
+					Code Modern. Code Legacy. Code Firmware.<br />Your own AI.
+				</div>
+				<button
+					className='w-full py-2.5 px-4 rounded-md text-sm font-medium cursor-pointer border border-solid border-white/10 text-void-fg-1 bg-transparent hover:bg-white/5 transition-colors text-left'
+					onClick={() => commandService.executeCommand(_openCmd)}
+				>Open Project →</button>
+				<button
+					className='w-full py-2.5 px-4 rounded-md text-sm font-medium cursor-pointer border border-solid border-white/10 text-void-fg-1 bg-transparent hover:bg-white/5 transition-colors text-left'
+					onClick={() => commandService.executeCommand('workbench.action.openRecent')}
+				>Recent Projects →</button>
+				<button
+					className='w-full py-2.5 px-4 rounded-md text-sm font-medium cursor-pointer border border-solid border-white/10 text-void-fg-1 bg-transparent hover:bg-white/5 transition-colors text-left'
+					onClick={() => commandService.executeCommand('neuralInverse.openModernisation')}
+				>Code Legacy →</button>
+				<button
+					className='w-full py-2.5 px-4 rounded-md text-sm font-medium cursor-pointer border border-solid border-white/10 text-void-fg-1 bg-transparent hover:bg-white/5 transition-colors text-left'
+					onClick={() => commandService.executeCommand('neuralInverse.openFirmware')}
+				>Code Firmware →</button>
+				<button
+					className='w-full py-2.5 px-4 rounded-md text-sm font-medium cursor-pointer border border-solid border-white/10 text-void-fg-1 bg-transparent hover:bg-white/5 transition-colors text-left'
+					onClick={() => commandService.executeCommand('workbench.action.openVoidSettings')}
+				>Your Model →</button>
 			</div>
 		</div>
-	</div>
+	) : (
+		<div
+			ref={sidebarRef}
+			className='w-full h-full max-h-full flex flex-col px-4'
+		>
+			<div className='flex-1 flex flex-col justify-center'>
+				<ErrorBoundary>
+					{landingPageInput}
+				</ErrorBoundary>
+			</div>
+			<div className='flex-shrink-0 pb-4'>
+				{Object.keys(chatThreadsState.allThreads).length > 1 ?
+					<ErrorBoundary>
+						<div className='mb-2 text-void-fg-3 text-root select-none pointer-events-none font-medium opacity-80'></div>
+						<PastThreadsList />
+					</ErrorBoundary>
+					:
+					<ErrorBoundary>
+						<div className='mb-2 text-void-fg-3 text-root select-none pointer-events-none font-medium opacity-80'>Suggestions</div>
+						{initiallySuggestedPromptsHTML}
+					</ErrorBoundary>
+				}
+				<div className='mt-4 text-[10px] text-void-fg-4 opacity-60 select-none'>
+					AI may make mistakes. Double-check all generated code.
+				</div>
+			</div>
+		</div>
+	)
 
 
 	// const threadPageContent = <div>

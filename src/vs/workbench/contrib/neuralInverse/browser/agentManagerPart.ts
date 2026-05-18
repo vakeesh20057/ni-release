@@ -20,6 +20,13 @@ import { IWorkflowAgentService } from './workflowAgentService.js';
 import { IPowerBusService } from '../../powerMode/browser/powerBusService.js';
 import { ICommandService } from '../../../../platform/commands/common/commands.js';
 import { IEnterprisePolicyService } from '../../void/common/enterprisePolicyService.js';
+import { IModelManagementService } from '../common/modelManagement/index.js';
+import { IModelMarketplaceService } from './modelManagement/marketplaceService.js';
+import { ICloudCredentialService } from './modelManagement/cloudCredentialService.js';
+import { ICloudDeploymentService } from './modelManagement/cloudDeploymentService.js';
+import { IDeploymentRegistryService } from './modelManagement/deployment/deploymentRegistryService.js';
+import { IUnifiedDeployment, isLocalDeployment, isCloudDeployment, isDeploymentActive, getDeploymentEndpoint } from './modelManagement/deployment/deploymentTypes.js';
+import { CloudProvider, CloudDeploymentStatus, ICloudCredentials, ICloudDeployment, getRecommendedInstances } from '../common/modelManagement/cloudTypes.js';
 
 export class AgentManagerPart extends Part {
 
@@ -47,6 +54,11 @@ export class AgentManagerPart extends Part {
         @IPowerBusService private readonly powerBusService: IPowerBusService,
         @ICommandService private readonly commandService: ICommandService,
         @IEnterprisePolicyService private readonly enterprisePolicyService: IEnterprisePolicyService,
+        @IModelManagementService private readonly modelManagementService: IModelManagementService,
+        @IModelMarketplaceService private readonly marketplaceService: IModelMarketplaceService,
+        @ICloudCredentialService private readonly cloudCredentialService: ICloudCredentialService,
+        @ICloudDeploymentService private readonly cloudDeploymentService: ICloudDeploymentService,
+        @IDeploymentRegistryService private readonly deploymentRegistryService: IDeploymentRegistryService,
     ) {
         super(AgentManagerPart.ID, { hasTitle: false }, themeService, storageService, layoutService);
         this.registerListeners();
@@ -127,11 +139,27 @@ export class AgentManagerPart extends Part {
         body.appendChild(controlCenterContainer);
         this.controlContainer = controlCenterContainer;
 
+        // VIEW 4: Models Management
+        const modelsContainer = document.createElement('div');
+        modelsContainer.style.width = '100%';
+        modelsContainer.style.height = '100%';
+        modelsContainer.style.overflow = 'auto';
+        modelsContainer.style.background = 'var(--vscode-editor-background)';
+        body.appendChild(modelsContainer);
+
+        // VIEW 5: Deployments
+        const deploymentsContainer = document.createElement('div');
+        deploymentsContainer.style.width = '100%';
+        deploymentsContainer.style.height = '100%';
+        deploymentsContainer.style.overflow = 'auto';
+        deploymentsContainer.style.background = 'var(--vscode-editor-background)';
+        body.appendChild(deploymentsContainer);
+
         // State Management
-        const allContainers = [agentContainer, voidContainer, controlCenterContainer];
+        const allContainers = [agentContainer, voidContainer, controlCenterContainer, modelsContainer, deploymentsContainer];
         let allTabs: HTMLElement[] = [];
 
-        const updateView = (view: 'manager' | 'chat' | 'control') => {
+        const updateView = (view: 'manager' | 'chat' | 'control' | 'models' | 'deployments') => {
             for (const c of allContainers) { c.style.display = 'none'; }
             for (const t of allTabs) { styleInactive(t); }
 
@@ -141,6 +169,17 @@ export class AgentManagerPart extends Part {
             } else if (view === 'chat') {
                 voidContainer.style.display = 'block';
                 styleActive(tabChat);
+            } else if (view === 'models') {
+                modelsContainer.style.display = 'block';
+                styleActive(tabModels);
+                this.renderModelsView(modelsContainer).catch(err => {
+                    console.error('Failed to render models view:', err);
+                    modelsContainer.innerHTML = `<div style="padding:20px;color:red">Error loading models: ${err.message}</div>`;
+                });
+            } else if (view === 'deployments') {
+                deploymentsContainer.style.display = 'block';
+                styleActive(tabDeployments);
+                this._renderDeploymentsView(deploymentsContainer);
             }
         };
 
@@ -158,11 +197,15 @@ export class AgentManagerPart extends Part {
 
         const tabChat = createTab('Chat', () => updateView('chat'));
         const tabAgents = createTab('Agents', () => updateView('manager'));
+        const tabModels = createTab('Models', () => updateView('models'));
+        const tabDeployments = createTab('Deployments', () => updateView('deployments'));
 
-        allTabs = [tabChat, tabAgents];
+        allTabs = [tabChat, tabAgents, tabModels, tabDeployments];
 
         tabsContainer.appendChild(tabChat);
         tabsContainer.appendChild(tabAgents);
+        tabsContainer.appendChild(tabModels);
+        tabsContainer.appendChild(tabDeployments);
 
         // Power Mode launcher — placed after tabs, before spacer so it is
         // never hidden by window controls on Windows/Linux
@@ -1911,6 +1954,2195 @@ export class AgentManagerPart extends Part {
         return {
             type: AgentManagerPart.ID
         };
+    }
+
+    private _modelsViewMode: 'simple' | 'advanced' = 'simple';
+
+    private async renderModelsView(container: HTMLElement): Promise<void> {
+        while (container.firstChild) container.removeChild(container.firstChild);
+        container.style.cssText = 'display:flex;flex-direction:column;height:100%;overflow:hidden;padding:0;margin:0';
+
+        if (this._modelsViewMode === 'simple') {
+            this._renderSimpleModelsView(container);
+        } else {
+            // Advanced: full marketplace
+            const marketplaceWrap = document.createElement('div');
+            marketplaceWrap.style.cssText = 'display:flex;flex:1;overflow:hidden';
+
+            // Top bar with back link and context
+            const topBar = document.createElement('div');
+            topBar.style.cssText = 'display:flex;align-items:center;justify-content:space-between;padding:10px 20px;border-bottom:1px solid var(--vscode-panel-border);flex-shrink:0;background:var(--vscode-sideBar-background)';
+
+            const backLink = document.createElement('span');
+            backLink.textContent = '← Quick Install';
+            backLink.style.cssText = 'font-size:11px;color:var(--vscode-textLink-foreground);cursor:pointer;font-weight:500';
+            backLink.addEventListener('click', () => {
+                this._modelsViewMode = 'simple';
+                this.renderModelsView(container);
+            });
+            topBar.appendChild(backLink);
+
+            const modeLabel = document.createElement('span');
+            modeLabel.textContent = 'MARKETPLACE';
+            modeLabel.style.cssText = 'font-size:9px;font-weight:700;letter-spacing:1px;color:var(--vscode-descriptionForeground);padding:2px 8px;background:var(--vscode-editor-inactiveSelectionBackground);border-radius:3px';
+            topBar.appendChild(modeLabel);
+
+            container.appendChild(topBar);
+            container.appendChild(marketplaceWrap);
+
+            try {
+                await this.renderModelsMarketplace(marketplaceWrap);
+            } catch (error) {
+                console.error('Error rendering models view:', error);
+                const errorDiv = document.createElement('div');
+                errorDiv.style.cssText = 'padding:40px;text-align:center;color:var(--vscode-errorForeground)';
+                errorDiv.textContent = `Error: ${error instanceof Error ? error.message : String(error)}`;
+                marketplaceWrap.appendChild(errorDiv);
+            }
+        }
+    }
+
+    private _renderSimpleModelsView(container: HTMLElement): void {
+        const wrapper = document.createElement('div');
+        wrapper.style.cssText = 'flex:1;overflow-y:auto;padding:0';
+
+        // Hero section
+        const hero = document.createElement('div');
+        hero.style.cssText = 'padding:36px 40px 28px;background:linear-gradient(135deg, color-mix(in srgb, var(--vscode-editor-background) 85%, var(--vscode-focusBorder)), var(--vscode-editor-background))';
+
+        const heroInner = document.createElement('div');
+        heroInner.style.cssText = 'max-width:720px';
+
+        const title = document.createElement('h1');
+        title.textContent = 'Models';
+        title.style.cssText = 'margin:0;font-size:22px;font-weight:700;color:var(--vscode-foreground);letter-spacing:-0.3px';
+        heroInner.appendChild(title);
+
+        const sub = document.createElement('p');
+        sub.textContent = 'Install AI models locally with one click. Powered by Ollama — runs entirely on your machine, no API keys needed.';
+        sub.style.cssText = 'margin:8px 0 0;font-size:13px;color:var(--vscode-descriptionForeground);line-height:1.5';
+        heroInner.appendChild(sub);
+
+        // Status pill inline in hero
+        const statusPill = document.createElement('div');
+        statusPill.style.cssText = 'display:inline-flex;align-items:center;gap:6px;margin-top:14px;padding:5px 12px;background:var(--vscode-editor-background);border-radius:20px;border:1px solid var(--vscode-input-border)';
+        heroInner.appendChild(statusPill);
+        hero.appendChild(heroInner);
+        wrapper.appendChild(hero);
+
+        this._checkOllamaStatus(statusPill);
+
+        // Main content
+        const content = document.createElement('div');
+        content.style.cssText = 'padding:24px 40px 40px';
+
+        // Curated models
+        interface ICuratedModel {
+            id: string;
+            name: string;
+            org: string;
+            description: string;
+            size: string;
+            params: string;
+            tags: string[];
+            recommended?: boolean;
+            category: 'coding' | 'general' | 'small';
+        }
+
+        const curatedModels: ICuratedModel[] = [
+            { id: 'qwen2.5-coder:7b', name: 'Qwen 2.5 Coder', org: 'Alibaba', description: 'Best coding model for its size. Excellent at generation, completion, and refactoring.', size: '4.7 GB', params: '7B', tags: ['coding', 'fast'], category: 'coding', recommended: true },
+            { id: 'deepseek-coder-v2:16b', name: 'DeepSeek Coder V2', org: 'DeepSeek', description: 'Strong MoE coding model. Top-tier accuracy on HumanEval and code benchmarks.', size: '8.9 GB', params: '16B', tags: ['coding', 'accurate'], category: 'coding' },
+            { id: 'starcoder2:7b', name: 'StarCoder2', org: 'BigCode', description: 'Trained on 600+ languages. Excellent FIM (fill-in-middle) for autocomplete.', size: '3.8 GB', params: '7B', tags: ['autocomplete', 'multi-lang'], category: 'coding' },
+            { id: 'codellama:7b', name: 'Code Llama', org: 'Meta', description: 'Dedicated code model with infilling support. Strong at code generation.', size: '3.8 GB', params: '7B', tags: ['coding', 'infill'], category: 'coding' },
+            { id: 'llama3.1:8b', name: 'Llama 3.1', org: 'Meta', description: 'Best general-purpose open model. Great for chat, reasoning, analysis, and code.', size: '4.7 GB', params: '8B', tags: ['general', 'reasoning'], category: 'general' },
+            { id: 'mistral:7b', name: 'Mistral', org: 'Mistral AI', description: 'Fast and efficient. Excellent speed-to-quality ratio for general tasks.', size: '4.1 GB', params: '7B', tags: ['general', 'fast'], category: 'general' },
+            { id: 'llama3.1:70b', name: 'Llama 3.1 70B', org: 'Meta', description: 'Highest quality open model. Near GPT-4 performance. Requires 40+ GB RAM.', size: '40 GB', params: '70B', tags: ['powerful', 'large'], category: 'general' },
+            { id: 'phi3:mini', name: 'Phi-3 Mini', org: 'Microsoft', description: 'Ultra-compact model. Runs on 4 GB RAM. Ideal for low-end hardware.', size: '2.3 GB', params: '3.8B', tags: ['tiny', 'efficient'], category: 'small' },
+        ];
+
+        // Section: For Coding
+        const codingModels = curatedModels.filter(m => m.category === 'coding');
+        const generalModels = curatedModels.filter(m => m.category === 'general');
+        const smallModels = curatedModels.filter(m => m.category === 'small');
+
+        content.appendChild(this._createModelSection('For Coding', 'Optimized for code generation, completion, and understanding', codingModels, container));
+        content.appendChild(this._createModelSection('General Purpose', 'Chat, reasoning, writing, and multi-task', generalModels, container));
+        content.appendChild(this._createModelSection('Lightweight', 'Runs on minimal hardware', smallModels, container));
+
+        // Advanced section
+        const advSection = document.createElement('div');
+        advSection.style.cssText = 'margin-top:32px;padding:20px 24px;border:1px solid var(--vscode-input-border);border-radius:8px;display:flex;align-items:center;justify-content:space-between;gap:16px;background:var(--vscode-editor-inactiveSelectionBackground)';
+
+        const advLeft = document.createElement('div');
+        const advTitle = document.createElement('div');
+        advTitle.textContent = 'Need something specific?';
+        advTitle.style.cssText = 'font-size:13px;font-weight:600;color:var(--vscode-foreground)';
+        advLeft.appendChild(advTitle);
+        const advDesc = document.createElement('div');
+        advDesc.textContent = 'Browse thousands of models from HuggingFace, or deploy to AWS/Azure GPU instances.';
+        advDesc.style.cssText = 'font-size:11px;color:var(--vscode-descriptionForeground);margin-top:3px';
+        advLeft.appendChild(advDesc);
+        advSection.appendChild(advLeft);
+
+        const advBtn = document.createElement('button');
+        advBtn.textContent = 'Advanced →';
+        advBtn.style.cssText = 'padding:8px 18px;background:var(--vscode-button-background);color:var(--vscode-button-foreground);border:none;cursor:pointer;font-size:12px;font-weight:600;border-radius:4px;white-space:nowrap;transition:opacity 0.1s';
+        advBtn.addEventListener('mouseenter', () => { advBtn.style.opacity = '0.85'; });
+        advBtn.addEventListener('mouseleave', () => { advBtn.style.opacity = '1'; });
+        advBtn.addEventListener('click', () => {
+            this._modelsViewMode = 'advanced';
+            this.renderModelsView(container);
+        });
+        advSection.appendChild(advBtn);
+        content.appendChild(advSection);
+
+        wrapper.appendChild(content);
+        container.appendChild(wrapper);
+    }
+
+    private _createModelSection(title: string, subtitle: string, models: Array<{ id: string; name: string; org: string; description: string; size: string; params: string; tags: string[]; recommended?: boolean }>, rootContainer: HTMLElement): HTMLElement {
+        const section = document.createElement('div');
+        section.style.cssText = 'margin-bottom:28px';
+
+        const header = document.createElement('div');
+        header.style.cssText = 'margin-bottom:12px';
+        const titleEl = document.createElement('div');
+        titleEl.textContent = title;
+        titleEl.style.cssText = 'font-size:14px;font-weight:600;color:var(--vscode-foreground)';
+        header.appendChild(titleEl);
+        const subEl = document.createElement('div');
+        subEl.textContent = subtitle;
+        subEl.style.cssText = 'font-size:11px;color:var(--vscode-descriptionForeground);margin-top:2px';
+        header.appendChild(subEl);
+        section.appendChild(header);
+
+        const grid = document.createElement('div');
+        grid.style.cssText = 'display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:10px';
+
+        for (const model of models) {
+            grid.appendChild(this._createCuratedModelCard(model, rootContainer));
+        }
+        section.appendChild(grid);
+        return section;
+    }
+
+    private async _checkOllamaStatus(statusEl: HTMLElement): Promise<void> {
+        statusEl.replaceChildren();
+
+        const dot = document.createElement('div');
+        dot.style.cssText = 'width:6px;height:6px;border-radius:50%;flex-shrink:0';
+        statusEl.appendChild(dot);
+
+        const msg = document.createElement('span');
+        msg.style.cssText = 'font-size:11px;flex:1';
+        statusEl.appendChild(msg);
+
+        try {
+            const resp = await fetch('http://localhost:11434/', { signal: AbortSignal.timeout(3000) });
+            if (resp.ok) {
+                dot.style.background = 'var(--vscode-testing-iconPassed)';
+                msg.textContent = 'Ollama running';
+                msg.style.color = 'var(--vscode-testing-iconPassed)';
+
+                try {
+                    const tagsResp = await fetch('http://localhost:11434/api/tags', { signal: AbortSignal.timeout(3000) });
+                    if (tagsResp.ok) {
+                        const data = await tagsResp.json();
+                        const count = (data.models || []).length;
+                        if (count > 0) {
+                            msg.textContent = `Ollama running · ${count} model${count > 1 ? 's' : ''}`;
+                        }
+                    }
+                } catch { /* ignore */ }
+            } else {
+                dot.style.background = 'var(--vscode-editorWarning-foreground)';
+                msg.textContent = 'Ollama: issue detected';
+                msg.style.color = 'var(--vscode-editorWarning-foreground)';
+            }
+        } catch {
+            dot.style.background = 'var(--vscode-descriptionForeground)';
+            msg.textContent = 'Ollama not running';
+            msg.style.color = 'var(--vscode-descriptionForeground)';
+
+            const installLink = document.createElement('span');
+            installLink.textContent = 'Install';
+            installLink.style.cssText = 'font-size:10px;color:var(--vscode-textLink-foreground);cursor:pointer;margin-left:6px;text-decoration:underline';
+            installLink.addEventListener('click', () => {
+                this.commandService.executeCommand('vscode.open', 'https://ollama.com/download');
+            });
+            statusEl.appendChild(installLink);
+        }
+    }
+
+    private _createCuratedModelCard(model: { id: string; name: string; org: string; description: string; size: string; params: string; tags: string[]; recommended?: boolean }, _rootContainer: HTMLElement): HTMLElement {
+        const card = document.createElement('div');
+        card.style.cssText = 'padding:14px 16px;border:1px solid var(--vscode-input-border);border-radius:6px;display:flex;flex-direction:column;transition:border-color 0.15s,box-shadow 0.15s;position:relative';
+        card.addEventListener('mouseenter', () => {
+            card.style.borderColor = 'var(--vscode-focusBorder)';
+            card.style.boxShadow = '0 2px 8px rgba(0,0,0,0.12)';
+        });
+        card.addEventListener('mouseleave', () => {
+            card.style.borderColor = 'var(--vscode-input-border)';
+            card.style.boxShadow = 'none';
+        });
+
+        if (model.recommended) {
+            card.style.borderColor = 'var(--vscode-focusBorder)';
+        }
+
+        // Row 1: Name + org + params badge
+        const topRow = document.createElement('div');
+        topRow.style.cssText = 'display:flex;align-items:center;gap:6px;margin-bottom:6px';
+
+        const nameEl = document.createElement('span');
+        nameEl.textContent = model.name;
+        nameEl.style.cssText = 'font-size:12px;font-weight:600;color:var(--vscode-foreground)';
+        topRow.appendChild(nameEl);
+
+        const paramsBadge = document.createElement('span');
+        paramsBadge.textContent = model.params;
+        paramsBadge.style.cssText = 'font-size:9px;padding:1px 5px;background:var(--vscode-editor-inactiveSelectionBackground);color:var(--vscode-descriptionForeground);border-radius:3px;font-weight:600';
+        topRow.appendChild(paramsBadge);
+
+        if (model.recommended) {
+            const star = document.createElement('span');
+            star.textContent = '★';
+            star.title = 'Recommended';
+            star.style.cssText = 'font-size:11px;color:var(--vscode-focusBorder);margin-left:auto';
+            topRow.appendChild(star);
+        }
+        card.appendChild(topRow);
+
+        // Row 2: Org
+        const orgEl = document.createElement('div');
+        orgEl.textContent = model.org;
+        orgEl.style.cssText = 'font-size:10px;color:var(--vscode-descriptionForeground);margin-bottom:8px';
+        card.appendChild(orgEl);
+
+        // Row 3: Description
+        const desc = document.createElement('div');
+        desc.textContent = model.description;
+        desc.style.cssText = 'font-size:11px;color:var(--vscode-descriptionForeground);line-height:1.45;flex:1;margin-bottom:10px';
+        card.appendChild(desc);
+
+        // Row 4: Tags + Size (bottom aligned)
+        const bottom = document.createElement('div');
+        bottom.style.cssText = 'display:flex;align-items:center;gap:4px;margin-bottom:10px';
+
+        for (const tag of model.tags) {
+            const tagEl = document.createElement('span');
+            tagEl.textContent = tag;
+            tagEl.style.cssText = 'font-size:9px;padding:2px 5px;background:var(--vscode-editor-inactiveSelectionBackground);color:var(--vscode-descriptionForeground);border-radius:3px;font-weight:500';
+            bottom.appendChild(tagEl);
+        }
+
+        const sizeEl = document.createElement('span');
+        sizeEl.textContent = model.size;
+        sizeEl.style.cssText = 'font-size:10px;color:var(--vscode-descriptionForeground);margin-left:auto;font-weight:500';
+        bottom.appendChild(sizeEl);
+        card.appendChild(bottom);
+
+        // Install button
+        const installBtn = document.createElement('button');
+        installBtn.textContent = 'Install';
+        installBtn.style.cssText = 'padding:7px 0;background:var(--vscode-button-background);color:var(--vscode-button-foreground);border:none;cursor:pointer;font-size:11px;font-weight:600;border-radius:4px;width:100%;transition:opacity 0.1s,transform 0.1s';
+        installBtn.addEventListener('mouseenter', () => { installBtn.style.opacity = '0.9'; installBtn.style.transform = 'translateY(-1px)'; });
+        installBtn.addEventListener('mouseleave', () => { installBtn.style.opacity = '1'; installBtn.style.transform = 'none'; });
+
+        installBtn.addEventListener('click', async () => {
+            installBtn.textContent = 'Downloading...';
+            installBtn.disabled = true;
+            installBtn.style.opacity = '0.7';
+
+            // Progress bar overlay
+            const progressTrack = document.createElement('div');
+            progressTrack.style.cssText = 'position:absolute;bottom:0;left:0;right:0;height:3px;background:var(--vscode-input-border);border-radius:0 0 6px 6px;overflow:hidden';
+            const progressFill = document.createElement('div');
+            progressFill.style.cssText = 'height:100%;width:0%;background:var(--vscode-progressBar-background);transition:width 0.3s ease';
+            progressTrack.appendChild(progressFill);
+            card.appendChild(progressTrack);
+
+            const progressDisposable = this.modelManagementService.onPullProgress((progress) => {
+                if (progress.modelId !== model.id) { return; }
+                if (progress.status === 'downloading' && progress.percentage !== undefined) {
+                    installBtn.textContent = `${progress.percentage}%`;
+                    progressFill.style.width = `${progress.percentage}%`;
+                } else if (progress.status === 'completed') {
+                    installBtn.textContent = '✓ Installed';
+                    installBtn.style.background = 'var(--vscode-testing-iconPassed)';
+                    installBtn.style.opacity = '1';
+                    progressTrack.remove();
+                    progressDisposable.dispose();
+                } else if (progress.status === 'failed') {
+                    installBtn.textContent = 'Retry';
+                    installBtn.disabled = false;
+                    installBtn.style.opacity = '1';
+                    progressTrack.remove();
+                    progressDisposable.dispose();
+                }
+            });
+
+            try {
+                await this.modelManagementService.pullModel('ollama', model.id);
+            } catch (err: unknown) {
+                const errMsg = err instanceof Error ? err.message : String(err);
+                if (errMsg.includes('not running') || errMsg.includes('fetch')) {
+                    installBtn.textContent = 'Ollama offline';
+                } else if (errMsg.includes('disk space')) {
+                    installBtn.textContent = 'No space';
+                } else if (errMsg.includes('already being pulled')) {
+                    installBtn.textContent = 'In progress...';
+                } else {
+                    installBtn.textContent = 'Retry';
+                }
+                installBtn.disabled = false;
+                installBtn.style.opacity = '1';
+                progressTrack.remove();
+                progressDisposable.dispose();
+            }
+        });
+
+        this._checkModelInstalled(model.id, installBtn);
+        card.appendChild(installBtn);
+        return card;
+    }
+
+    private async _checkModelInstalled(modelId: string, btn: HTMLButtonElement): Promise<void> {
+        try {
+            const resp = await fetch('http://localhost:11434/api/tags', { signal: AbortSignal.timeout(3000) });
+            if (resp.ok) {
+                const data = await resp.json();
+                const models: string[] = (data.models || []).map((m: { name: string }) => m.name);
+                const isInstalled = models.some(m => m === modelId || m.startsWith(modelId.split(':')[0] + ':'));
+                if (isInstalled) {
+                    btn.textContent = '✓ Installed';
+                    btn.style.background = 'var(--vscode-testing-iconPassed)';
+                    btn.disabled = true;
+                    btn.style.cursor = 'default';
+                }
+            }
+        } catch { /* Ollama not running */ }
+    }
+
+    private async renderModelsMarketplace(container: HTMLElement): Promise<void> {
+        const providers = await this.modelManagementService.detectProviders();
+
+        const wrapper = document.createElement('div');
+        wrapper.style.cssText = 'display:flex;width:100%;height:100%;overflow:hidden';
+        container.appendChild(wrapper);
+
+        // LEFT SIDEBAR
+        const sidebar = document.createElement('div');
+        sidebar.style.cssText = 'width:180px;min-width:180px;height:100%;border-right:1px solid var(--vscode-panel-border);background:var(--vscode-sideBar-background);overflow-y:auto;padding:16px 12px';
+        wrapper.appendChild(sidebar);
+
+        // Search at top of sidebar
+        const searchWrap = document.createElement('div');
+        searchWrap.style.cssText = 'margin-bottom:16px';
+        const searchInput = document.createElement('input');
+        searchInput.type = 'text';
+        searchInput.placeholder = 'Search...';
+        searchInput.style.cssText = 'width:100%;padding:6px 10px;background:var(--vscode-input-background);border:1px solid var(--vscode-input-border);color:var(--vscode-input-foreground);font-size:11px;border-radius:4px;box-sizing:border-box;outline:none';
+        searchInput.addEventListener('focus', () => { searchInput.style.borderColor = 'var(--vscode-focusBorder)'; });
+        searchInput.addEventListener('blur', () => { searchInput.style.borderColor = 'var(--vscode-input-border)'; });
+        searchWrap.appendChild(searchInput);
+        sidebar.appendChild(searchWrap);
+
+        // Provider filter
+        const providerSection = document.createElement('div');
+        providerSection.style.cssText = 'margin-bottom:18px';
+        const providerLabel = document.createElement('div');
+        providerLabel.textContent = 'PROVIDER';
+        providerLabel.style.cssText = 'font-size:9px;font-weight:700;color:var(--vscode-descriptionForeground);margin-bottom:6px;letter-spacing:0.8px;padding:0 6px';
+        providerSection.appendChild(providerLabel);
+
+        const providerFilters = ['ollama', 'vLLM', 'lmStudio'];
+        let selectedProvider = providers.find(p => p.detected)?.provider || 'ollama';
+
+        const providerButtons: HTMLElement[] = [];
+        for (const prov of providerFilters) {
+            const provBtn = document.createElement('div');
+            const displayName = prov === 'ollama' ? 'Ollama' : prov === 'vLLM' ? 'vLLM' : 'LM Studio';
+            provBtn.textContent = displayName;
+            provBtn.style.cssText = 'padding:5px 10px;margin-bottom:1px;cursor:pointer;font-size:11px;border-radius:4px;color:var(--vscode-foreground);transition:background 0.1s;font-weight:500';
+            provBtn.addEventListener('mouseenter', () => {
+                if (!provBtn.classList.contains('active')) { provBtn.style.background = 'var(--vscode-list-hoverBackground)'; }
+            });
+            provBtn.addEventListener('mouseleave', () => {
+                if (!provBtn.classList.contains('active')) { provBtn.style.background = 'transparent'; }
+            });
+            provBtn.addEventListener('click', () => {
+                selectedProvider = prov as any;
+                providerButtons.forEach(b => {
+                    b.classList.remove('active');
+                    b.style.background = 'transparent';
+                    b.style.fontWeight = '500';
+                });
+                provBtn.classList.add('active');
+                provBtn.style.background = 'var(--vscode-list-activeSelectionBackground)';
+                provBtn.style.fontWeight = '600';
+                loadModels('code');
+            });
+            providerButtons.push(provBtn);
+            providerSection.appendChild(provBtn);
+        }
+        sidebar.appendChild(providerSection);
+
+        // Domain filter
+        const domainSection = document.createElement('div');
+        domainSection.style.cssText = 'margin-bottom:18px';
+        const domainLabel = document.createElement('div');
+        domainLabel.textContent = 'DOMAIN';
+        domainLabel.style.cssText = 'font-size:9px;font-weight:700;color:var(--vscode-descriptionForeground);margin-bottom:6px;letter-spacing:0.8px;padding:0 6px';
+        domainSection.appendChild(domainLabel);
+
+        const domains = [
+            { label: 'Code Generation', query: 'code' },
+            { label: 'Firmware', query: 'firmware' },
+            { label: 'Embedded Systems', query: 'embedded' },
+            { label: 'Legacy Modernization', query: 'legacy cobol' },
+            { label: 'Compliance', query: 'compliance safety' },
+            { label: 'Automotive', query: 'automotive' }
+        ];
+
+        const domainButtons: HTMLElement[] = [];
+        for (const domain of domains) {
+            const domBtn = document.createElement('div');
+            domBtn.textContent = domain.label;
+            domBtn.style.cssText = 'padding:5px 10px;margin-bottom:1px;cursor:pointer;font-size:11px;border-radius:4px;color:var(--vscode-foreground);transition:background 0.1s;font-weight:500';
+            domBtn.addEventListener('mouseenter', () => {
+                if (!domBtn.classList.contains('active')) { domBtn.style.background = 'var(--vscode-list-hoverBackground)'; }
+            });
+            domBtn.addEventListener('mouseleave', () => {
+                if (!domBtn.classList.contains('active')) { domBtn.style.background = 'transparent'; }
+            });
+            domBtn.addEventListener('click', () => {
+                domainButtons.forEach(b => {
+                    b.classList.remove('active');
+                    b.style.background = 'transparent';
+                    b.style.fontWeight = '500';
+                });
+                domBtn.classList.add('active');
+                domBtn.style.background = 'var(--vscode-list-activeSelectionBackground)';
+                domBtn.style.fontWeight = '600';
+                loadModels(domain.query);
+            });
+            domainButtons.push(domBtn);
+            domainSection.appendChild(domBtn);
+        }
+        sidebar.appendChild(domainSection);
+
+        // Wire search
+        let searchTimeout: ReturnType<typeof setTimeout> | undefined;
+        searchInput.addEventListener('input', () => {
+            if (searchTimeout) { clearTimeout(searchTimeout); }
+            searchTimeout = setTimeout(() => {
+                const q = searchInput.value.trim();
+                if (q.length >= 2) { loadModels(q); }
+                else if (q.length === 0) { loadModels('code'); }
+            }, 400);
+        });
+
+        // Set defaults
+        providerButtons[0].classList.add('active');
+        providerButtons[0].style.background = 'var(--vscode-list-activeSelectionBackground)';
+        providerButtons[0].style.fontWeight = '600';
+        domainButtons[0].classList.add('active');
+        domainButtons[0].style.background = 'var(--vscode-list-activeSelectionBackground)';
+        domainButtons[0].style.fontWeight = '600';
+
+        // RIGHT MAIN AREA - Split view (list + detail)
+        const mainSplit = document.createElement('div');
+        mainSplit.style.cssText = 'flex:1;height:100%;display:flex;overflow:hidden';
+        wrapper.appendChild(mainSplit);
+
+        // LEFT: List pane (100% width by default, 20% when detail shown)
+        const listPane = document.createElement('div');
+        listPane.style.cssText = 'width:100%;height:100%;display:flex;flex-direction:column;transition:width 0.2s';
+        mainSplit.appendChild(listPane);
+
+        // List container
+        const listContainer = document.createElement('div');
+        listContainer.style.cssText = 'flex:1;overflow-y:auto;background:var(--vscode-editor-background)';
+        listPane.appendChild(listContainer);
+
+        // RIGHT: Detail pane (HIDDEN by default)
+        const detailPane = document.createElement('div');
+        detailPane.style.cssText = 'position:relative;display:none;width:80%;height:100%;overflow-y:auto;background:var(--vscode-editor-background);border-left:1px solid var(--vscode-panel-border)';
+        mainSplit.appendChild(detailPane);
+
+        // Loading function
+        const loadModels = async (query: string) => {
+            while (listContainer.firstChild) listContainer.removeChild(listContainer.firstChild);
+            const loadingDiv = document.createElement('div');
+            loadingDiv.textContent = 'Loading models...';
+            loadingDiv.style.cssText = 'padding:40px 20px;text-align:center;color:var(--vscode-descriptionForeground);font-size:13px';
+            listContainer.appendChild(loadingDiv);
+
+            const models = await this.marketplaceService.fetchModels(selectedProvider, query);
+            while (listContainer.firstChild) listContainer.removeChild(listContainer.firstChild);
+            renderModelList(models);
+        };
+
+        // Generate unique color for icon based on model name
+        const getIconColor = (name: string): string => {
+            const colors = ['#3794ff', '#89d185', '#f48771', '#b180d7', '#f9c859', '#cc6688', '#56b6c2'];
+            let hash = 0;
+            for (let i = 0; i < name.length; i++) {
+                hash = name.charCodeAt(i) + ((hash << 5) - hash);
+            }
+            return colors[Math.abs(hash) % colors.length];
+        };
+
+        // Render detail pane (EXACT VS Code extension-style with REAL data)
+        const renderDetail = (model: any) => {
+            while (detailPane.firstChild) detailPane.removeChild(detailPane.firstChild);
+
+            // Close button (top-right corner)
+            const closeBtn = document.createElement('div');
+            closeBtn.textContent = '✕';
+            closeBtn.style.cssText = 'position:absolute;top:12px;right:12px;width:28px;height:28px;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:16px;color:var(--vscode-foreground);opacity:0.7;transition:opacity 0.2s;z-index:10';
+            closeBtn.addEventListener('mouseenter', () => closeBtn.style.opacity = '1');
+            closeBtn.addEventListener('mouseleave', () => closeBtn.style.opacity = '0.7');
+            closeBtn.addEventListener('click', () => {
+                detailPane.style.display = 'none';
+                listPane.style.width = '100%';
+            });
+            detailPane.appendChild(closeBtn);
+
+            // Header section
+            const headerSection = document.createElement('div');
+            headerSection.style.cssText = 'display:flex;gap:20px;padding:24px;border-bottom:1px solid var(--vscode-panel-border)';
+
+            // Icon (128x128) - try real avatar from HuggingFace organization
+            const icon = document.createElement('div');
+            const iconColor = getIconColor(model.name);
+            icon.style.cssText = `width:128px;height:128px;background:${iconColor};border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:64px;font-weight:700;color:#fff;flex-shrink:0;overflow:hidden;position:relative`;
+
+            // Show letter immediately
+            const iconLetter = model.name.split('/').pop()?.[0]?.toUpperCase() || model.provider[0].toUpperCase();
+            const letterSpan = document.createElement('span');
+            letterSpan.textContent = iconLetter;
+            letterSpan.style.cssText = 'position:absolute;inset:0;display:flex;align-items:center;justify-content:center';
+            icon.appendChild(letterSpan);
+
+            // Fetch avatar from HuggingFace API (user endpoint, fallback to generated)
+            if (model.avatar) {
+                const orgName = model.avatar;
+                (async () => {
+                    try {
+                        const response = await fetch(`https://huggingface.co/api/users/${orgName}/overview`);
+                        let avatarUrl = null;
+
+                        if (response.ok) {
+                            const userData = await response.json();
+                            avatarUrl = userData.avatarUrl;
+                        }
+
+                        // If no avatar from API, use generated avatar
+                        if (!avatarUrl) {
+                            avatarUrl = `https://ui-avatars.com/api/?name=${encodeURIComponent(orgName)}&background=random&size=128&bold=true`;
+                        }
+
+                        const avatarImg = document.createElement('img');
+                        avatarImg.src = avatarUrl;
+                        avatarImg.style.cssText = 'width:100%;height:100%;object-fit:cover;position:absolute;inset:0';
+                        avatarImg.onload = () => {
+                            letterSpan.style.display = 'none';
+                        };
+                        icon.appendChild(avatarImg);
+                    } catch (err) {
+                        // Keep letter on error
+                    }
+                })();
+            }
+
+            headerSection.appendChild(icon);
+
+            const headerInfo = document.createElement('div');
+            headerInfo.style.cssText = 'flex:1;min-width:0';
+
+            // Title
+            const title = document.createElement('h1');
+            title.textContent = model.name;
+            title.style.cssText = 'margin:0 0 8px 0;font-size:22px;font-weight:600;color:var(--vscode-foreground)';
+            headerInfo.appendChild(title);
+
+            // Publisher + stats row
+            const metaRow = document.createElement('div');
+            metaRow.style.cssText = 'display:flex;align-items:center;gap:12px;margin-bottom:12px;font-size:13px';
+
+            const publisher = document.createElement('span');
+            publisher.textContent = model.provider;
+            publisher.style.cssText = 'color:var(--vscode-foreground)';
+            metaRow.appendChild(publisher);
+
+            const sep1 = document.createElement('span');
+            sep1.textContent = '|';
+            sep1.style.cssText = 'color:var(--vscode-descriptionForeground)';
+            metaRow.appendChild(sep1);
+
+            const headerDownloads = model.description?.match(/(\d+)\s+downloads?/)?.[1];
+            if (headerDownloads) {
+                const dlSpan = document.createElement('span');
+                dlSpan.textContent = `↓ ${parseInt(headerDownloads).toLocaleString()}`;
+                dlSpan.style.cssText = 'color:var(--vscode-descriptionForeground)';
+                metaRow.appendChild(dlSpan);
+            }
+
+            headerInfo.appendChild(metaRow);
+
+            // Description
+            const desc = document.createElement('div');
+            desc.textContent = model.description || 'No description';
+            desc.style.cssText = 'font-size:13px;color:var(--vscode-foreground);margin-bottom:16px;line-height:1.5';
+            headerInfo.appendChild(desc);
+
+            // Action buttons row
+            const btnRow = document.createElement('div');
+            btnRow.style.cssText = 'display:flex;align-items:center;gap:8px';
+
+            // Install Locally button
+            const installLocalBtn = document.createElement('button');
+            installLocalBtn.textContent = 'Install Locally';
+            installLocalBtn.style.cssText = 'padding:6px 16px;background:var(--vscode-button-background);color:var(--vscode-button-foreground);border:none;cursor:pointer;font-size:13px;font-weight:600;border-radius:2px';
+            installLocalBtn.addEventListener('click', async () => {
+                installLocalBtn.textContent = 'Pulling 0%...';
+                installLocalBtn.disabled = true;
+                installLocalBtn.style.opacity = '0.8';
+                installLocalBtn.style.minWidth = '140px';
+
+                const progressDisposable = this.modelManagementService.onPullProgress((progress) => {
+                    if (progress.modelId !== model.id) { return; }
+                    if (progress.status === 'downloading' && progress.percentage !== undefined) {
+                        installLocalBtn.textContent = `Pulling ${progress.percentage}%...`;
+                    } else if (progress.status === 'queued') {
+                        installLocalBtn.textContent = 'Queued...';
+                    } else if (progress.status === 'completed') {
+                        installLocalBtn.textContent = '✓ Installed';
+                        installLocalBtn.style.opacity = '1';
+                        progressDisposable.dispose();
+                    } else if (progress.status === 'failed') {
+                        installLocalBtn.textContent = 'Failed — Retry';
+                        installLocalBtn.disabled = false;
+                        installLocalBtn.style.opacity = '1';
+                        progressDisposable.dispose();
+                    } else if (progress.status === 'cancelled') {
+                        installLocalBtn.textContent = 'Install Locally';
+                        installLocalBtn.disabled = false;
+                        installLocalBtn.style.opacity = '1';
+                        progressDisposable.dispose();
+                    }
+                });
+
+                try {
+                    await this.modelManagementService.pullModel(model.provider, model.id);
+                } catch (err: unknown) {
+                    const msg = err instanceof Error ? err.message : String(err);
+                    if (msg.includes('already being pulled')) {
+                        installLocalBtn.textContent = 'Already pulling...';
+                    } else if (msg.includes('disk space')) {
+                        installLocalBtn.textContent = 'No disk space';
+                        installLocalBtn.title = msg;
+                    } else if (msg.includes('not supported')) {
+                        installLocalBtn.textContent = 'Not supported';
+                        installLocalBtn.title = `Only Ollama supports local pull. Provider: ${model.provider}`;
+                    } else {
+                        installLocalBtn.textContent = 'Failed — Retry';
+                        installLocalBtn.title = msg;
+                    }
+                    installLocalBtn.disabled = false;
+                    installLocalBtn.style.opacity = '1';
+                    progressDisposable.dispose();
+                }
+            });
+            btnRow.appendChild(installLocalBtn);
+
+            // Deploy to Cloud button
+            const deployCloudBtn = document.createElement('button');
+            deployCloudBtn.textContent = 'Deploy to Cloud';
+            deployCloudBtn.style.cssText = 'padding:6px 16px;background:var(--vscode-button-secondaryBackground);color:var(--vscode-button-secondaryForeground);border:none;cursor:pointer;font-size:13px;font-weight:600;border-radius:2px';
+            deployCloudBtn.addEventListener('click', () => {
+                this._showCloudDeployWizard(detailPane, model);
+            });
+            btnRow.appendChild(deployCloudBtn);
+
+            headerInfo.appendChild(btnRow);
+            headerSection.appendChild(headerInfo);
+            detailPane.appendChild(headerSection);
+
+            // Single DETAILS tab (FEATURES removed as unused)
+            const tabsRow = document.createElement('div');
+            tabsRow.style.cssText = 'display:flex;gap:24px;padding:0 24px;border-bottom:1px solid var(--vscode-panel-border)';
+
+            const tabEl = document.createElement('div');
+            tabEl.textContent = 'DETAILS';
+            tabEl.style.cssText = 'padding:12px 0;font-size:11px;font-weight:600;color:var(--vscode-foreground);border-bottom:2px solid var(--vscode-focusBorder)';
+            tabsRow.appendChild(tabEl);
+            detailPane.appendChild(tabsRow);
+
+            // Content area with sidebar
+            const contentArea = document.createElement('div');
+            contentArea.style.cssText = 'display:flex;padding:24px;gap:32px';
+
+            // Left: Main content
+            const mainContent = document.createElement('div');
+            mainContent.style.cssText = 'flex:1;min-width:0;overflow-x:hidden';
+
+            // Fetch and display README from HuggingFace
+            const readmeContainer = document.createElement('div');
+            readmeContainer.style.cssText = 'font-size:13px;line-height:1.7;color:var(--vscode-foreground)';
+            readmeContainer.textContent = 'Loading model details...';
+            mainContent.appendChild(readmeContainer);
+
+            // Fetch README from HuggingFace
+            (async () => {
+                try {
+                    const readmeUrl = `https://huggingface.co/${model.id}/raw/main/README.md`;
+                    const response = await fetch(readmeUrl);
+                    if (response.ok) {
+                        const readme = await response.text();
+                        readmeContainer.textContent = '';
+
+                        // Format inline markdown and return DOM nodes
+                        const formatInline = (text: string, container: HTMLElement) => {
+                            // Parse markdown syntax and create DOM nodes
+                            let remaining = text;
+                            let maxIterations = text.length + 100; // Safety limit
+                            let iterations = 0;
+
+                            while (remaining.length > 0 && iterations++ < maxIterations) {
+                                // Try to match patterns
+                                const codeMatch = remaining.match(/^`([^`]+)`/);
+                                const boldMatch = remaining.match(/^\*\*([^*]+)\*\*/);
+                                const linkMatch = remaining.match(/^\[([^\]]+)\]\(([^)]+)\)/);
+                                const htmlLinkMatch = remaining.match(/^<a href="([^"]+)">([^<]+)<\/a>/);
+
+                                if (codeMatch) {
+                                    const code = document.createElement('code');
+                                    code.style.cssText = 'background:var(--vscode-textCodeBlock-background);padding:2px 6px;border-radius:3px;font-family:monospace;font-size:12px';
+                                    code.textContent = codeMatch[1];
+                                    container.appendChild(code);
+                                    remaining = remaining.substring(codeMatch[0].length);
+                                } else if (boldMatch) {
+                                    const strong = document.createElement('strong');
+                                    strong.textContent = boldMatch[1];
+                                    container.appendChild(strong);
+                                    remaining = remaining.substring(boldMatch[0].length);
+                                } else if (linkMatch) {
+                                    const a = document.createElement('a');
+                                    a.href = linkMatch[2];
+                                    a.target = '_blank';
+                                    a.textContent = linkMatch[1];
+                                    a.style.cssText = 'color:var(--vscode-textLink-foreground);text-decoration:none';
+                                    container.appendChild(a);
+                                    remaining = remaining.substring(linkMatch[0].length);
+                                } else if (htmlLinkMatch) {
+                                    const a = document.createElement('a');
+                                    a.href = htmlLinkMatch[1];
+                                    a.target = '_blank';
+                                    a.textContent = htmlLinkMatch[2];
+                                    a.style.cssText = 'color:var(--vscode-textLink-foreground);text-decoration:none';
+                                    container.appendChild(a);
+                                    remaining = remaining.substring(htmlLinkMatch[0].length);
+                                } else {
+                                    // Regular text - find next special char
+                                    const nextSpecial = remaining.search(/[`*\[<]/);
+                                    if (nextSpecial === -1) {
+                                        // No more special chars, append all remaining text
+                                        container.appendChild(document.createTextNode(remaining));
+                                        remaining = '';
+                                    } else if (nextSpecial === 0) {
+                                        // Special char at start but no pattern matched - treat as literal
+                                        container.appendChild(document.createTextNode(remaining[0]));
+                                        remaining = remaining.substring(1);
+                                    } else {
+                                        // Append text before special char
+                                        container.appendChild(document.createTextNode(remaining.substring(0, nextSpecial)));
+                                        remaining = remaining.substring(nextSpecial);
+                                    }
+                                }
+                            }
+
+                            // Safety: if we hit max iterations, just append remaining as text
+                            if (remaining.length > 0) {
+                                container.appendChild(document.createTextNode(remaining));
+                            }
+                        };
+
+                        // Markdown renderer
+                        const renderMarkdown = (md: string) => {
+                            const container = document.createElement('div');
+                            const lines = md.split('\n');
+                            let inCodeBlock = false;
+                            let codeBlock: HTMLPreElement | null = null;
+                            let codeContent = '';
+
+                            for (let i = 0; i < lines.length; i++) {
+                                const line = lines[i];
+
+                                // Code block toggle
+                                if (line.startsWith('```')) {
+                                    if (!inCodeBlock) {
+                                        inCodeBlock = true;
+                                        codeBlock = document.createElement('pre');
+                                        codeBlock.style.cssText = 'background:var(--vscode-textCodeBlock-background);padding:12px;border-radius:4px;overflow-x:auto;font-family:monospace;font-size:12px;margin:12px 0;white-space:pre-wrap;word-wrap:break-word';
+                                        codeContent = '';
+                                    } else {
+                                        inCodeBlock = false;
+                                        if (codeBlock) {
+                                            codeBlock.textContent = codeContent;
+                                            container.appendChild(codeBlock);
+                                        }
+                                        codeBlock = null;
+                                    }
+                                    continue;
+                                }
+
+                                if (inCodeBlock) {
+                                    codeContent += line + '\n';
+                                    continue;
+                                }
+
+                                // Horizontal rule
+                                if (line.trim() === '---' || line.trim() === '***') {
+                                    const hr = document.createElement('hr');
+                                    hr.style.cssText = 'border:none;border-top:1px solid var(--vscode-panel-border);margin:20px 0';
+                                    container.appendChild(hr);
+                                    continue;
+                                }
+
+                                // Headings
+                                if (line.startsWith('# ')) {
+                                    const h1 = document.createElement('h1');
+                                    h1.style.cssText = 'font-size:24px;font-weight:700;margin:24px 0 12px 0;color:var(--vscode-foreground)';
+                                    formatInline(line.substring(2), h1);
+                                    container.appendChild(h1);
+                                } else if (line.startsWith('## ')) {
+                                    const h2 = document.createElement('h2');
+                                    h2.style.cssText = 'font-size:18px;font-weight:600;margin:20px 0 10px 0;color:var(--vscode-foreground)';
+                                    formatInline(line.substring(3), h2);
+                                    container.appendChild(h2);
+                                } else if (line.startsWith('### ')) {
+                                    const h3 = document.createElement('h3');
+                                    h3.style.cssText = 'font-size:15px;font-weight:600;margin:16px 0 8px 0;color:var(--vscode-foreground)';
+                                    formatInline(line.substring(4), h3);
+                                    container.appendChild(h3);
+                                } else if (line.startsWith('- ') || line.startsWith('* ')) {
+                                    const li = document.createElement('p');
+                                    li.style.cssText = 'margin:4px 0 4px 20px;line-height:1.6;color:var(--vscode-foreground)';
+                                    li.appendChild(document.createTextNode('• '));
+                                    formatInline(line.substring(2), li);
+                                    container.appendChild(li);
+                                } else if (line.trim()) {
+                                    const p = document.createElement('p');
+                                    p.style.cssText = 'margin:8px 0;line-height:1.6;color:var(--vscode-foreground)';
+                                    formatInline(line, p);
+                                    container.appendChild(p);
+                                }
+                            }
+
+                            return container;
+                        };
+
+                        const rendered = renderMarkdown(readme);
+                        readmeContainer.appendChild(rendered);
+                    } else {
+                        readmeContainer.textContent = model.description || 'No detailed information available.';
+                    }
+                } catch (err) {
+                    readmeContainer.textContent = model.description || 'Failed to load model details.';
+                }
+            })();
+
+            // Capabilities section (below README)
+            const capSection = document.createElement('div');
+            capSection.style.cssText = 'margin-top:32px;padding-top:24px;border-top:1px solid var(--vscode-panel-border)';
+            const capTitle = document.createElement('h3');
+            capTitle.textContent = 'Capabilities';
+            capTitle.style.cssText = 'margin:0 0 12px 0;font-size:16px;font-weight:600;color:var(--vscode-foreground)';
+            capSection.appendChild(capTitle);
+
+            const capList = document.createElement('ul');
+            capList.style.cssText = 'margin:0;padding-left:20px;color:var(--vscode-foreground);font-size:13px;line-height:1.8';
+            (model.capabilities || ['chat', 'code']).forEach((cap: string) => {
+                const li = document.createElement('li');
+                li.textContent = cap.charAt(0).toUpperCase() + cap.slice(1);
+                capList.appendChild(li);
+            });
+            capSection.appendChild(capList);
+            mainContent.appendChild(capSection);
+
+            contentArea.appendChild(mainContent);
+
+            // Right: Sidebar
+            const sidebar = document.createElement('div');
+            sidebar.style.cssText = 'width:240px;flex-shrink:0';
+
+            // Installation section first
+            const installTitle = document.createElement('h3');
+            installTitle.textContent = 'Installation';
+            installTitle.style.cssText = 'margin:0 0 16px 0;font-size:14px;font-weight:600;color:var(--vscode-foreground)';
+            sidebar.appendChild(installTitle);
+
+            const installData = [
+                ['Identifier', model.id.split('/').pop() || model.id],
+                ['Size', `${(model.size! / (1024*1024*1024)).toFixed(2)} GB`]
+            ];
+
+            installData.forEach(([label, value]) => {
+                const row = document.createElement('div');
+                row.style.cssText = 'margin-bottom:12px';
+
+                const labelDiv = document.createElement('div');
+                labelDiv.textContent = label;
+                labelDiv.style.cssText = 'font-size:11px;font-weight:600;color:var(--vscode-descriptionForeground);margin-bottom:4px';
+                row.appendChild(labelDiv);
+
+                const valueDiv = document.createElement('div');
+                valueDiv.textContent = value;
+                valueDiv.style.cssText = 'font-size:12px;color:var(--vscode-foreground)';
+                row.appendChild(valueDiv);
+
+                sidebar.appendChild(row);
+            });
+
+            // Marketplace section
+            const marketplaceTitle = document.createElement('h3');
+            marketplaceTitle.textContent = 'Marketplace';
+            marketplaceTitle.style.cssText = 'margin:24px 0 16px 0;font-size:14px;font-weight:600;color:var(--vscode-foreground)';
+            sidebar.appendChild(marketplaceTitle);
+
+            const downloadsCount = model.description?.match(/(\d+)\s+downloads?/)?.[1];
+            const sidebarData = [
+                ['Downloads', downloadsCount ? parseInt(downloadsCount).toLocaleString() : 'N/A'],
+                ['Last Updated', 'Recently'],
+                ['Context Window', model.contextWindow ? `${model.contextWindow.toLocaleString()} tokens` : '4,096 tokens'],
+                ['Provider', model.provider]
+            ];
+
+            sidebarData.forEach(([label, value]) => {
+                const row = document.createElement('div');
+                row.style.cssText = 'margin-bottom:12px';
+
+                const labelDiv = document.createElement('div');
+                labelDiv.textContent = label;
+                labelDiv.style.cssText = 'font-size:11px;font-weight:600;color:var(--vscode-descriptionForeground);margin-bottom:4px';
+                row.appendChild(labelDiv);
+
+                const valueDiv = document.createElement('div');
+                valueDiv.textContent = value;
+                valueDiv.style.cssText = 'font-size:12px;color:var(--vscode-foreground)';
+                row.appendChild(valueDiv);
+
+                sidebar.appendChild(row);
+            });
+
+            // Resources section
+            const resourcesTitle = document.createElement('h3');
+            resourcesTitle.textContent = 'Resources';
+            resourcesTitle.style.cssText = 'margin:24px 0 12px 0;font-size:14px;font-weight:600;color:var(--vscode-foreground)';
+            sidebar.appendChild(resourcesTitle);
+
+            const hfLink = document.createElement('a');
+            hfLink.textContent = 'Model Card';
+            hfLink.href = `https://huggingface.co/${model.id}`;
+            hfLink.target = '_blank';
+            hfLink.style.cssText = 'display:block;font-size:12px;color:var(--vscode-textLink-foreground);text-decoration:none;margin-bottom:8px';
+            sidebar.appendChild(hfLink);
+
+            contentArea.appendChild(sidebar);
+            detailPane.appendChild(contentArea);
+
+            // Show detail pane and resize list to 20%
+            detailPane.style.display = 'block';
+            listPane.style.width = '20%';
+        };
+
+        // Render list (EXACT VS Code extension-style)
+        const renderModelList = (models: any[]) => {
+            if (models.length === 0) {
+                const emptyDiv = document.createElement('div');
+                emptyDiv.textContent = 'No models found';
+                emptyDiv.style.cssText = 'padding:40px 20px;text-align:center;color:var(--vscode-descriptionForeground);font-size:13px';
+                listContainer.appendChild(emptyDiv);
+                return;
+            }
+
+            for (const model of models) {
+                const row = document.createElement('div');
+                row.style.cssText = 'display:flex;align-items:flex-start;gap:8px;padding:10px 12px;border-bottom:1px solid var(--vscode-panel-border);cursor:pointer;transition:background 0.1s';
+                row.addEventListener('mouseenter', () => row.style.background = 'var(--vscode-list-hoverBackground)');
+                row.addEventListener('mouseleave', () => row.style.background = 'transparent');
+                row.addEventListener('click', () => renderDetail(model));
+
+                // Icon (40x40 for narrow view) - try real avatar from HuggingFace organization
+                const icon = document.createElement('div');
+                const iconColor = getIconColor(model.name);
+                icon.style.cssText = `width:40px;height:40px;min-width:40px;background:${iconColor};border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:18px;font-weight:700;color:#fff;flex-shrink:0;overflow:hidden;position:relative`;
+
+                // Show letter immediately
+                const iconLetter = model.name.split('/').pop()?.[0]?.toUpperCase() || model.provider[0].toUpperCase();
+                const letterSpan = document.createElement('span');
+                letterSpan.textContent = iconLetter;
+                letterSpan.style.cssText = 'position:absolute;inset:0;display:flex;align-items:center;justify-content:center';
+                icon.appendChild(letterSpan);
+
+                // Fetch avatar from HuggingFace API (user endpoint, fallback to generated)
+                if (model.avatar) {
+                    const orgName = model.avatar;
+                    (async () => {
+                        try {
+                            const response = await fetch(`https://huggingface.co/api/users/${orgName}/overview`);
+                            let avatarUrl = null;
+
+                            if (response.ok) {
+                                const userData = await response.json();
+                                avatarUrl = userData.avatarUrl;
+                            }
+
+                            // If no avatar from API, use generated avatar
+                            if (!avatarUrl) {
+                                avatarUrl = `https://ui-avatars.com/api/?name=${encodeURIComponent(orgName)}&background=random&size=128&bold=true`;
+                            }
+
+                            const avatarImg = document.createElement('img');
+                            avatarImg.src = avatarUrl;
+                            avatarImg.style.cssText = 'width:100%;height:100%;object-fit:cover;position:absolute;inset:0';
+                            avatarImg.onload = () => {
+                                letterSpan.style.display = 'none';
+                            };
+                            icon.appendChild(avatarImg);
+                        } catch (err) {
+                            // Keep letter on error
+                        }
+                    })();
+                }
+
+                row.appendChild(icon);
+
+                // Info column
+                const info = document.createElement('div');
+                info.style.cssText = 'flex:1;min-width:0;overflow:hidden';
+
+                // Name (wrap on narrow, truncate on wide)
+                const name = document.createElement('div');
+                name.textContent = model.name;
+                name.style.cssText = 'font-size:12px;font-weight:600;color:var(--vscode-foreground);margin-bottom:4px;word-wrap:break-word;line-height:1.3';
+                info.appendChild(name);
+
+                // Stats + provider in one line
+                const metaRow = document.createElement('div');
+                metaRow.style.cssText = 'display:flex;align-items:center;gap:6px;font-size:11px;color:var(--vscode-descriptionForeground)';
+
+                const provider = document.createElement('span');
+                provider.textContent = model.provider;
+                metaRow.appendChild(provider);
+
+                const downloads = model.description?.match(/(\d+)\s+downloads?/)?.[1];
+                if (downloads) {
+                    const sep = document.createElement('span');
+                    sep.textContent = '·';
+                    metaRow.appendChild(sep);
+
+                    const dlCount = parseInt(downloads);
+                    const dlSpan = document.createElement('span');
+                    dlSpan.textContent = `↓ ${dlCount > 1000000 ? (dlCount / 1000000).toFixed(1) + 'M' : dlCount > 1000 ? (dlCount / 1000).toFixed(1) + 'K' : dlCount}`;
+                    metaRow.appendChild(dlSpan);
+                }
+
+                info.appendChild(metaRow);
+                row.appendChild(info);
+
+                listContainer.appendChild(row);
+            }
+        };
+
+        // Initial load
+        await loadModels('code');
+
+        // Search handled by sidebar searchInput listener above
+    }
+
+    private _getIconColor(name: string): string {
+        const colors = ['#3794ff', '#89d185', '#f48771', '#b180d7', '#f9c859', '#cc6688', '#56b6c2'];
+        let hash = 0;
+        for (let i = 0; i < name.length; i++) {
+            hash = name.charCodeAt(i) + ((hash << 5) - hash);
+        }
+        return colors[Math.abs(hash) % colors.length];
+    }
+
+    // === DEPLOYMENTS TAB ===
+
+    private _deploymentsDisposable: DisposableStore | undefined;
+
+    private _renderDeploymentsView(container: HTMLElement): void {
+        // Cleanup previous render
+        if (this._deploymentsDisposable) {
+            this._deploymentsDisposable.dispose();
+        }
+        this._deploymentsDisposable = new DisposableStore();
+        while (container.firstChild) { container.removeChild(container.firstChild); }
+
+        const wrapper = document.createElement('div');
+        wrapper.style.cssText = 'padding:24px;height:100%;display:flex;flex-direction:column';
+
+        // Header
+        const header = document.createElement('div');
+        header.style.cssText = 'display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;flex-shrink:0';
+
+        const titleCol = document.createElement('div');
+        const title = document.createElement('h2');
+        title.textContent = 'Deployments';
+        title.style.cssText = 'margin:0;font-size:16px;font-weight:600;color:var(--vscode-foreground)';
+        titleCol.appendChild(title);
+        const subtitle = document.createElement('div');
+        subtitle.textContent = 'Local providers and cloud GPU instances';
+        subtitle.style.cssText = 'font-size:11px;color:var(--vscode-descriptionForeground);margin-top:3px';
+        titleCol.appendChild(subtitle);
+        header.appendChild(titleCol);
+
+        const refreshBtn = document.createElement('button');
+        refreshBtn.textContent = '↻ Refresh';
+        refreshBtn.style.cssText = 'padding:4px 12px;background:transparent;color:var(--vscode-foreground);border:1px solid var(--vscode-input-border);cursor:pointer;font-size:11px;border-radius:3px';
+        refreshBtn.addEventListener('click', async () => {
+            refreshBtn.textContent = '↻ Refreshing...';
+            refreshBtn.disabled = true;
+            await this.deploymentRegistryService.refresh();
+            this._renderDeploymentsView(container);
+        });
+        header.appendChild(refreshBtn);
+        wrapper.appendChild(header);
+
+        // Content
+        const content = document.createElement('div');
+        content.style.cssText = 'flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:12px';
+
+        const deployments = this.deploymentRegistryService.getAll();
+        const localDeployments = deployments.filter(isLocalDeployment);
+        const cloudDeployments = deployments.filter(isCloudDeployment);
+
+        // --- Local Providers Section ---
+        if (localDeployments.length > 0) {
+            const section = this._createDeploymentSection('LOCAL PROVIDERS', localDeployments.length);
+            const list = document.createElement('div');
+            list.style.cssText = 'display:flex;flex-direction:column;gap:1px;border:1px solid var(--vscode-input-border);border-radius:4px;overflow:hidden';
+
+            for (const dep of localDeployments) {
+                list.appendChild(this._createDeploymentRow(dep));
+            }
+            section.appendChild(list);
+            content.appendChild(section);
+        }
+
+        // --- Cloud Deployments Section ---
+        const cloudSection = this._createDeploymentSection('CLOUD DEPLOYMENTS', cloudDeployments.length);
+
+        if (cloudDeployments.length > 0) {
+            const list = document.createElement('div');
+            list.style.cssText = 'display:flex;flex-direction:column;gap:1px;border:1px solid var(--vscode-input-border);border-radius:4px;overflow:hidden';
+
+            for (const dep of cloudDeployments) {
+                list.appendChild(this._createDeploymentRow(dep));
+            }
+            cloudSection.appendChild(list);
+        } else {
+            const empty = document.createElement('div');
+            empty.style.cssText = 'padding:20px;text-align:center;color:var(--vscode-descriptionForeground);font-size:12px;border:1px dashed var(--vscode-input-border);border-radius:4px';
+            empty.textContent = 'No cloud deployments. Deploy a model from the Models tab.';
+            cloudSection.appendChild(empty);
+        }
+        content.appendChild(cloudSection);
+
+        // --- Auto-Config Status ---
+        const configSection = this._createDeploymentSection('AUTO-CONFIGURATION', undefined);
+        const configInfo = document.createElement('div');
+        configInfo.style.cssText = 'padding:10px 12px;background:var(--vscode-editor-inactiveSelectionBackground);border-radius:4px;font-size:11px;color:var(--vscode-descriptionForeground);line-height:1.5';
+
+        const activeEndpoints = deployments.filter(d => isDeploymentActive(d) && getDeploymentEndpoint(d));
+        if (activeEndpoints.length > 0) {
+            configInfo.textContent = `${activeEndpoints.length} active endpoint(s) available. Settings are auto-configured when a new deployment comes online (only if unconfigured).`;
+        } else {
+            configInfo.textContent = 'No active endpoints. Start a local provider or deploy a model to cloud to auto-configure IDE settings.';
+        }
+        configSection.appendChild(configInfo);
+        content.appendChild(configSection);
+
+        wrapper.appendChild(content);
+        container.appendChild(wrapper);
+
+        // Live updates
+        this._deploymentsDisposable.add(this.deploymentRegistryService.onDidChange(() => {
+            this._renderDeploymentsView(container);
+        }));
+    }
+
+    private _createDeploymentSection(label: string, count: number | undefined): HTMLElement {
+        const section = document.createElement('div');
+        section.style.cssText = 'margin-bottom:8px';
+
+        const header = document.createElement('div');
+        header.style.cssText = 'display:flex;align-items:center;gap:8px;margin-bottom:8px';
+
+        const labelEl = document.createElement('div');
+        labelEl.textContent = label;
+        labelEl.style.cssText = 'font-size:10px;font-weight:700;letter-spacing:0.8px;color:var(--vscode-descriptionForeground)';
+        header.appendChild(labelEl);
+
+        if (count !== undefined) {
+            const badge = document.createElement('span');
+            badge.textContent = String(count);
+            badge.style.cssText = 'font-size:9px;padding:1px 5px;background:var(--vscode-badge-background);color:var(--vscode-badge-foreground);border-radius:8px';
+            header.appendChild(badge);
+        }
+
+        section.appendChild(header);
+        return section;
+    }
+
+    private _createDeploymentRow(deployment: IUnifiedDeployment): HTMLElement {
+        const row = document.createElement('div');
+        row.style.cssText = 'display:grid;grid-template-columns:auto 1fr auto auto;align-items:center;gap:12px;padding:10px 12px;background:var(--vscode-editor-background);transition:background 0.1s';
+        row.addEventListener('mouseenter', () => { row.style.background = 'var(--vscode-list-hoverBackground)'; });
+        row.addEventListener('mouseleave', () => { row.style.background = 'var(--vscode-editor-background)'; });
+
+        // Status indicator
+        const statusDot = document.createElement('div');
+        const active = isDeploymentActive(deployment);
+        const dotColor = active ? 'var(--vscode-testing-iconPassed)' :
+            deployment.status === 'failed' ? 'var(--vscode-errorForeground)' :
+            deployment.status === 'stopped' ? 'var(--vscode-descriptionForeground)' :
+            'var(--vscode-editorWarning-foreground)';
+        statusDot.style.cssText = `width:8px;height:8px;border-radius:50%;background:${dotColor};flex-shrink:0`;
+        if (active && deployment.kind === 'local') {
+            statusDot.style.boxShadow = `0 0 4px ${dotColor}`;
+        }
+        row.appendChild(statusDot);
+
+        // Info column
+        const info = document.createElement('div');
+        info.style.cssText = 'min-width:0';
+
+        const nameRow = document.createElement('div');
+        nameRow.style.cssText = 'display:flex;align-items:center;gap:6px';
+
+        const name = document.createElement('span');
+        name.style.cssText = 'font-size:12px;font-weight:600;color:var(--vscode-foreground);white-space:nowrap;overflow:hidden;text-overflow:ellipsis';
+
+        if (isLocalDeployment(deployment)) {
+            name.textContent = deployment.displayName;
+        } else {
+            name.textContent = deployment.modelName;
+        }
+        nameRow.appendChild(name);
+
+        const kindBadge = document.createElement('span');
+        kindBadge.textContent = deployment.kind === 'local' ? 'LOCAL' : deployment.kind === 'cloud' ? (deployment as any).cloudProvider?.toUpperCase() : 'CLOUD';
+        kindBadge.style.cssText = 'font-size:9px;padding:1px 4px;border-radius:2px;font-weight:600;letter-spacing:0.3px;' +
+            (deployment.kind === 'local'
+                ? 'background:var(--vscode-editor-inactiveSelectionBackground);color:var(--vscode-descriptionForeground)'
+                : 'background:#ff990022;color:#ff9900');
+        nameRow.appendChild(kindBadge);
+        info.appendChild(nameRow);
+
+        const details = document.createElement('div');
+        details.style.cssText = 'font-size:10px;color:var(--vscode-descriptionForeground);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis';
+
+        if (isLocalDeployment(deployment)) {
+            const modelCount = deployment.models.length;
+            details.textContent = `${deployment.endpoint} · ${modelCount} model${modelCount !== 1 ? 's' : ''} · ${deployment.status}`;
+        } else if (isCloudDeployment(deployment)) {
+            details.textContent = `${deployment.config.instanceType} · ${deployment.config.gpuType} · $${deployment.costPerHour.toFixed(2)}/hr · ${deployment.status}`;
+        }
+        info.appendChild(details);
+        row.appendChild(info);
+
+        // Endpoint / connect button
+        const endpoint = getDeploymentEndpoint(deployment);
+        if (endpoint && active) {
+            const connectBtn = document.createElement('button');
+            connectBtn.textContent = 'Connect';
+            connectBtn.style.cssText = 'padding:3px 8px;background:var(--vscode-button-background);color:var(--vscode-button-foreground);border:none;cursor:pointer;font-size:10px;font-weight:600;border-radius:3px;white-space:nowrap';
+            connectBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                this.voidSettingsService.setSettingOfProvider(endpoint.provider, 'endpoint', endpoint.url);
+                if (endpoint.apiKey) {
+                    this.voidSettingsService.setSettingOfProvider(endpoint.provider, 'apiKey', endpoint.apiKey);
+                }
+                if (endpoint.modelName) {
+                    this.voidSettingsService.setAutodetectedModels(endpoint.provider, [endpoint.modelName], { enableProviderOnSuccess: true, hideRefresh: false });
+                }
+                connectBtn.textContent = '✓';
+                connectBtn.disabled = true;
+                connectBtn.style.opacity = '0.7';
+            });
+            row.appendChild(connectBtn);
+        } else {
+            const spacer = document.createElement('div');
+            row.appendChild(spacer);
+        }
+
+        // Actions
+        const actions = document.createElement('div');
+        actions.style.cssText = 'display:flex;gap:4px';
+
+        if (isCloudDeployment(deployment)) {
+            if (deployment.status === 'running') {
+                const stopBtn = this._createSmallAction('■', 'Stop', async () => {
+                    await this.cloudDeploymentService.stop(deployment.id);
+                });
+                actions.appendChild(stopBtn);
+            } else if (deployment.status === 'stopped') {
+                const startBtn = this._createSmallAction('▶', 'Start', async () => {
+                    await this.cloudDeploymentService.start(deployment.id);
+                });
+                actions.appendChild(startBtn);
+            }
+
+            if (deployment.status !== 'terminated' && deployment.status !== 'terminating') {
+                const deleteBtn = this._createSmallAction('✕', 'Terminate', async () => {
+                    await this.cloudDeploymentService.teardown(deployment.id);
+                });
+                deleteBtn.style.color = 'var(--vscode-errorForeground)';
+                actions.appendChild(deleteBtn);
+            }
+        }
+
+        row.appendChild(actions);
+        return row;
+    }
+
+    private _createSmallAction(icon: string, title: string, onClick: () => Promise<void>): HTMLButtonElement {
+        const btn = document.createElement('button');
+        btn.textContent = icon;
+        btn.title = title;
+        btn.style.cssText = 'width:22px;height:22px;display:flex;align-items:center;justify-content:center;background:transparent;color:var(--vscode-foreground);border:1px solid var(--vscode-input-border);cursor:pointer;font-size:10px;border-radius:3px;transition:opacity 0.1s';
+        btn.addEventListener('mouseenter', () => { btn.style.opacity = '0.7'; });
+        btn.addEventListener('mouseleave', () => { btn.style.opacity = '1'; });
+        btn.addEventListener('click', async (e) => {
+            e.stopPropagation();
+            btn.disabled = true;
+            btn.style.opacity = '0.4';
+            try { await onClick(); } catch { btn.disabled = false; btn.style.opacity = '1'; }
+        });
+        return btn;
+    }
+
+    // === CLOUD DEPLOY WIZARD ===
+
+    private _showCloudDeployWizard(detailPane: HTMLElement, model: any): void {
+        while (detailPane.firstChild) { detailPane.removeChild(detailPane.firstChild); }
+
+        const wizard = document.createElement('div');
+        wizard.style.cssText = 'padding:24px 28px;height:100%;overflow-y:auto;display:flex;flex-direction:column';
+
+        // --- Header ---
+        const header = document.createElement('div');
+        header.style.cssText = 'display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:20px;flex-shrink:0';
+
+        const titleCol = document.createElement('div');
+        const title = document.createElement('h2');
+        title.textContent = 'Deploy to Cloud';
+        title.style.cssText = 'margin:0;font-size:16px;font-weight:600;color:var(--vscode-foreground)';
+        titleCol.appendChild(title);
+        const subtitle = document.createElement('div');
+        subtitle.textContent = 'Provision a GPU instance and serve via vLLM (OpenAI-compatible)';
+        subtitle.style.cssText = 'font-size:11px;color:var(--vscode-descriptionForeground);margin-top:3px';
+        titleCol.appendChild(subtitle);
+        header.appendChild(titleCol);
+
+        const backBtn = document.createElement('button');
+        backBtn.textContent = '← Back';
+        backBtn.style.cssText = 'padding:4px 12px;background:transparent;color:var(--vscode-foreground);border:1px solid var(--vscode-input-border);cursor:pointer;font-size:11px;border-radius:3px;white-space:nowrap';
+        backBtn.addEventListener('click', () => {
+            while (detailPane.firstChild) { detailPane.removeChild(detailPane.firstChild); }
+            detailPane.style.display = 'none';
+            const listPane = detailPane.previousElementSibling as HTMLElement;
+            if (listPane) { listPane.style.width = '100%'; }
+        });
+        header.appendChild(backBtn);
+        wizard.appendChild(header);
+
+        // --- Model info card ---
+        const modelSizeGB = (model.size || 0) / (1024 * 1024 * 1024);
+        const requiredVRAM = Math.ceil(modelSizeGB * 1.2);
+
+        const modelInfo = document.createElement('div');
+        modelInfo.style.cssText = 'background:var(--vscode-editor-inactiveSelectionBackground);padding:12px 14px;border-radius:6px;margin-bottom:20px;display:flex;align-items:center;gap:12px;flex-shrink:0';
+
+        const modelIcon = document.createElement('div');
+        const iconColor = this._getIconColor(model.name);
+        const iconLetter = model.name.split('/').pop()?.[0]?.toUpperCase() || '?';
+        modelIcon.textContent = iconLetter;
+        modelIcon.style.cssText = `width:32px;height:32px;background:${iconColor};border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:700;color:#fff;flex-shrink:0`;
+        modelInfo.appendChild(modelIcon);
+
+        const modelMeta = document.createElement('div');
+        modelMeta.style.cssText = 'min-width:0;flex:1';
+        const modelNameEl = document.createElement('div');
+        modelNameEl.textContent = model.name;
+        modelNameEl.style.cssText = 'font-size:12px;font-weight:600;color:var(--vscode-foreground);white-space:nowrap;overflow:hidden;text-overflow:ellipsis';
+        modelMeta.appendChild(modelNameEl);
+        const modelSizeEl = document.createElement('div');
+        modelSizeEl.textContent = `${modelSizeGB.toFixed(1)} GB · Requires ${requiredVRAM} GB VRAM`;
+        modelSizeEl.style.cssText = 'font-size:10px;color:var(--vscode-descriptionForeground);margin-top:2px';
+        modelMeta.appendChild(modelSizeEl);
+        modelInfo.appendChild(modelMeta);
+        wizard.appendChild(modelInfo);
+
+        // --- Check existing deployment ---
+        const existingDeployment = this.cloudDeploymentService.getActiveDeploymentForModel(model.id);
+        if (existingDeployment) {
+            this._renderExistingDeployment(wizard, existingDeployment, detailPane);
+            detailPane.appendChild(wizard);
+            return;
+        }
+
+        // --- Main content area ---
+        const content = document.createElement('div');
+        content.style.cssText = 'flex:1;overflow-y:auto';
+        wizard.appendChild(content);
+
+        let selectedProvider: CloudProvider = 'aws';
+        let resolvedCredentials: ICloudCredentials | null = null;
+
+        // --- Step 1: Provider ---
+        const step1 = document.createElement('div');
+        step1.style.cssText = 'margin-bottom:20px';
+
+        const step1Label = document.createElement('div');
+        step1Label.textContent = 'PROVIDER';
+        step1Label.style.cssText = 'font-size:10px;font-weight:700;letter-spacing:0.8px;color:var(--vscode-descriptionForeground);margin-bottom:8px';
+        step1.appendChild(step1Label);
+
+        const providerRow = document.createElement('div');
+        providerRow.style.cssText = 'display:grid;grid-template-columns:1fr 1fr;gap:8px';
+
+        const providerCards: HTMLElement[] = [];
+        const providers: Array<{ id: CloudProvider; name: string; sub: string; color: string }> = [
+            { id: 'aws', name: 'Amazon Web Services', sub: 'EC2 GPU Instances', color: '#ff9900' },
+            { id: 'azure', name: 'Microsoft Azure', sub: 'NC-series VMs', color: '#0078d4' },
+        ];
+
+        for (const prov of providers) {
+            const card = document.createElement('div');
+            card.style.cssText = 'padding:10px 12px;border:1px solid var(--vscode-input-border);border-radius:4px;cursor:pointer;transition:border-color 0.1s,background 0.1s';
+
+            const nameRow = document.createElement('div');
+            nameRow.style.cssText = 'display:flex;align-items:center;gap:6px';
+            const dot = document.createElement('span');
+            dot.style.cssText = `width:8px;height:8px;border-radius:50%;background:${prov.color}`;
+            nameRow.appendChild(dot);
+            const nameEl = document.createElement('span');
+            nameEl.textContent = prov.name;
+            nameEl.style.cssText = 'font-size:11px;font-weight:600;color:var(--vscode-foreground)';
+            nameRow.appendChild(nameEl);
+            card.appendChild(nameRow);
+
+            const subEl = document.createElement('div');
+            subEl.textContent = prov.sub;
+            subEl.style.cssText = 'font-size:10px;color:var(--vscode-descriptionForeground);margin-top:3px;margin-left:14px';
+            card.appendChild(subEl);
+
+            card.addEventListener('click', () => {
+                selectedProvider = prov.id;
+                providerCards.forEach(c => { c.style.borderColor = 'var(--vscode-input-border)'; c.style.background = 'transparent'; });
+                card.style.borderColor = prov.color;
+                card.style.background = 'var(--vscode-editor-inactiveSelectionBackground)';
+                renderCredentialCheck();
+            });
+            providerCards.push(card);
+            providerRow.appendChild(card);
+        }
+
+        providerCards[0].style.borderColor = '#ff9900';
+        providerCards[0].style.background = 'var(--vscode-editor-inactiveSelectionBackground)';
+        step1.appendChild(providerRow);
+        content.appendChild(step1);
+
+        // --- Step 2: Credentials ---
+        const step2 = document.createElement('div');
+        step2.style.cssText = 'margin-bottom:20px';
+        content.appendChild(step2);
+
+        // --- Step 3: Instance + Deploy ---
+        const step3 = document.createElement('div');
+        content.appendChild(step3);
+
+        const renderCredentialCheck = async () => {
+            while (step2.firstChild) { step2.removeChild(step2.firstChild); }
+            while (step3.firstChild) { step3.removeChild(step3.firstChild); }
+            resolvedCredentials = null;
+
+            const label = document.createElement('div');
+            label.textContent = 'AUTHENTICATION';
+            label.style.cssText = 'font-size:10px;font-weight:700;letter-spacing:0.8px;color:var(--vscode-descriptionForeground);margin-bottom:8px';
+            step2.appendChild(label);
+
+            const statusRow = document.createElement('div');
+            statusRow.style.cssText = 'display:flex;align-items:center;gap:8px;padding:8px 12px;background:var(--vscode-editor-inactiveSelectionBackground);border-radius:4px';
+
+            const spinner = document.createElement('span');
+            spinner.textContent = '◌';
+            spinner.style.cssText = 'font-size:12px;color:var(--vscode-descriptionForeground);animation:spin 1s linear infinite';
+            statusRow.appendChild(spinner);
+
+            const statusMsg = document.createElement('span');
+            statusMsg.textContent = `Detecting ${selectedProvider.toUpperCase()} credentials...`;
+            statusMsg.style.cssText = 'font-size:11px;color:var(--vscode-descriptionForeground)';
+            statusRow.appendChild(statusMsg);
+            step2.appendChild(statusRow);
+
+            try {
+                const detected = await this.cloudCredentialService.detectCredentials(selectedProvider);
+
+                if (detected && detected.valid) {
+                    spinner.textContent = '✓';
+                    spinner.style.cssText = 'font-size:12px;color:var(--vscode-testing-iconPassed)';
+                    spinner.style.animation = 'none';
+                    const source = detected.source === 'cli' ? 'CLI environment' : 'stored credentials';
+                    statusMsg.textContent = `Authenticated via ${source}`;
+                    statusMsg.style.color = 'var(--vscode-testing-iconPassed)';
+
+                    const changeLink = document.createElement('span');
+                    changeLink.textContent = '(change)';
+                    changeLink.style.cssText = 'font-size:10px;color:var(--vscode-textLink-foreground);cursor:pointer;margin-left:auto';
+                    changeLink.addEventListener('click', () => renderCredentialForm(selectedProvider));
+                    statusRow.appendChild(changeLink);
+
+                    resolvedCredentials = detected;
+                    renderInstanceSelection();
+                } else {
+                    spinner.textContent = '!';
+                    spinner.style.cssText = 'font-size:12px;color:var(--vscode-editorWarning-foreground)';
+                    spinner.style.animation = 'none';
+                    statusMsg.textContent = 'No credentials found';
+                    statusMsg.style.color = 'var(--vscode-editorWarning-foreground)';
+                    renderCredentialForm(selectedProvider);
+                }
+            } catch (err) {
+                spinner.textContent = '✗';
+                spinner.style.cssText = 'font-size:12px;color:var(--vscode-errorForeground)';
+                spinner.style.animation = 'none';
+                statusMsg.textContent = `Detection failed: ${err}`;
+                statusMsg.style.color = 'var(--vscode-errorForeground)';
+                renderCredentialForm(selectedProvider);
+            }
+        };
+
+        const renderCredentialForm = (provider: CloudProvider) => {
+            // Remove any previous form
+            const existing = step2.querySelector('.cred-form');
+            if (existing) { existing.remove(); }
+
+            const form = document.createElement('div');
+            form.className = 'cred-form';
+            form.style.cssText = 'margin-top:10px;padding:12px;border:1px solid var(--vscode-input-border);border-radius:4px;display:flex;flex-direction:column;gap:8px';
+
+            const formTitle = document.createElement('div');
+            formTitle.textContent = `Enter ${provider.toUpperCase()} Credentials`;
+            formTitle.style.cssText = 'font-size:11px;font-weight:600;color:var(--vscode-foreground);margin-bottom:2px';
+            form.appendChild(formTitle);
+
+            const fields = provider === 'aws' ? [
+                { label: 'Access Key ID', key: 'awsAccessKeyId', placeholder: 'AKIA...', required: true },
+                { label: 'Secret Access Key', key: 'awsSecretAccessKey', placeholder: 'Enter secret key', required: true, secret: true },
+                { label: 'Region', key: 'awsRegion', placeholder: 'us-east-1', required: false },
+            ] : [
+                { label: 'Subscription ID', key: 'azureSubscriptionId', placeholder: 'xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx', required: true },
+                { label: 'Tenant ID', key: 'azureTenantId', placeholder: 'xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx', required: true },
+                { label: 'Client ID', key: 'azureClientId', placeholder: 'Optional — for service principal', required: false },
+                { label: 'Client Secret', key: 'azureClientSecret', placeholder: 'Optional', required: false, secret: true },
+                { label: 'Region', key: 'azureRegion', placeholder: 'eastus', required: false },
+            ];
+
+            const inputs: Map<string, HTMLInputElement> = new Map();
+            for (const field of fields) {
+                const row = document.createElement('div');
+                const labelEl = document.createElement('label');
+                labelEl.style.cssText = 'font-size:10px;font-weight:600;color:var(--vscode-descriptionForeground);display:flex;align-items:center;gap:4px;margin-bottom:3px';
+                labelEl.textContent = field.label;
+                if (field.required) {
+                    const req = document.createElement('span');
+                    req.textContent = '*';
+                    req.style.color = 'var(--vscode-errorForeground)';
+                    labelEl.appendChild(req);
+                }
+                row.appendChild(labelEl);
+
+                const input = document.createElement('input');
+                input.type = field.secret ? 'password' : 'text';
+                input.placeholder = field.placeholder;
+                input.style.cssText = 'width:100%;padding:5px 8px;background:var(--vscode-input-background);border:1px solid var(--vscode-input-border);color:var(--vscode-input-foreground);font-size:11px;border-radius:3px;box-sizing:border-box';
+                row.appendChild(input);
+                inputs.set(field.key, input);
+                form.appendChild(row);
+            }
+
+            const errorMsg = document.createElement('div');
+            errorMsg.style.cssText = 'font-size:10px;color:var(--vscode-errorForeground);display:none';
+            form.appendChild(errorMsg);
+
+            const btnRow = document.createElement('div');
+            btnRow.style.cssText = 'display:flex;gap:8px;margin-top:4px';
+
+            const validateBtn = document.createElement('button');
+            validateBtn.textContent = 'Validate & Continue';
+            validateBtn.style.cssText = 'padding:5px 14px;background:var(--vscode-button-background);color:var(--vscode-button-foreground);border:none;cursor:pointer;font-size:11px;font-weight:600;border-radius:3px';
+            validateBtn.addEventListener('click', async () => {
+                errorMsg.style.display = 'none';
+                validateBtn.textContent = 'Validating...';
+                validateBtn.disabled = true;
+
+                const creds: ICloudCredentials = provider === 'aws' ? {
+                    provider: 'aws', valid: true, source: 'manual',
+                    awsAccessKeyId: inputs.get('awsAccessKeyId')!.value,
+                    awsSecretAccessKey: inputs.get('awsSecretAccessKey')!.value,
+                    awsRegion: inputs.get('awsRegion')!.value || 'us-east-1',
+                } : {
+                    provider: 'azure', valid: true, source: 'manual',
+                    azureSubscriptionId: inputs.get('azureSubscriptionId')!.value,
+                    azureTenantId: inputs.get('azureTenantId')!.value,
+                    azureClientId: inputs.get('azureClientId')!.value || undefined,
+                    azureClientSecret: inputs.get('azureClientSecret')!.value || undefined,
+                    azureRegion: inputs.get('azureRegion')!.value || 'eastus',
+                };
+
+                // Check required fields
+                const missing = fields.filter(f => f.required && !inputs.get(f.key)!.value.trim());
+                if (missing.length > 0) {
+                    errorMsg.textContent = `Required: ${missing.map(f => f.label).join(', ')}`;
+                    errorMsg.style.display = 'block';
+                    validateBtn.textContent = 'Validate & Continue';
+                    validateBtn.disabled = false;
+                    return;
+                }
+
+                try {
+                    const valid = await this.cloudCredentialService.validateCredentials(creds);
+                    if (!valid) {
+                        errorMsg.textContent = 'Credentials validation failed. Check your keys and try again.';
+                        errorMsg.style.display = 'block';
+                        validateBtn.textContent = 'Validate & Continue';
+                        validateBtn.disabled = false;
+                        return;
+                    }
+
+                    await this.cloudCredentialService.storeCredentials(creds);
+                    resolvedCredentials = creds;
+                    form.remove();
+
+                    // Update status display
+                    const statusRow2 = step2.querySelector('div') as HTMLElement;
+                    if (statusRow2) {
+                        statusRow2.replaceChildren();
+                        const check = document.createElement('span');
+                        check.textContent = '✓';
+                        check.style.cssText = 'font-size:12px;color:var(--vscode-testing-iconPassed)';
+                        statusRow2.appendChild(check);
+                        const msg = document.createElement('span');
+                        msg.textContent = 'Credentials saved and verified';
+                        msg.style.cssText = 'font-size:11px;color:var(--vscode-testing-iconPassed)';
+                        statusRow2.appendChild(msg);
+                    }
+
+                    renderInstanceSelection();
+                } catch (err) {
+                    errorMsg.textContent = `Error: ${err}`;
+                    errorMsg.style.display = 'block';
+                    validateBtn.textContent = 'Validate & Continue';
+                    validateBtn.disabled = false;
+                }
+            });
+            btnRow.appendChild(validateBtn);
+            form.appendChild(btnRow);
+            step2.appendChild(form);
+        };
+
+        const renderInstanceSelection = () => {
+            while (step3.firstChild) { step3.removeChild(step3.firstChild); }
+
+            const label = document.createElement('div');
+            label.textContent = 'SELECT INSTANCE';
+            label.style.cssText = 'font-size:10px;font-weight:700;letter-spacing:0.8px;color:var(--vscode-descriptionForeground);margin-bottom:8px';
+            step3.appendChild(label);
+
+            const instances = getRecommendedInstances(selectedProvider, model.size || 8 * 1024 * 1024 * 1024);
+
+            if (instances.length === 0) {
+                const warn = document.createElement('div');
+                warn.style.cssText = 'padding:12px;background:var(--vscode-inputValidation-warningBackground);border:1px solid var(--vscode-inputValidation-warningBorder);border-radius:4px;font-size:11px;color:var(--vscode-foreground)';
+                warn.textContent = `No instances with sufficient VRAM (${requiredVRAM} GB needed). This model may be too large for standard GPU instances. Consider a multi-GPU setup.`;
+                step3.appendChild(warn);
+                return;
+            }
+
+            // Instance table
+            const table = document.createElement('div');
+            table.style.cssText = 'border:1px solid var(--vscode-input-border);border-radius:4px;overflow:hidden;margin-bottom:16px';
+
+            // Table header
+            const thead = document.createElement('div');
+            thead.style.cssText = 'display:grid;grid-template-columns:1fr 1.2fr 80px 80px;padding:6px 12px;background:var(--vscode-editor-inactiveSelectionBackground);border-bottom:1px solid var(--vscode-input-border);font-size:10px;font-weight:600;color:var(--vscode-descriptionForeground);text-transform:uppercase;letter-spacing:0.5px';
+            const cols = ['Instance', 'GPU', 'VRAM', 'Cost'];
+            for (const col of cols) {
+                const cell = document.createElement('div');
+                cell.textContent = col;
+                thead.appendChild(cell);
+            }
+            table.appendChild(thead);
+
+            let selectedInstance = instances[0];
+            const rows: HTMLElement[] = [];
+
+            for (let i = 0; i < instances.length; i++) {
+                const inst = instances[i];
+                const row = document.createElement('div');
+                row.style.cssText = 'display:grid;grid-template-columns:1fr 1.2fr 80px 80px;padding:8px 12px;cursor:pointer;transition:background 0.1s;border-bottom:1px solid var(--vscode-input-border);align-items:center';
+                if (i === instances.length - 1) { row.style.borderBottom = 'none'; }
+
+                const instCell = document.createElement('div');
+                instCell.style.cssText = 'font-size:11px;font-weight:600;color:var(--vscode-foreground)';
+                instCell.textContent = inst.instanceType;
+                row.appendChild(instCell);
+
+                const gpuCell = document.createElement('div');
+                gpuCell.style.cssText = 'font-size:10px;color:var(--vscode-descriptionForeground)';
+                gpuCell.textContent = inst.gpuType;
+                row.appendChild(gpuCell);
+
+                const vramCell = document.createElement('div');
+                vramCell.style.cssText = 'font-size:11px;color:var(--vscode-foreground)';
+                vramCell.textContent = `${inst.gpuMemoryGB} GB`;
+                row.appendChild(vramCell);
+
+                const costCell = document.createElement('div');
+                costCell.style.cssText = 'font-size:11px;font-weight:600;color:var(--vscode-foreground)';
+                costCell.textContent = `$${inst.estimatedCostPerHour.toFixed(2)}/hr`;
+                row.appendChild(costCell);
+
+                row.addEventListener('click', () => {
+                    selectedInstance = inst;
+                    rows.forEach(r => { r.style.background = 'transparent'; });
+                    row.style.background = 'var(--vscode-list-activeSelectionBackground)';
+                    updateCostAndDeploy(inst);
+                });
+
+                row.addEventListener('mouseenter', () => {
+                    if (selectedInstance !== inst) { row.style.background = 'var(--vscode-list-hoverBackground)'; }
+                });
+                row.addEventListener('mouseleave', () => {
+                    if (selectedInstance !== inst) { row.style.background = 'transparent'; }
+                });
+
+                rows.push(row);
+                table.appendChild(row);
+            }
+
+            // Select first
+            rows[0].style.background = 'var(--vscode-list-activeSelectionBackground)';
+            step3.appendChild(table);
+
+            // Recommended badge
+            if (instances.length > 1) {
+                const rec = document.createElement('div');
+                rec.style.cssText = 'font-size:10px;color:var(--vscode-descriptionForeground);margin-top:-12px;margin-bottom:12px;padding-left:2px';
+                rec.textContent = `↑ ${instances.length} instances meet the ${requiredVRAM} GB VRAM requirement. Cheapest option selected.`;
+                step3.appendChild(rec);
+            }
+
+            // Cost + Deploy section
+            const deploySection = document.createElement('div');
+            deploySection.style.cssText = 'padding:14px;background:var(--vscode-editor-inactiveSelectionBackground);border-radius:6px;margin-bottom:12px';
+            step3.appendChild(deploySection);
+
+            const updateCostAndDeploy = (inst: typeof instances[0]) => {
+                while (deploySection.firstChild) { deploySection.removeChild(deploySection.firstChild); }
+
+                // Cost breakdown
+                const costGrid = document.createElement('div');
+                costGrid.style.cssText = 'display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:14px';
+
+                const hourly = document.createElement('div');
+                hourly.appendChild(this._createCostLabel('Hourly'));
+                hourly.appendChild(this._createCostValue(`$${inst.estimatedCostPerHour.toFixed(2)}`));
+                costGrid.appendChild(hourly);
+
+                const daily = document.createElement('div');
+                daily.appendChild(this._createCostLabel('Daily (24hr)'));
+                daily.appendChild(this._createCostValue(`$${(inst.estimatedCostPerHour * 24).toFixed(0)}`));
+                costGrid.appendChild(daily);
+
+                const monthly = document.createElement('div');
+                monthly.appendChild(this._createCostLabel('Monthly'));
+                monthly.appendChild(this._createCostValue(`$${(inst.estimatedCostPerHour * 24 * 30).toFixed(0)}`));
+                costGrid.appendChild(monthly);
+
+                deploySection.appendChild(costGrid);
+
+                // Info line
+                const infoLine = document.createElement('div');
+                infoLine.style.cssText = 'font-size:10px;color:var(--vscode-descriptionForeground);margin-bottom:14px;padding:6px 8px;background:var(--vscode-input-background);border-radius:3px';
+                infoLine.textContent = `Region: ${inst.region} · Endpoint secured with generated API key · Auto-stop available`;
+                deploySection.appendChild(infoLine);
+
+                // Deploy button
+                const btnRow = document.createElement('div');
+                btnRow.style.cssText = 'display:flex;align-items:center;gap:10px';
+
+                const deployBtn = document.createElement('button');
+                deployBtn.textContent = `Deploy on ${selectedProvider.toUpperCase()}`;
+                deployBtn.style.cssText = 'padding:8px 20px;background:var(--vscode-button-background);color:var(--vscode-button-foreground);border:none;cursor:pointer;font-size:12px;font-weight:600;border-radius:4px;transition:opacity 0.1s';
+                deployBtn.addEventListener('mouseenter', () => { deployBtn.style.opacity = '0.85'; });
+                deployBtn.addEventListener('mouseleave', () => { deployBtn.style.opacity = '1'; });
+                deployBtn.addEventListener('click', () => startDeploy(inst, deployBtn));
+                btnRow.appendChild(deployBtn);
+
+                const cancelHint = document.createElement('span');
+                cancelHint.textContent = 'You can abort at any time';
+                cancelHint.style.cssText = 'font-size:10px;color:var(--vscode-descriptionForeground)';
+                btnRow.appendChild(cancelHint);
+
+                deploySection.appendChild(btnRow);
+            };
+
+            updateCostAndDeploy(selectedInstance);
+
+            const startDeploy = async (inst: typeof instances[0], btn: HTMLButtonElement) => {
+                btn.textContent = 'Initializing...';
+                btn.disabled = true;
+                btn.style.opacity = '0.6';
+
+                try {
+                    const deploymentId = await this.cloudDeploymentService.deploy(model.id, model.name, resolvedCredentials!, inst);
+                    // Replace entire content with progress view
+                    while (content.firstChild) { content.removeChild(content.firstChild); }
+                    renderDeploymentProgress(content, deploymentId);
+                } catch (err: unknown) {
+                    btn.textContent = `Deploy on ${selectedProvider.toUpperCase()}`;
+                    btn.disabled = false;
+                    btn.style.opacity = '1';
+
+                    const errDiv = document.createElement('div');
+                    errDiv.style.cssText = 'margin-top:10px;padding:8px 12px;background:var(--vscode-inputValidation-errorBackground);border:1px solid var(--vscode-inputValidation-errorBorder);border-radius:4px;font-size:11px;color:var(--vscode-errorForeground)';
+                    errDiv.textContent = err instanceof Error ? err.message : String(err);
+                    deploySection.appendChild(errDiv);
+                    setTimeout(() => errDiv.remove(), 8000);
+                }
+            };
+        };
+
+        const renderDeploymentProgress = (container: HTMLElement, deploymentId: string) => {
+            const progressWrap = document.createElement('div');
+            progressWrap.style.cssText = 'display:flex;flex-direction:column;gap:16px';
+
+            // Status header
+            const statusHeader = document.createElement('div');
+            statusHeader.style.cssText = 'display:flex;align-items:center;justify-content:space-between';
+
+            const statusLeft = document.createElement('div');
+            statusLeft.style.cssText = 'display:flex;align-items:center;gap:8px';
+
+            const statusIcon = document.createElement('div');
+            statusIcon.style.cssText = 'width:10px;height:10px;border-radius:50%;background:var(--vscode-progressBar-background);animation:pulse 1.5s ease-in-out infinite';
+            statusLeft.appendChild(statusIcon);
+
+            const statusLabel = document.createElement('div');
+            statusLabel.textContent = 'Provisioning...';
+            statusLabel.style.cssText = 'font-size:13px;font-weight:600;color:var(--vscode-foreground)';
+            statusLeft.appendChild(statusLabel);
+            statusHeader.appendChild(statusLeft);
+
+            const abortBtn = document.createElement('button');
+            abortBtn.textContent = 'Abort';
+            abortBtn.style.cssText = 'padding:3px 10px;background:transparent;color:var(--vscode-errorForeground);border:1px solid var(--vscode-errorForeground);cursor:pointer;font-size:10px;border-radius:3px';
+            abortBtn.addEventListener('click', async () => {
+                abortBtn.disabled = true;
+                abortBtn.textContent = 'Aborting...';
+                await this.cloudDeploymentService.abort(deploymentId);
+            });
+            statusHeader.appendChild(abortBtn);
+            progressWrap.appendChild(statusHeader);
+
+            // Progress bar
+            const progressTrack = document.createElement('div');
+            progressTrack.style.cssText = 'width:100%;height:3px;background:var(--vscode-input-border);border-radius:2px;overflow:hidden';
+            const progressFill = document.createElement('div');
+            progressFill.style.cssText = 'width:10%;height:100%;background:var(--vscode-progressBar-background);transition:width 0.5s ease;border-radius:2px';
+            progressTrack.appendChild(progressFill);
+            progressWrap.appendChild(progressTrack);
+
+            // Timeline log
+            const timeline = document.createElement('div');
+            timeline.style.cssText = 'display:flex;flex-direction:column;gap:6px;max-height:200px;overflow-y:auto;padding:10px;background:var(--vscode-editor-background);border:1px solid var(--vscode-input-border);border-radius:4px;font-family:var(--vscode-editor-font-family);font-size:11px';
+
+            const addLogEntry = (message: string, type: 'info' | 'success' | 'error' | 'warn' = 'info') => {
+                const entry = document.createElement('div');
+                entry.style.cssText = 'display:flex;gap:6px;align-items:flex-start';
+
+                const time = document.createElement('span');
+                time.textContent = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+                time.style.cssText = 'color:var(--vscode-descriptionForeground);flex-shrink:0;font-size:10px;min-width:60px';
+                entry.appendChild(time);
+
+                const msg = document.createElement('span');
+                msg.textContent = message;
+                const colors: Record<string, string> = {
+                    info: 'var(--vscode-foreground)',
+                    success: 'var(--vscode-testing-iconPassed)',
+                    error: 'var(--vscode-errorForeground)',
+                    warn: 'var(--vscode-editorWarning-foreground)',
+                };
+                msg.style.cssText = `color:${colors[type]};word-break:break-word`;
+                entry.appendChild(msg);
+
+                timeline.appendChild(entry);
+                timeline.scrollTop = timeline.scrollHeight;
+            };
+
+            addLogEntry('Deployment initiated');
+            progressWrap.appendChild(timeline);
+
+            // Connection info (shown when ready)
+            const connectionInfo = document.createElement('div');
+            connectionInfo.style.cssText = 'display:none';
+            progressWrap.appendChild(connectionInfo);
+
+            container.appendChild(progressWrap);
+
+            // Listen for progress events
+            const disposable = this.cloudDeploymentService.onDeploymentProgress((progress) => {
+                if (progress.deploymentId !== deploymentId) { return; }
+
+                addLogEntry(progress.message, progress.status === 'failed' ? 'error' : progress.status === 'running' ? 'success' : 'info');
+
+                if (progress.percentage !== undefined) {
+                    progressFill.style.width = `${progress.percentage}%`;
+                }
+
+                statusLabel.textContent = this._getStatusDisplayText(progress.status);
+
+                if (progress.status === 'running') {
+                    statusIcon.style.background = 'var(--vscode-testing-iconPassed)';
+                    statusIcon.style.animation = 'none';
+                    abortBtn.style.display = 'none';
+                    progressFill.style.width = '100%';
+                    progressFill.style.background = 'var(--vscode-testing-iconPassed)';
+
+                    const deployment = this.cloudDeploymentService.getDeployment(deploymentId);
+                    this._renderConnectionInfo(connectionInfo, deployment);
+                    disposable.dispose();
+                } else if (progress.status === 'failed') {
+                    statusIcon.style.background = 'var(--vscode-errorForeground)';
+                    statusIcon.style.animation = 'none';
+                    abortBtn.style.display = 'none';
+                    progressFill.style.background = 'var(--vscode-errorForeground)';
+
+                    const deployment = this.cloudDeploymentService.getDeployment(deploymentId);
+                    if (deployment?.error) {
+                        addLogEntry(deployment.error, 'error');
+                    }
+
+                    // Retry button
+                    const retryBtn = document.createElement('button');
+                    retryBtn.textContent = 'Retry Deployment';
+                    retryBtn.style.cssText = 'margin-top:8px;padding:6px 14px;background:var(--vscode-button-background);color:var(--vscode-button-foreground);border:none;cursor:pointer;font-size:11px;font-weight:600;border-radius:3px';
+                    retryBtn.addEventListener('click', () => {
+                        this._showCloudDeployWizard(detailPane, model);
+                    });
+                    progressWrap.appendChild(retryBtn);
+                    disposable.dispose();
+                }
+            });
+        };
+
+        // Initial render
+        renderCredentialCheck();
+        detailPane.appendChild(wizard);
+    }
+
+    private _renderExistingDeployment(container: HTMLElement, deployment: ICloudDeployment, detailPane: HTMLElement): void {
+        const section = document.createElement('div');
+        section.style.cssText = 'flex:1;display:flex;flex-direction:column;gap:14px';
+
+        // Status badge
+        const statusRow = document.createElement('div');
+        statusRow.style.cssText = 'display:flex;align-items:center;gap:8px';
+
+        const statusDot = document.createElement('div');
+        const dotColor = deployment.status === 'running' ? 'var(--vscode-testing-iconPassed)' :
+            deployment.status === 'failed' ? 'var(--vscode-errorForeground)' :
+            deployment.status === 'stopped' ? 'var(--vscode-descriptionForeground)' : 'var(--vscode-progressBar-background)';
+        statusDot.style.cssText = `width:8px;height:8px;border-radius:50%;background:${dotColor}`;
+        statusRow.appendChild(statusDot);
+
+        const statusText = document.createElement('div');
+        statusText.textContent = `Active Deployment — ${this._getStatusDisplayText(deployment.status)}`;
+        statusText.style.cssText = 'font-size:12px;font-weight:600;color:var(--vscode-foreground)';
+        statusRow.appendChild(statusText);
+        section.appendChild(statusRow);
+
+        // Details table
+        const details = document.createElement('div');
+        details.style.cssText = 'padding:12px;background:var(--vscode-editor-inactiveSelectionBackground);border-radius:4px;display:flex;flex-direction:column;gap:6px;font-size:11px';
+
+        const addDetailRow = (label: string, value: string) => {
+            const row = document.createElement('div');
+            row.style.cssText = 'display:flex;justify-content:space-between;align-items:center';
+            const l = document.createElement('span');
+            l.textContent = label;
+            l.style.color = 'var(--vscode-descriptionForeground)';
+            row.appendChild(l);
+            const v = document.createElement('span');
+            v.textContent = value;
+            v.style.cssText = 'color:var(--vscode-foreground);font-family:var(--vscode-editor-font-family)';
+            row.appendChild(v);
+            details.appendChild(row);
+        };
+
+        addDetailRow('Provider', deployment.provider.toUpperCase());
+        addDetailRow('Instance', deployment.config.instanceType);
+        addDetailRow('GPU', `${deployment.config.gpuType} (${deployment.config.gpuMemoryGB} GB)`);
+        addDetailRow('Region', deployment.config.region);
+        if (deployment.endpoint) { addDetailRow('Endpoint', deployment.endpoint); }
+        if (deployment.publicIp) { addDetailRow('IP', deployment.publicIp); }
+        addDetailRow('Cost', `$${deployment.config.estimatedCostPerHour.toFixed(2)}/hr`);
+        addDetailRow('Created', new Date(deployment.createdAt).toLocaleString());
+        if (deployment.error) { addDetailRow('Error', deployment.error); }
+
+        section.appendChild(details);
+
+        // Connection info
+        if (deployment.status === 'running' && deployment.endpoint) {
+            const connInfo = document.createElement('div');
+            connInfo.style.display = 'block';
+            this._renderConnectionInfo(connInfo, deployment);
+            section.appendChild(connInfo);
+        }
+
+        // Action buttons
+        const actions = document.createElement('div');
+        actions.style.cssText = 'display:flex;gap:8px;flex-wrap:wrap';
+
+        if (deployment.status === 'running') {
+            const stopBtn = this._createActionButton('Stop Instance', 'var(--vscode-editorWarning-foreground)', async () => {
+                await this.cloudDeploymentService.stop(deployment.id);
+                this._showCloudDeployWizard(detailPane, { id: deployment.modelId, name: deployment.modelName, size: 0 });
+            });
+            actions.appendChild(stopBtn);
+        }
+
+        if (deployment.status === 'stopped') {
+            const startBtn = this._createActionButton('Start Instance', 'var(--vscode-testing-iconPassed)', async () => {
+                await this.cloudDeploymentService.start(deployment.id);
+                this._showCloudDeployWizard(detailPane, { id: deployment.modelId, name: deployment.modelName, size: 0 });
+            });
+            actions.appendChild(startBtn);
+        }
+
+        const teardownBtn = this._createActionButton('Terminate & Delete', 'var(--vscode-errorForeground)', async () => {
+            await this.cloudDeploymentService.teardown(deployment.id);
+            this._showCloudDeployWizard(detailPane, { id: deployment.modelId, name: deployment.modelName, size: 0 });
+        });
+        actions.appendChild(teardownBtn);
+
+        const newDeployBtn = this._createActionButton('New Deployment', 'var(--vscode-foreground)', () => {
+            this._showCloudDeployWizard(detailPane, { id: deployment.modelId, name: deployment.modelName, size: 0 });
+        });
+        actions.appendChild(newDeployBtn);
+
+        section.appendChild(actions);
+        container.appendChild(section);
+    }
+
+    private _renderConnectionInfo(container: HTMLElement, deployment: ICloudDeployment | undefined): void {
+        if (!deployment) { return; }
+        container.style.cssText = 'display:block;padding:14px;border:1px solid var(--vscode-testing-iconPassed);border-radius:4px;background:var(--vscode-editor-inactiveSelectionBackground)';
+        container.replaceChildren();
+
+        const title = document.createElement('div');
+        title.textContent = 'CONNECTION DETAILS';
+        title.style.cssText = 'font-size:10px;font-weight:700;letter-spacing:0.8px;color:var(--vscode-testing-iconPassed);margin-bottom:10px';
+        container.appendChild(title);
+
+        const endpoint = deployment.endpoint || `http://${deployment.publicIp}:8000/v1`;
+
+        const codeBlock = document.createElement('div');
+        codeBlock.style.cssText = 'padding:8px 10px;background:var(--vscode-editor-background);border-radius:3px;font-family:var(--vscode-editor-font-family);font-size:11px;color:var(--vscode-foreground);margin-bottom:10px;word-break:break-all';
+        codeBlock.textContent = endpoint;
+        container.appendChild(codeBlock);
+
+        const btnRow = document.createElement('div');
+        btnRow.style.cssText = 'display:flex;gap:8px;flex-wrap:wrap';
+
+        const connectBtn = document.createElement('button');
+        connectBtn.textContent = 'Connect to IDE';
+        connectBtn.style.cssText = 'padding:5px 12px;background:var(--vscode-button-background);color:var(--vscode-button-foreground);border:none;cursor:pointer;font-size:11px;font-weight:600;border-radius:3px';
+        connectBtn.addEventListener('click', () => {
+            this.voidSettingsService.setSettingOfProvider('vLLM', 'endpoint', endpoint);
+            connectBtn.textContent = '✓ Connected';
+            connectBtn.disabled = true;
+            connectBtn.style.opacity = '0.7';
+        });
+        btnRow.appendChild(connectBtn);
+
+        const copyBtn = document.createElement('button');
+        copyBtn.textContent = 'Copy Endpoint';
+        copyBtn.style.cssText = 'padding:5px 12px;background:transparent;color:var(--vscode-foreground);border:1px solid var(--vscode-input-border);cursor:pointer;font-size:11px;border-radius:3px';
+        copyBtn.addEventListener('click', () => {
+            navigator.clipboard.writeText(endpoint);
+            copyBtn.textContent = '✓ Copied';
+            setTimeout(() => { copyBtn.textContent = 'Copy Endpoint'; }, 2000);
+        });
+        btnRow.appendChild(copyBtn);
+
+        container.appendChild(btnRow);
+    }
+
+    private _createActionButton(text: string, color: string, onClick: () => void): HTMLButtonElement {
+        const btn = document.createElement('button');
+        btn.textContent = text;
+        btn.style.cssText = `padding:5px 12px;background:transparent;color:${color};border:1px solid ${color};cursor:pointer;font-size:10px;border-radius:3px;transition:opacity 0.1s`;
+        btn.addEventListener('mouseenter', () => { btn.style.opacity = '0.7'; });
+        btn.addEventListener('mouseleave', () => { btn.style.opacity = '1'; });
+        btn.addEventListener('click', async () => {
+            btn.disabled = true;
+            btn.style.opacity = '0.5';
+            btn.textContent = '...';
+            try { await onClick(); } catch { btn.textContent = text; btn.disabled = false; btn.style.opacity = '1'; }
+        });
+        return btn;
+    }
+
+    private _createCostLabel(text: string): HTMLElement {
+        const el = document.createElement('div');
+        el.textContent = text;
+        el.style.cssText = 'font-size:9px;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;color:var(--vscode-descriptionForeground);margin-bottom:2px';
+        return el;
+    }
+
+    private _createCostValue(text: string): HTMLElement {
+        const el = document.createElement('div');
+        el.textContent = text;
+        el.style.cssText = 'font-size:14px;font-weight:700;color:var(--vscode-foreground)';
+        return el;
+    }
+
+    private _getStatusDisplayText(status: CloudDeploymentStatus): string {
+        const map: Record<CloudDeploymentStatus, string> = {
+            'pending': 'Pending',
+            'provisioning': 'Provisioning Instance...',
+            'deploying-vllm': 'Installing vLLM...',
+            'loading-model': 'Loading Model...',
+            'running': 'Running',
+            'stopping': 'Stopping...',
+            'stopped': 'Stopped',
+            'terminating': 'Terminating...',
+            'terminated': 'Terminated',
+            'failed': 'Failed',
+        };
+        return map[status] || status;
     }
 
     override dispose(): void {

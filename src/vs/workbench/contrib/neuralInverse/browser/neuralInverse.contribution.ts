@@ -14,6 +14,7 @@ import { IStorageService, StorageScope } from '../../../../platform/storage/comm
 import { IWorkbenchContribution, IWorkbenchContributionsRegistry, Extensions as WorkbenchExtensions } from '../../../common/contributions.js';
 import { IAuxiliaryWindowService } from '../../../services/auxiliaryWindow/browser/auxiliaryWindowService.js';
 import { IHostService } from '../../../services/host/browser/host.js';
+import { NeuralInverseWalkthroughService } from './neuralInverseWalkthroughService.js';
 import { AgentManagerPart } from './agentManagerPart.js';
 import { Registry } from '../../../../platform/registry/common/platform.js';
 import { LifecyclePhase } from '../../../services/lifecycle/common/lifecycle.js';
@@ -24,17 +25,28 @@ import './fim/neuralInverseFIMService.js';
 import './context/input/astContextService.js';
 import './context/graph/dependencyGraph.js';
 import '../common/modelManagement/serviceImpl.js';
+import { registerSingleton, InstantiationType } from '../../../../platform/instantiation/common/extensions.js';
+import { IModelMarketplaceService, ModelMarketplaceService } from './modelManagement/marketplaceService.js';
+import { ICloudCredentialService, CloudCredentialService } from './modelManagement/cloudCredentialService.js';
+import { ICloudDeploymentService, CloudDeploymentService } from './modelManagement/cloudDeploymentService.js';
+
+registerSingleton(IModelMarketplaceService, ModelMarketplaceService, InstantiationType.Delayed);
+registerSingleton(ICloudCredentialService, CloudCredentialService, InstantiationType.Delayed);
+registerSingleton(ICloudDeploymentService, CloudDeploymentService, InstantiationType.Delayed);
+
+// Deployment Registry & Auto Config
+import './modelManagement/deployment/index.js';
 
 // External contributions
 import '../../powerMode/browser/powerMode.contribution.js';
 
 // Model Management - Auto Setup
 import { registerWorkbenchContribution2, WorkbenchPhase } from '../../../common/contributions.js';
-import { OllamaAutoSetupContribution } from './modelManagement/ollamaAutoSetup.js';
+import { LocalProvidersAutoSetupContribution } from './modelManagement/localProvidersAutoSetup.js';
 
 registerWorkbenchContribution2(
-	OllamaAutoSetupContribution.ID,
-	OllamaAutoSetupContribution,
+	LocalProvidersAutoSetupContribution.ID,
+	LocalProvidersAutoSetupContribution,
 	WorkbenchPhase.Eventually // Run after IDE fully loaded
 );
 
@@ -157,3 +169,22 @@ registerAction2(class OpenAgentManagerAction extends Action2 {
 });
 
 Registry.as<IWorkbenchContributionsRegistry>(WorkbenchExtensions.Workbench).registerWorkbenchContribution(AgentManagerContribution, LifecyclePhase.Restored);
+
+let _walkthroughService: NeuralInverseWalkthroughService | undefined;
+
+registerAction2(class OpenNeuralInverseWalkthroughAction extends Action2 {
+	constructor() {
+		super({
+			id: 'neuralInverse.openWalkthrough',
+			title: localize2('neuralInverse.openWalkthrough', 'Neural Inverse: Get Started'),
+			f1: true,
+		});
+	}
+
+	run(accessor: ServicesAccessor): void {
+		if (!_walkthroughService) {
+			_walkthroughService = accessor.get(IInstantiationService).createInstance(NeuralInverseWalkthroughService);
+		}
+		_walkthroughService.open();
+	}
+});
