@@ -1,11 +1,10 @@
-# NeuralInverse Community Edition
+# Neural Inverse OSS
 
 <div align="center">
 	<img
-		src="./src/vs/workbench/browser/parts/editor/media/neuralinverse_logo.png"
-		alt="NeuralInverse"
-		width="300"
-		height="300"
+		src="./src/vs/workbench/browser/parts/editor/media/neuralinverse_preview.png"
+		alt="Neural Inverse"
+		width="720"
 	/>
 </div>
 
