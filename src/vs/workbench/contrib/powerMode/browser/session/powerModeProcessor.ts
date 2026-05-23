@@ -31,6 +31,8 @@ import {
 	ToolPermissionDecision,
 } from '../../common/powerModeTypes.js';
 import { PowerToolRegistry } from '../tools/powerToolRegistry.js';
+import { ICompactionService } from './compaction/compactionService.js';
+import { ISummarizationLLM } from './compaction/conversationSummarizer.js';
 
 /** Tools that require user approval before execution */
 const TOOLS_REQUIRING_APPROVAL = new Set(['bash', 'write', 'edit']);
@@ -47,6 +49,8 @@ export interface IProcessorCallbacks {
 	onTextDelta(partId: string, delta: string): void;
 	/** Called to send a message to the LLM and get a streaming response */
 	sendToLLM(request: ILLMRequest): Promise<ILLMStreamResponse>;
+	/** Called when compaction occurs (for UI notification) */
+	onCompaction?(tokensBefore: number, tokensAfter: number, stepsCompacted: number): void;
 	/**
 	 * Called before executing a tool that requires approval.
 	 * Returns 'allow', 'allow-all' (skip future asks this session), or 'deny' (cancel).
@@ -104,8 +108,10 @@ export async function runAgentLoop(input: {
 	abort: AbortSignal;
 	workingDirectory: string;
 	systemPrompt: string;
+	compactionService?: ICompactionService;
+	summarizationLLM?: ISummarizationLLM;
 }): Promise<'done' | 'error' | 'cancelled'> {
-	const { agent, assistantMessage, sessionMessages, toolRegistry, callbacks, abort, systemPrompt } = input;
+	const { agent, assistantMessage, sessionMessages, toolRegistry, callbacks, abort, systemPrompt, compactionService, summarizationLLM } = input;
 	const maxSteps = agent.maxSteps ?? MAX_STEPS_DEFAULT;
 	let step = 0;
 	let idCounter = 0;
@@ -121,7 +127,7 @@ export async function runAgentLoop(input: {
 	// Build conversation history for the LLM
 	const buildMessages = (): ILLMMessage[] => {
 		const msgs: ILLMMessage[] = [];
-		for (const msg of sessionMessages) {
+		for (const msg of effectiveSessionMessages) {
 			if (msg.role === 'user') {
 				const text = msg.parts
 					.filter((p): p is ITextPart => p.type === 'text')
@@ -165,12 +171,36 @@ export async function runAgentLoop(input: {
 		return msgs;
 	};
 
+	// ─── Compaction state ────────────────────────────────────────────────
+	let effectiveSessionMessages = sessionMessages;
+
 	// ─── Main Loop ───────────────────────────────────────────────────────
 
 	while (step < maxSteps) {
 		if (abort.aborted) { return 'cancelled'; }
 
 		step++;
+
+		// ── Pre-step compaction check ────────────────────────────────
+		if (compactionService && step > 1) {
+			if (compactionService.shouldCompact(systemPrompt, effectiveSessionMessages)) {
+				try {
+					const result = await compactionService.compact(
+						systemPrompt,
+						effectiveSessionMessages,
+						summarizationLLM ?? null,
+					);
+					if (result.success && result.stepsCompacted > 0) {
+						effectiveSessionMessages = compactionService.getCompactedMessages(
+							systemPrompt, effectiveSessionMessages
+						);
+						callbacks.onCompaction?.(result.tokensBefore, result.tokensAfter, result.stepsCompacted);
+					}
+				} catch {
+					// Compaction failure is non-fatal — continue with full history
+				}
+			}
+		}
 
 		// Emit step-start
 		const stepStartPart: IStepStartPart = { type: 'step-start', id: nextId() };

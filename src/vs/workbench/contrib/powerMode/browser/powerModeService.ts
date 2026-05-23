@@ -73,6 +73,8 @@ import {
 import { IPowerBusService } from './powerBusService.js';
 import type { IRegisteredAgent, IAgentBusMessage } from '../common/powerBusTypes.js';
 import { PowerModeChangeTracker, IPowerModeChangeTracker, IChangeGroup } from './powerModeChangeTracker.js';
+import { CompactionService, ICompactionService } from './session/compaction/compactionService.js';
+import { ISummarizationLLM } from './session/compaction/conversationSummarizer.js';
 
 // ─── Service Interface ────────────────────────────────────────────────────────
 
@@ -211,6 +213,9 @@ export class PowerModeService extends Disposable implements IPowerModeService {
 	/** Change tracker (for review/rollback) */
 	private readonly _changeTracker: PowerModeChangeTracker;
 
+	/** Session compaction service */
+	private readonly _compactionService: CompactionService;
+
 	/** Tool registries per working directory */
 	private readonly _toolRegistries = new Map<string, PowerToolRegistry>();
 
@@ -280,6 +285,7 @@ export class PowerModeService extends Disposable implements IPowerModeService {
 		this._llmBridge = new PowerModeLLMBridge(llmMessageService, voidSettingsService);
 		this._contextBuilder = new PowerModeContextBuilder(fileService);
 		this._changeTracker = this._register(new PowerModeChangeTracker(fileService));
+		this._compactionService = this._register(new CompactionService());
 
 		// ── PowerBus: register Power Mode as the central agent ──────────
 		this.powerBusService.register('power-mode', ['receive:all', 'send:query', 'broadcast'], 'Power Mode');
@@ -643,7 +649,7 @@ export class PowerModeService extends Disposable implements IPowerModeService {
 				},
 			};
 
-			// Run the agent loop (tools registered separately — currently empty registry)
+			// Run the agent loop with compaction support
 			const result = await runAgentLoop({
 				agent,
 				assistantMessage: assistantMsg,
@@ -653,6 +659,8 @@ export class PowerModeService extends Disposable implements IPowerModeService {
 				abort: abortController.signal,
 				workingDirectory: session.directory,
 				systemPrompt,
+				compactionService: this._compactionService,
+				summarizationLLM: this._buildSummarizationLLM(),
 			});
 
 			session.status = result === 'error' ? 'error' : 'idle';
@@ -763,6 +771,33 @@ export class PowerModeService extends Disposable implements IPowerModeService {
 
 	setModel(selection: ModelSelection): void {
 		this._powerModeModelSelection = selection;
+	}
+
+	private _buildSummarizationLLM(): ISummarizationLLM | undefined {
+		const modelSelection = this.getModelSelection();
+		if (!modelSelection) { return undefined; }
+
+		const llmBridge = this._llmBridge;
+		return {
+			summarize: (prompt: string, maxOutputTokens: number): Promise<string> => {
+				return new Promise((resolve, reject) => {
+					const request = {
+						systemPrompt: 'You are a conversation summarizer. Produce structured summaries in the XML format requested.',
+						messages: [{ role: 'user' as const, content: prompt }],
+						tools: {},
+					};
+					llmBridge.sendToLLM(request, modelSelection).then(async response => {
+						let text = '';
+						for await (const event of response.stream) {
+							if (event.type === 'text-delta') { text += event.text; }
+							else if (event.type === 'text-done') { text = event.text; }
+							else if (event.type === 'error') { reject(event.error); return; }
+						}
+						resolve(text);
+					}).catch(reject);
+				});
+			},
+		};
 	}
 
 	clearSession(sessionId: string): void {
