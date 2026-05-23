@@ -22,12 +22,12 @@ NeuralInverse CE is a free, open-source AI-native IDE built for the work most AI
 
 **macOS / Linux**
 ```bash
-curl -fsSL neuralinverse.com/sh | bash
+curl -fsSL https://neuralinverse.com/sh | bash
 ```
 
 **Windows** (PowerShell)
 ```powershell
-irm neuralinverse.com/win | iex
+irm https://neuralinverse.com/win | iex
 ```
 
 
