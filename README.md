@@ -33,10 +33,26 @@ irm https://neuralinverse.com/win | iex
 
 ## Features
 
-### AI Chat & Agentic Coding
-- Inline and sidebar chat with full codebase context
-- **Power Mode**: autonomous multi-step agent that plans, edits, runs commands, and iterates without hand-holding
-- **Bring Your Own LLM**: direct integration with Claude, GPT-4, Gemini, Ollama, Bedrock, and more - your API keys stay local, no proxy
+### AI Chat & Inline Edit
+- **Sidebar chat** (Ctrl+L): multi-mode conversation with full codebase context (Ask, Reasoning, Agent, Gather, Copilot modes)
+- **Inline edit** (Ctrl+K): select code, describe what you want, get an inline diff in real-time
+- **Autocomplete** (Tab): AI-powered fill-in-middle and multi-line suggestions with LRU caching
+- **Fast Apply**: LLM changes stream directly into your editor as red/green diffs — accept or reject inline
+- **Commit messages**: auto-generated from staged diffs via Source Control panel
+
+### Power Mode (Cmd+Alt+P)
+Autonomous coding agent in its own window:
+- Plans, edits files, runs terminal commands, and iterates until done
+- 22+ built-in tools (filesystem, search, sub-agents, knowledge base)
+- Spawns concurrent sub-agents (explorer, editor, verifier roles)
+- Configurable via `.neuralinverseagent` workspace file (auto-approval, iteration limits, command blocking)
+
+### Bring Your Own LLM
+17 providers, zero lock-in. Your API keys never leave your machine.
+- **Cloud**: Anthropic, OpenAI, DeepSeek, Gemini, Groq, xAI, Mistral, OpenRouter, AWS Bedrock, Azure OpenAI, Google Vertex
+- **Local**: Ollama, vLLM, LM Studio (auto-detected on localhost)
+- **Gateway**: LiteLLM, OpenAI-Compatible
+- **Per-feature model selection**: use a fast local model for autocomplete, a powerful cloud model for chat — no compromise
 
 ### Firmware & Embedded Development
 Purpose-built for embedded engineers - not just syntax highlighting:
@@ -93,10 +109,6 @@ Persistent store surviving IDE restarts - every translation decision, type mappi
 **Autonomy Engine**
 Optional autonomous execution: auto-approval policies, concurrent sub-task scheduling, batch progress events, configurable iteration limits and command blocklists via `.neuralinverseagent` config.
 
-### Multi-model
-Switch models per task - use a fast model for chat, a powerful one for agentic runs.
-
-
 ## What is not in CE
 
 The following features are available in [NeuralInverse Enterprise](https://neuralinverse.com):
@@ -113,23 +125,28 @@ NeuralInverse CE is built on top of [VS Code](https://github.com/microsoft/vscod
 
 ## Architecture
 
-NeuralInverse CE is built on [VS Code](https://github.com/microsoft/vscode).
+Built on [VS Code](https://github.com/microsoft/vscode). All Neural Inverse code lives under `src/vs/workbench/contrib/`:
 
-Key modules:
-- `src/vs/workbench/contrib/void/` - AI agent and chat infrastructure
-- `src/vs/workbench/contrib/powerMode/` - Power Mode agentic workflows
-- `src/vs/workbench/contrib/neuralInverseModernisation/` - Legacy code modernization platform
-- `src/vs/workbench/contrib/neuralInverseFirmware/` - Firmware datasheet knowledge base
+| Module | Path | Shortcut |
+|--------|------|----------|
+| AI Chat & Core | `contrib/void/` | Ctrl+L, Ctrl+K |
+| Power Mode | `contrib/powerMode/` | Cmd+Alt+P |
+| Agent Manager | `contrib/neuralInverse/` | Cmd+Alt+A |
+| Firmware & Embedded | `contrib/neuralInverseFirmware/` | Cmd+Alt+F |
+| Legacy Modernisation | `contrib/neuralInverseModernisation/` | Cmd+Alt+M |
 
 
 ## Building from source
 
 ```bash
 npm install
-npm run compile
+npm run watch          # Terminal 1: watch TypeScript
+npm run watchreact     # Terminal 2: watch React UI
+./scripts/code.sh      # Terminal 3: launch dev instance (macOS/Linux)
+.\scripts\code.bat     # Terminal 3: launch dev instance (Windows)
 ```
 
-See [HOW_TO_CONTRIBUTE.md](./HOW_TO_CONTRIBUTE.md) for full setup instructions including platform prerequisites and developer mode.
+See [HOW_TO_CONTRIBUTE.md](./HOW_TO_CONTRIBUTE.md) for full setup instructions.
 
 
 ## License
