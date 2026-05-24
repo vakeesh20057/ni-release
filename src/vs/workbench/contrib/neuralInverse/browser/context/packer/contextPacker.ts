@@ -9,8 +9,8 @@ import { createDecorator } from '../../../../../../platform/instantiation/common
 import { registerSingleton, InstantiationType } from '../../../../../../platform/instantiation/common/extensions.js';
 import { IFileService } from '../../../../../../platform/files/common/files.js';
 import { IModelService } from '../../../../../../editor/common/services/model.js';
-import { IRelevanceScorerService, IRelevanceQuery, IScoredItem } from '../relevance/relevanceScorer.js';
-import { IWorkspaceSymbolIndexService, IIndexedSymbol } from '../index/workspaceSymbolIndex.js';
+import { IRelevanceScorerService, IRelevanceQuery } from '../relevance/relevanceScorer.js';
+import { IWorkspaceSymbolIndexService } from '../index/workspaceSymbolIndex.js';
 import { IChangeTrackerService } from '../tracker/changeTracker.js';
 
 export const IContextPackerService = createDecorator<IContextPackerService>('neuralInverseContextPacker');
@@ -344,7 +344,7 @@ class ContextPackerService extends Disposable implements IContextPackerService {
 			if (startLine >= lines.length) continue;
 
 			// For classes/interfaces: include full definition up to reasonable limit
-			if (sym.kind === 4 /* Class */ || sym.kind === 10 /* Interface */ || sym.kind === 4 /* Enum */) {
+			if (sym.kind === 4 /* Class */ || sym.kind === 10 /* Interface */ || sym.kind === 9 /* Enum */) {
 				const blockEnd = this._findBlockEnd(lines, startLine);
 				const blockLines = lines.slice(startLine, Math.min(blockEnd, startLine + 50));
 				const blockTokens = this.estimateTokens(blockLines.join('\n'));

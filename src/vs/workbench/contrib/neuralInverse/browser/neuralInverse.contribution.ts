@@ -25,6 +25,7 @@ import './fim/neuralInverseFIMService.js';
 import './context/input/astContextService.js';
 import './context/graph/dependencyGraph.js';
 import './context/contextModule.js';
+import './composer/composerModule.js';
 import '../common/modelManagement/serviceImpl.js';
 import { registerSingleton, InstantiationType } from '../../../../platform/instantiation/common/extensions.js';
 import { IModelMarketplaceService, ModelMarketplaceService } from './modelManagement/marketplaceService.js';

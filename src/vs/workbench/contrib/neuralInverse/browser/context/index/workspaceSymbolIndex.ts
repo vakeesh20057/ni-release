@@ -11,7 +11,7 @@ import { Limiter } from '../../../../../../base/common/async.js';
 import { RunOnceScheduler } from '../../../../../../base/common/async.js';
 import { createDecorator } from '../../../../../../platform/instantiation/common/instantiation.js';
 import { registerSingleton, InstantiationType } from '../../../../../../platform/instantiation/common/extensions.js';
-import { IFileService, FileChangeType } from '../../../../../../platform/files/common/files.js';
+import { IFileService } from '../../../../../../platform/files/common/files.js';
 import { IWorkspaceContextService } from '../../../../../../platform/workspace/common/workspace.js';
 import { IModelService } from '../../../../../../editor/common/services/model.js';
 import { ITreeSitterParserService } from '../../../../../../editor/common/services/treeSitterParserService.js';
@@ -116,15 +116,16 @@ class WorkspaceSymbolIndexService extends Disposable implements IWorkspaceSymbol
 		));
 
 		this._register(this._fileService.onDidFilesChange(e => {
-			for (const change of e.rawChanges ?? []) {
-				const uri = change.resource.toString();
-				const ext = this._extname(change.resource.path);
-				if (!SOURCE_EXTENSIONS.has(ext)) continue;
-
-				if (change.type === FileChangeType.DELETED) {
-					this._removeFile(uri);
-				} else {
-					this._pendingFileChanges.add(uri);
+			for (const resource of e.rawDeleted) {
+				const ext = this._extname(resource.path);
+				if (SOURCE_EXTENSIONS.has(ext)) {
+					this._removeFile(resource.toString());
+				}
+			}
+			for (const resource of [...e.rawAdded, ...e.rawUpdated]) {
+				const ext = this._extname(resource.path);
+				if (SOURCE_EXTENSIONS.has(ext)) {
+					this._pendingFileChanges.add(resource.toString());
 				}
 			}
 			if (this._pendingFileChanges.size > 0 && !this._fileChangeDebouncer.isScheduled()) {

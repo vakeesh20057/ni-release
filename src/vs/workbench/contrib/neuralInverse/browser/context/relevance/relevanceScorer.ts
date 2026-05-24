@@ -3,11 +3,9 @@
  *  Licensed under the Apache License, Version 2.0.
  *--------------------------------------------------------------------------------------------*/
 
-import { Disposable, IDisposable } from '../../../../../../base/common/lifecycle.js';
-import { Emitter, Event } from '../../../../../../base/common/event.js';
+import { Disposable } from '../../../../../../base/common/lifecycle.js';
 import { createDecorator } from '../../../../../../platform/instantiation/common/instantiation.js';
 import { registerSingleton, InstantiationType } from '../../../../../../platform/instantiation/common/extensions.js';
-import { IModelService } from '../../../../../../editor/common/services/model.js';
 import { IEditorService } from '../../../../../services/editor/common/editorService.js';
 import { IWorkspaceSymbolIndexService, IIndexedSymbol } from '../index/workspaceSymbolIndex.js';
 import { IChangeTrackerService } from '../tracker/changeTracker.js';
@@ -75,7 +73,6 @@ class RelevanceScorerService extends Disposable implements IRelevanceScorerServi
 	private readonly _openFileUris = new Set<string>();
 
 	constructor(
-		@IModelService private readonly _modelService: IModelService,
 		@IEditorService private readonly _editorService: IEditorService,
 		@IWorkspaceSymbolIndexService private readonly _symbolIndex: IWorkspaceSymbolIndexService,
 		@IChangeTrackerService private readonly _changeTracker: IChangeTrackerService,
