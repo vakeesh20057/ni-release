@@ -4,7 +4,7 @@
  *--------------------------------------------------------------------------------------------*/
 
 import { ICompactionSummary, IStepSummary } from '../../../common/compactionTypes.js';
-import { IPowerMessage, IPowerMessagePart, ITextPart, IToolCallPart, IReasoningPart, IStepStartPart, IStepFinishPart } from '../../../common/powerModeTypes.js';
+import { IPowerMessage, ITextPart, IToolCallPart } from '../../../common/powerModeTypes.js';
 import { generateUuid } from '../../../../../../base/common/uuid.js';
 
 /**
@@ -92,7 +92,7 @@ export class ConversationSummarizer {
 		}
 
 		// Phase 3: Build final summary object
-		const summary: ICompactionSummary = {
+		const partialSummary = {
 			id: generateUuid(),
 			createdAt: Date.now(),
 			compactedStepRange: options.stepRange,
@@ -107,8 +107,12 @@ export class ConversationSummarizer {
 		};
 
 		// Phase 4: Render the summary text
-		summary.renderedSummary = this.renderSummary(summary, options.existingSummaries);
-		summary.tokenCount = this._estimateTokens(summary.renderedSummary);
+		const rendered = this.renderSummary(partialSummary as ICompactionSummary, options.existingSummaries);
+		const summary: ICompactionSummary = {
+			...partialSummary,
+			renderedSummary: rendered,
+			tokenCount: this._estimateTokens(rendered),
+		};
 
 		return summary;
 	}

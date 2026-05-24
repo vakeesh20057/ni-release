@@ -16,13 +16,11 @@ import {
 } from '../../../common/compactionTypes.js';
 import {
 	IPowerMessage,
-	IPowerMessagePart,
 	ITextPart,
 	IToolCallPart,
-	IReasoningPart,
 } from '../../../common/powerModeTypes.js';
 import { TokenEstimator } from './tokenEstimator.js';
-import { CompactionStrategy, IStepGroup } from './compactionStrategy.js';
+import { CompactionStrategy } from './compactionStrategy.js';
 import { ConversationSummarizer, ISummarizationLLM } from './conversationSummarizer.js';
 
 // ─── Service Interface ───────────────────────────────────────────────────────
@@ -94,7 +92,7 @@ export class CompactionService extends Disposable implements ICompactionService 
 	// ─── Profiling ───────────────────────────────────────────────────────────
 
 	profileSession(systemPrompt: string, messages: IPowerMessage[]): ISessionTokenProfile {
-		return this._estimator.profileSession(systemPrompt, messages, this._config);
+		return this._estimator.profileSession(messages, systemPrompt, this._config);
 	}
 
 	shouldCompact(systemPrompt: string, messages: IPowerMessage[]): boolean {
@@ -138,13 +136,13 @@ export class CompactionService extends Disposable implements ICompactionService 
 
 			if (plan.level === 1) {
 				currentMessages = this._applyLevel1(currentMessages, preservedIds);
-				currentTokens = this._estimator.profileSession(systemPrompt, currentMessages, this._config).totalTokens;
+				currentTokens = this._estimator.profileSession(currentMessages, systemPrompt, this._config).totalTokens;
 			} else if (plan.level === 2) {
 				currentMessages = this._applyLevel2(currentMessages, preservedIds);
-				currentTokens = this._estimator.profileSession(systemPrompt, currentMessages, this._config).totalTokens;
+				currentTokens = this._estimator.profileSession(currentMessages, systemPrompt, this._config).totalTokens;
 			} else if (plan.level === 3) {
 				currentMessages = this._applyLevel3(currentMessages, preservedIds);
-				currentTokens = this._estimator.profileSession(systemPrompt, currentMessages, this._config).totalTokens;
+				currentTokens = this._estimator.profileSession(currentMessages, systemPrompt, this._config).totalTokens;
 			} else if (plan.level === 4) {
 				this._setPhase('summarizing');
 
@@ -153,7 +151,7 @@ export class CompactionService extends Disposable implements ICompactionService 
 				} else {
 					currentMessages = await this._applyLevel4LLM(currentMessages, preservedIds, systemPrompt, llm);
 				}
-				currentTokens = this._estimator.profileSession(systemPrompt, currentMessages, this._config).totalTokens;
+				currentTokens = this._estimator.profileSession(currentMessages, systemPrompt, this._config).totalTokens;
 			}
 		}
 

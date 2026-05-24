@@ -3,7 +3,7 @@
  *  Licensed under the Apache License, Version 2.0.
  *--------------------------------------------------------------------------------------------*/
 
-import { ICompactionConfig, ICompactionPlan, ISessionTokenProfile, IMessageTokenProfile, CompactionLevel } from '../../../common/compactionTypes.js';
+import { ICompactionConfig, ICompactionPlan, ISessionTokenProfile } from '../../../common/compactionTypes.js';
 import { IPowerMessage, IPowerMessagePart } from '../../../common/powerModeTypes.js';
 
 export interface IStepGroup {
@@ -87,7 +87,7 @@ export class CompactionStrategy {
 		}
 
 		for (const msg of messages) {
-			if (msg.error && !msg.error.resolved) {
+			if (msg.error && !msg.error.retryable) {
 				preserved.add(msg.id);
 			}
 		}
@@ -332,8 +332,8 @@ export class CompactionStrategy {
 
 		for (const msg of recentMessages) {
 			for (const part of msg.parts) {
-				if (part.type === 'tool-call') {
-					const args = (part as any).args;
+				if (part.type === 'tool') {
+					const args = (part as any).state?.input;
 					if (args && typeof args === 'object') {
 						if (args.file_path) {
 							paths.add(args.file_path);
@@ -397,7 +397,7 @@ export class CompactionStrategy {
 				continue;
 			}
 
-			const toolCalls = msg.parts.filter(p => p.type === 'tool-call');
+			const toolCalls = msg.parts.filter(p => p.type === 'tool');
 			if (toolCalls.length === 0) {
 				if (currentReadSequence && currentReadSequence.messageIds.length >= 3) {
 					sequences.push({
@@ -410,10 +410,10 @@ export class CompactionStrategy {
 			}
 
 			for (const toolCall of toolCalls) {
-				const name = (toolCall as any).name ?? '';
-				const args = (toolCall as any).args ?? {};
+				const name = (toolCall as any).toolName ?? '';
+				const args = (toolCall as any).state?.input ?? {};
 
-				if (name === 'Read' || name === 'Bash' && (args.command?.startsWith('ls') || args.command?.startsWith('find'))) {
+				if (name === 'read' || name === 'bash' && (args.command?.startsWith('ls') || args.command?.startsWith('find'))) {
 					const dir = this._extractDirectory(args);
 					if (dir) {
 						if (currentReadSequence && currentReadSequence.dir === dir) {
@@ -430,11 +430,11 @@ export class CompactionStrategy {
 					}
 				}
 
-				if (name === 'Grep' || name === 'Bash' && args.command?.includes('grep')) {
+				if (name === 'grep' || name === 'bash' && args.command?.includes('grep')) {
 					const hasOutput = msg.parts.some(p => {
-						if (p.type === 'tool-result') {
-							const content = (p as any).content ?? '';
-							return content.length > 20;
+						if (p.type === 'tool') {
+							const output = (p as any).state?.output ?? '';
+							return output.length > 20;
 						}
 						return false;
 					});
@@ -491,15 +491,15 @@ export class CompactionStrategy {
 
 	private _estimateMessageTokens(msg: IPowerMessage): number {
 		if (msg.tokens) {
-			return (msg.tokens.inputTokens ?? 0) + (msg.tokens.outputTokens ?? 0);
+			return (msg.tokens.input ?? 0) + (msg.tokens.output ?? 0);
 		}
 
 		let total = 0;
 		for (const part of msg.parts) {
 			if (part.type === 'text') {
 				total += Math.ceil(((part as any).text ?? '').length / 4);
-			} else if (part.type === 'tool-result') {
-				total += Math.ceil(((part as any).content ?? '').length / 4);
+			} else if (part.type === 'tool') {
+				total += Math.ceil(((part as any).state?.output ?? '').length / 4);
 			}
 		}
 		return total;

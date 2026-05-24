@@ -3,7 +3,7 @@
  *  Licensed under the Apache License, Version 2.0.
  *--------------------------------------------------------------------------------------------*/
 
-import { IPowerMessage, IPowerMessagePart, ITextPart, IToolCallPart, IReasoningPart } from '../../../common/powerModeTypes.js';
+import { IPowerMessage, ITextPart, IToolCallPart, IReasoningPart } from '../../../common/powerModeTypes.js';
 import { ICompactionConfig, ITokenEstimate, IMessageTokenProfile, ISessionTokenProfile } from '../../../common/compactionTypes.js';
 
 enum ContentType {
@@ -339,7 +339,6 @@ export class TokenEstimator {
 		for (const line of lines) {
 			const match = line.match(/^\s*(\d+)\t(.*)$/);
 			if (match) {
-				const lineNumber = match[1];
 				const content = match[2];
 				totalTokens += 1;
 				totalTokens += this.estimate(content).tokens;
@@ -397,7 +396,6 @@ export class TokenEstimator {
 			const match = line.match(/^([^:]+):(\d+):(.*)$/);
 			if (match) {
 				const filepath = match[1];
-				const lineNumber = match[2];
 				const content = match[3];
 
 				totalTokens += this.estimate(filepath).tokens;
