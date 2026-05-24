@@ -73,7 +73,7 @@ import {
 import { IPowerBusService } from './powerBusService.js';
 import type { IRegisteredAgent, IAgentBusMessage } from '../common/powerBusTypes.js';
 import { PowerModeChangeTracker, IPowerModeChangeTracker, IChangeGroup } from './powerModeChangeTracker.js';
-import { CompactionService, ICompactionService } from './session/compaction/compactionService.js';
+import { CompactionService } from './session/compaction/compactionService.js';
 import { ISummarizationLLM } from './session/compaction/conversationSummarizer.js';
 
 // ─── Service Interface ────────────────────────────────────────────────────────
