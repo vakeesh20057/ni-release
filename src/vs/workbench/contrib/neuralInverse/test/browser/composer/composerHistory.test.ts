@@ -133,7 +133,7 @@ suite('ComposerHistory — individual commands', () => {
 		node.position = { x: 10, y: 20 };
 		model.addNode(node);
 
-		history.execute(new MoveNodeCommand('n1', { x: 100, y: 200 }, { x: 10, y: 20 }), model);
+		history.execute(new MoveNodeCommand('n1', 100, 200), model);
 		assert.strictEqual(model.getNode('n1')!.position.x, 100);
 
 		history.undo(model);
@@ -151,7 +151,7 @@ suite('ComposerHistory — individual commands', () => {
 		node.config = { agentId: 'old-agent' };
 		model.addNode(node);
 
-		history.execute(new UpdateNodeConfigCommand('n1', { agentId: 'new-agent' }, { agentId: 'old-agent' }), model);
+		history.execute(new UpdateNodeConfigCommand('n1', { agentId: 'new-agent' }), model);
 		assert.strictEqual(model.getNode('n1')!.config['agentId'], 'new-agent');
 
 		history.undo(model);
@@ -204,11 +204,11 @@ suite('ComposerHistory — batch operations', () => {
 		const model = new ComposerModel();
 		const history = new ComposerHistory();
 
-		history.beginBatch();
+		history.beginBatch('add three nodes');
 		history.execute(new AddNodeCommand(makeNode('n1')), model);
 		history.execute(new AddNodeCommand(makeNode('n2')), model);
 		history.execute(new AddNodeCommand(makeNode('n3')), model);
-		history.endBatch();
+		history.endBatch(model);
 
 		assert.ok(model.nodes.has('n1'));
 		assert.ok(model.nodes.has('n2'));
@@ -229,10 +229,10 @@ suite('ComposerHistory — batch operations', () => {
 		const model = new ComposerModel();
 		const history = new ComposerHistory();
 
-		history.beginBatch();
+		history.beginBatch('add two nodes');
 		history.execute(new AddNodeCommand(makeNode('n1')), model);
 		history.execute(new AddNodeCommand(makeNode('n2')), model);
-		history.endBatch();
+		history.endBatch(model);
 
 		history.undo(model);
 		history.redo(model);

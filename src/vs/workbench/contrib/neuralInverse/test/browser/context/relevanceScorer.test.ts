@@ -29,7 +29,6 @@ const MIN_SCORE_THRESHOLD = 0.02;
 const IMPORT_DEPTH_2_SCORE = 0.5;
 const IMPORT_DEPTH_3_SCORE = 0.2;
 const NAME_MATCH_MIN_TOKEN_LENGTH = 2;
-const MAX_TOKEN_CACHE_SIZE = 100;
 
 // ─── Tokeniser (copied from source) ──────────────────────────────────────────
 

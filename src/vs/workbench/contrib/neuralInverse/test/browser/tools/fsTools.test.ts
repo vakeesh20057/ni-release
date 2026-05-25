@@ -7,8 +7,8 @@ import assert from 'assert';
 import { ensureNoDisposablesAreLeakedInTestSuite } from '../../../../../../base/test/common/utils.js';
 import { ALL_FS_TOOLS } from '../../../browser/tools/fsTools.js';
 import { IToolExecutionContext, IToolResult } from '../../../common/workflowTypes.js';
-import { URI } from '../../../../../base/common/uri.js';
-import { VSBuffer } from '../../../../../base/common/buffer.js';
+import { URI } from '../../../../../../base/common/uri.js';
+import { VSBuffer } from '../../../../../../base/common/buffer.js';
 
 // --- Stub file service ----------------------------------------------------------
 
@@ -53,7 +53,6 @@ function makeCtx(fsStub: IStubFS = {}): IToolExecutionContext {
 
 const readFile = ALL_FS_TOOLS.find(t => t.name === 'readFile')!;
 const writeFile = ALL_FS_TOOLS.find(t => t.name === 'writeFile')!;
-const listDirectory = ALL_FS_TOOLS.find(t => t.name === 'listDirectory')!;
 const searchCode = ALL_FS_TOOLS.find(t => t.name === 'searchCode')!;
 const deleteFile = ALL_FS_TOOLS.find(t => t.name === 'deleteFile')!;
 

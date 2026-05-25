@@ -53,7 +53,7 @@ suite('ComposerModel — node operations', () => {
 	test('moveNode updates position', () => {
 		const model = new ComposerModel();
 		model.addNode(makeNode('n1', 'agent', 0, 0));
-		model.moveNode('n1', { x: 100, y: 200 });
+		model.moveNode('n1', 100, 200);
 
 		const node = model.getNode('n1')!;
 		assert.strictEqual(node.position.x, 100);
@@ -67,15 +67,16 @@ suite('ComposerModel — node operations', () => {
 		model.dispose();
 	});
 
-	test('updateNodeConfig merges config without replacing other fields', () => {
+	test('updateNode merges config without replacing other fields', () => {
 		const model = new ComposerModel();
-		model.addNode(makeNode('n1'));
-		model.updateNodeConfig('n1', { agentId: 'code-reviewer', maxIterations: 10 });
+		const node = makeNode('n1');
+		model.addNode(node);
+		model.updateNode('n1', { config: { agentId: 'code-reviewer', maxIterations: 10 } });
 
-		const node = model.getNode('n1')!;
-		assert.strictEqual(node.config['agentId'], 'code-reviewer');
-		assert.strictEqual(node.config['maxIterations'], 10);
-		assert.strictEqual(node.label, 'n1', 'label should be unchanged');
+		const updated = model.getNode('n1')!;
+		assert.strictEqual(updated.config['agentId'], 'code-reviewer');
+		assert.strictEqual(updated.config['maxIterations'], 10);
+		assert.strictEqual(updated.label, 'n1', 'label should be unchanged');
 		model.dispose();
 	});
 });

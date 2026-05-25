@@ -12,10 +12,6 @@ import { IAgentDefinition } from '../../../common/workflowTypes.js';
 // requiring real file-system services.
 // ---------------------------------------------------------------------------
 
-interface IStubFile {
-	content: string;
-}
-
 function makeAgent(id: string): IAgentDefinition {
 	return {
 		id,

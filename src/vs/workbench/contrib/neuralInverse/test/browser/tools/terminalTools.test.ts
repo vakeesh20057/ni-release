@@ -7,7 +7,7 @@ import assert from 'assert';
 import { ensureNoDisposablesAreLeakedInTestSuite } from '../../../../../../base/test/common/utils.js';
 import { ALL_TERMINAL_TOOLS } from '../../../browser/tools/terminalTools.js';
 import { IToolExecutionContext } from '../../../common/workflowTypes.js';
-import { URI } from '../../../../../base/common/uri.js';
+import { URI } from '../../../../../../base/common/uri.js';
 
 function makeCtx(): IToolExecutionContext {
 	return {

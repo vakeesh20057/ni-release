@@ -7,7 +7,7 @@ import assert from 'assert';
 import { ensureNoDisposablesAreLeakedInTestSuite } from '../../../../../../base/test/common/utils.js';
 import { ALL_HTTP_TOOLS } from '../../../browser/tools/httpTools.js';
 import { IToolExecutionContext } from '../../../common/workflowTypes.js';
-import { URI } from '../../../../../base/common/uri.js';
+import { URI } from '../../../../../../base/common/uri.js';
 
 // Minimal stub context — http tools don't use fileService
 function makeCtx(): IToolExecutionContext {

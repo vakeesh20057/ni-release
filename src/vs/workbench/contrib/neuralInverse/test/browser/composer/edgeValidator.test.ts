@@ -177,7 +177,8 @@ suite('EdgeValidator — getTopologicalOrder', () => {
 
 		const v = new EdgeValidator();
 		const order = v.getTopologicalOrder(model);
-		const idx = (id: string) => order.indexOf(id);
+		assert.ok(order !== null, 'topological order should not be null for acyclic graph');
+		const idx = (id: string) => order!.indexOf(id);
 
 		assert.ok(idx('a1') < idx('a2'), 'a1 should come before a2');
 		assert.ok(idx('a2') < idx('a3'), 'a2 should come before a3');
@@ -192,7 +193,8 @@ suite('EdgeValidator — getTopologicalOrder', () => {
 
 		const v = new EdgeValidator();
 		const order = v.getTopologicalOrder(model);
-		assert.strictEqual(order.length, 2);
+		assert.ok(order !== null);
+		assert.strictEqual(order!.length, 2);
 		model.dispose();
 	});
 });
