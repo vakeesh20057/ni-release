@@ -121,6 +121,25 @@ export interface IWorkflowStep {
 	allowedTools: string[];
 	/** Max LLM + tool iterations before the step is force-terminated. Default: 20 */
 	maxIterations?: number;
+	/** Context Engine pre-injection configuration for this step */
+	contextConfig?: IStepContextConfig;
+}
+
+/**
+ * Controls how the Context Engine pre-injects workspace context
+ * into the system prompt for a workflow step.
+ */
+export interface IStepContextConfig {
+	/** Context packing mode — affects extraction strategy and budget defaults */
+	mode: 'autocomplete' | 'chat' | 'inline-edit' | 'agent';
+	/** Token budget override (uses mode default if not set) */
+	budget?: number;
+	/** File URIs guaranteed inclusion in context regardless of relevance score */
+	priorityFiles?: string[];
+	/** Include the active editor file in context */
+	includeActiveFile?: boolean;
+	/** Disable automatic context pre-injection (step handles its own context via tools) */
+	disableAutoContext?: boolean;
 }
 
 // ─── Workflow Definition ──────────────────────────────────────────────────────

@@ -52,6 +52,7 @@ export class WorkflowOrchestrator {
 		private readonly llmService: ILLMMessageService,
 		private readonly settingsService: IVoidSettingsService,
 		private readonly toolRegistry: ToolRegistry,
+		private readonly contextPacker?: import('../context/packer/contextPacker.js').IContextPackerService,
 	) {}
 
 	/**
@@ -189,7 +190,7 @@ export class WorkflowOrchestrator {
 			},
 		};
 
-		const executor = new AgentExecutor(this.llmService, this.settingsService, scopedTools);
+		const executor = new AgentExecutor(this.llmService, this.settingsService, scopedTools, this.contextPacker);
 		const stepInput = this._buildStepInput(step, input, priorOutputs, priorOutputs.length === 0 ? 0 : 1);
 
 		await executor.execute(agent, step, stepRun, priorOutputs, toolCtx, stepInput, cancellation);

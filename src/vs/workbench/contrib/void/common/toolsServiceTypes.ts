@@ -59,15 +59,7 @@ export type BuiltinToolCallParams = {
 	'grep': { pattern: string, path: string | null, include: string | null },
 	'list': { dirPath: string | null },
 	'ask_powermode': { question: string },
-	// --- GRC compliance ---
-	'grc_violations': { domain: string | null, severity: string | null, file: string | null, limit: number },
-	'grc_domain_summary': {},
-	'grc_blocking_violations': {},
-	'grc_framework_rules': { frameworkId: string | null, domain: string | null },
-	'grc_impact_chain': { file: string, maxDepth: number },
-	'grc_rescan': {},
-	'grc_ai_scan': { files: string | null },
-	'ask_checksagent': { question: string },
+	// --- (GRC compliance tools available in Enterprise Edition only) ---
 	'query_ni_agent': { agentId: string, input: string },
 	// --- Workflow tools ---
 	'ask_user': { question: string },
@@ -83,6 +75,12 @@ export type BuiltinToolCallParams = {
 	'get_agent_status': { agentId: string },
 	'wait_for_agent': { agentId: string },
 	'list_agents': {},
+	// --- Context Engine ---
+	'context_search_symbols': { query: string, kind: string | null, filePattern: string | null },
+	'context_related_files': { file: string | null, query: string | null, maxResults: number | null },
+	'context_file_context': { file: string, budget: number | null },
+	'context_import_graph': { file: string, depth: number | null },
+	'context_recent_edits': { withinMinutes: number | null },
 	// ---
 	'read_file': { uri: URI, startLine: number | null, endLine: number | null, pageNumber: number },
 	'ls_dir': { uri: URI, pageNumber: number },
@@ -122,15 +120,7 @@ export type BuiltinToolResultType = {
 	'grep': { result: string },
 	'list': { result: string },
 	'ask_powermode': { result: string },
-	// --- GRC compliance ---
-	'grc_violations': { result: string },
-	'grc_domain_summary': { result: string },
-	'grc_blocking_violations': { result: string },
-	'grc_framework_rules': { result: string },
-	'grc_impact_chain': { result: string },
-	'grc_rescan': { result: string },
-	'grc_ai_scan': { result: string },
-	'ask_checksagent': { result: string },
+	// --- (GRC compliance results available in Enterprise Edition only) ---
 	'query_ni_agent': { result: string },
 	// --- Workflow tools ---
 	'ask_user': { result: string },
@@ -146,6 +136,12 @@ export type BuiltinToolResultType = {
 	'get_agent_status': { result: string },
 	'wait_for_agent': { result: string },
 	'list_agents': { result: string },
+	// --- Context Engine ---
+	'context_search_symbols': { result: string },
+	'context_related_files': { result: string },
+	'context_file_context': { result: string },
+	'context_import_graph': { result: string },
+	'context_recent_edits': { result: string },
 	// ---
 	'read_file': { fileContents: string, totalFileLen: number, totalNumLines: number, hasNextPage: boolean },
 	'ls_dir': { children: ShallowDirectoryItem[] | null, hasNextPage: boolean, hasPrevPage: boolean, itemsRemaining: number },

@@ -19,6 +19,7 @@
 
 import { IAgentDefinition } from '../common/workflowTypes.js';
 import { IWorkflowDefinition } from '../common/workflowTypes.js';
+import { CONTEXT_TOOL_NAMES } from './context/tools/contextToolTypes.js';
 
 // ─── Built-in Agents ──────────────────────────────────────────────────────────
 
@@ -49,7 +50,7 @@ Description and recommended fix.
 List things done well.
 
 Be specific, actionable, and reference line numbers when possible.`,
-		allowedTools: ['gitStatus', 'gitDiff', 'readFile', 'searchCode'],
+		allowedTools: ['gitStatus', 'gitDiff', 'readFile', 'searchCode', ...CONTEXT_TOOL_NAMES],
 		maxIterations: 8,
 		tags: ['code-quality', 'git', 'review'],
 		isBuiltin: true,
@@ -76,7 +77,7 @@ Rules:
 - Mock external dependencies appropriately
 
 Output the full test file content, then write it using the writeFile tool.`,
-		allowedTools: ['readFile', 'writeFile', 'listDirectory', 'searchCode'],
+		allowedTools: ['readFile', 'writeFile', 'listDirectory', 'searchCode', ...CONTEXT_TOOL_NAMES],
 		maxIterations: 12,
 		tags: ['testing', 'code-quality'],
 		isBuiltin: true,
@@ -189,7 +190,7 @@ Refactoring types:
 - DRY: consolidate duplicated logic
 
 Always explain WHY the refactoring improves the code.`,
-		allowedTools: ['readFile', 'searchCode', 'editFile', 'rewriteFile', 'runCommand', 'gitDiff'],
+		allowedTools: ['readFile', 'searchCode', 'editFile', 'rewriteFile', 'runCommand', 'gitDiff', ...CONTEXT_TOOL_NAMES],
 		maxIterations: 12,
 		tags: ['refactoring', 'code-quality'],
 		isBuiltin: true,
@@ -217,7 +218,7 @@ Tools:
 - Use gitDiff to see what changed
 
 Be thorough. A quick fix that doesn't address the root cause is worse than no fix.`,
-		allowedTools: ['readFile', 'searchCode', 'gitLog', 'gitDiff', 'runCommand', 'editFile'],
+		allowedTools: ['readFile', 'searchCode', 'gitLog', 'gitDiff', 'runCommand', 'editFile', ...CONTEXT_TOOL_NAMES],
 		maxIterations: 15,
 		tags: ['debugging', 'bug-fix'],
 		isBuiltin: true,
@@ -274,7 +275,7 @@ Process:
 5. Propose specific optimizations with before/after comparisons
 
 Always explain the trade-offs (e.g., caching adds complexity).`,
-		allowedTools: ['readFile', 'searchCode', 'editFile', 'runCommand', 'gitDiff'],
+		allowedTools: ['readFile', 'searchCode', 'editFile', 'runCommand', 'gitDiff', ...CONTEXT_TOOL_NAMES],
 		maxIterations: 12,
 		tags: ['performance', 'optimization'],
 		isBuiltin: true,
@@ -337,7 +338,7 @@ Process:
 5. Review environment variable handling (secrets should not be in code)
 
 Output severity levels: CRITICAL, HIGH, MEDIUM, LOW with specific remediation steps.`,
-		allowedTools: ['readFile', 'searchCode', 'listDirectory', 'gitLog'],
+		allowedTools: ['readFile', 'searchCode', 'listDirectory', 'gitLog', ...CONTEXT_TOOL_NAMES],
 		maxIterations: 15,
 		tags: ['security', 'audit', 'owasp'],
 		isBuiltin: true,

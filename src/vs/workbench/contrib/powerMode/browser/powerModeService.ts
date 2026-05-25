@@ -4,6 +4,7 @@
  *--------------------------------------------------------------------------------------------*/
 
 import { Disposable } from '../../../../base/common/lifecycle.js';
+import { URI } from '../../../../base/common/uri.js';
 import { Emitter, Event } from '../../../../base/common/event.js';
 import { createDecorator, IInstantiationService } from '../../../../platform/instantiation/common/instantiation.js';
 import { registerSingleton, InstantiationType } from '../../../../platform/instantiation/common/extensions.js';
@@ -15,9 +16,13 @@ import { ILLMMessageService } from '../../void/common/sendLLMMessageService.js';
 import { IVoidSettingsService, ModelOption } from '../../void/common/voidSettingsService.js';
 import { ModelSelection } from '../../void/common/voidSettingsTypes.js';
 import { IExternalCommandExecutor } from '../../void/browser/externalCommandExecutor.js';
-import { buildGRCTools } from './tools/grcTools.js';
 import { buildModernisationPowerTools } from './tools/modernisationTools.js';
 import { buildDiscoveryTools } from './tools/discoveryTools.js';
+import { buildContextPowerTools } from '../../neuralInverse/browser/context/tools/adapters/powerModeAdapter.js';
+import { IContextPackerService } from '../../neuralInverse/browser/context/packer/index.js';
+import { IWorkspaceSymbolIndexService } from '../../neuralInverse/browser/context/index/workspaceSymbolIndex.js';
+import { IRelevanceScorerService } from '../../neuralInverse/browser/context/relevance/relevanceScorer.js';
+import { IChangeTrackerService } from '../../neuralInverse/browser/context/tracker/changeTracker.js';
 import { buildAutonomyPowerTools } from './tools/autonomyPowerTools.js';
 import { buildKBPowerTools } from './tools/kbPowerTools.js';
 import { IDiscoveryService } from '../../neuralInverseModernisation/browser/engine/discovery/discoveryService.js';
@@ -279,6 +284,10 @@ export class PowerModeService extends Disposable implements IPowerModeService {
 		@IModernisationSessionService private readonly modernisationSessionService: IModernisationSessionService,
 		@IModernisationAgentToolService private readonly agentToolService: IModernisationAgentToolService,
 		@IAutonomyService private readonly autonomyService: IAutonomyService,
+		@IContextPackerService private readonly contextPackerService: IContextPackerService,
+		@IWorkspaceSymbolIndexService private readonly symbolIndexService: IWorkspaceSymbolIndexService,
+		@IRelevanceScorerService private readonly relevanceScorerService: IRelevanceScorerService,
+		@IChangeTrackerService private readonly changeTrackerService: IChangeTrackerService,
 		@IInstantiationService private readonly instantiationService: IInstantiationService,
 	) {
 		super();
@@ -459,8 +468,6 @@ export class PowerModeService extends Disposable implements IPowerModeService {
 				createBrowserListTool(directory, this.fileService),
 				createBrowserGlobTool(directory, this.searchService),
 				createBrowserGrepTool(directory, this.searchService),
-				// GRC compliance tools (not available in community edition)
-				...buildGRCTools(null, () => Promise.resolve('')),
 				// Standalone discovery tools (key findings on any codebase)
 				...buildDiscoveryTools(this.discoveryService),
 				// Modernisation tools (migration workflow context)
@@ -469,6 +476,16 @@ export class PowerModeService extends Disposable implements IPowerModeService {
 				...buildKBPowerTools(this.agentToolService),
 				// Autonomy pipeline tools (batch control + single-unit + escalations)
 				...buildAutonomyPowerTools(this.autonomyService),
+				// Context Engine tools (symbol search, relevance, import graph, edit tracking)
+				...buildContextPowerTools(
+					{
+						contextPacker: this.contextPackerService,
+						symbolIndex: this.symbolIndexService,
+						relevanceScorer: this.relevanceScorerService,
+						changeTracker: this.changeTrackerService,
+					},
+					URI.file(directory).toString(),
+				),
 				// High-priority workflow tools
 				createAskUserTool((question, sessionId) => this._askUser(question, sessionId)),
 				createWebFetchTool(),

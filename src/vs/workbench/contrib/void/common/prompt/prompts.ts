@@ -246,70 +246,7 @@ export const builtinTools: {
 		},
 	},
 
-	// --- GRC compliance ---
-
-	grc_violations: {
-		name: 'grc_violations',
-		description: 'Returns current GRC violations from the live compliance engine. Use to inspect what rules are being violated. Filter by domain (e.g. security, privacy, data-integrity), severity (error or warning), or file path.',
-		params: {
-			domain: { description: 'Optional. Filter by compliance domain (e.g. security, privacy, data-integrity).' },
-			severity: { description: 'Optional. Filter by severity: error or warning.' },
-			file: { description: 'Optional. Filter by file path substring.' },
-			limit: { description: 'Optional. Maximum violations to return (default 30).' },
-		},
-	},
-
-	grc_domain_summary: {
-		name: 'grc_domain_summary',
-		description: 'Returns a per-domain breakdown of GRC violation counts. Use for a high-level compliance health overview.',
-		params: {},
-	},
-
-	grc_blocking_violations: {
-		name: 'grc_blocking_violations',
-		description: 'Returns violations that block commits. Check this before preparing a commit or merge request. If any blocking violations exist they must be resolved first.',
-		params: {},
-	},
-
-	grc_framework_rules: {
-		name: 'grc_framework_rules',
-		description: 'Returns compliance rules loaded from active frameworks (SOC2, HIPAA, custom, etc.). Use to understand what the compliance requirements are before writing code.',
-		params: {
-			framework_id: { description: 'Optional. Filter rules by framework ID.' },
-			domain: { description: 'Optional. Filter rules by compliance domain.' },
-		},
-	},
-
-	grc_impact_chain: {
-		name: 'grc_impact_chain',
-		description: 'Returns the cross-file impact tree for a given file showing which files depend on it. Use before refactoring shared modules to understand the blast radius.',
-		params: {
-			file: { description: 'Full path to the file to analyze.' },
-			max_depth: { description: 'Optional. Maximum depth of the impact tree (default 3).' },
-		},
-	},
-
-	grc_rescan: {
-		name: 'grc_rescan',
-		description: 'Triggers a full GRC workspace rescan. Re-evaluates all open files against all enabled rules using static analysis. Use after making code changes to refresh the violation cache. Returns a summary of findings.',
-		params: {},
-	},
-
-	grc_ai_scan: {
-		name: 'grc_ai_scan',
-		description: 'Triggers an AI-powered deep compliance scan across workspace files. Uses the Contract Reason Service to analyze files against framework contracts via LLM. More thorough than grc_rescan but slower. Optionally scope to specific files.',
-		params: {
-			files: { description: 'Optional. Comma-separated file paths to scope the AI scan to. If omitted, scans the full workspace.' },
-		},
-	},
-
-	ask_checksagent: {
-		name: 'ask_checksagent',
-		description: 'Ask the Checks Agent a natural-language compliance question. The Checks Agent is a GRC specialist with full access to all compliance tools. Use when you need interpretation of a violation, remediation guidance, cross-domain compliance feedback, or confirmation that a planned change is compliant.',
-		params: {
-			question: { description: 'The compliance question to ask the Checks Agent.' },
-		},
-	},
+	// (GRC compliance tool definitions removed - available in Enterprise Edition only)
 
 	ask_powermode: {
 		name: 'ask_powermode',
@@ -625,6 +562,54 @@ export const builtinTools: {
 		params: {},
 	},
 
+	// --- Context Engine ---
+
+	context_search_symbols: {
+		name: 'context_search_symbols',
+		description: 'Search the workspace symbol index by name, kind, or file pattern. Returns symbols with file locations and export info. Faster and more precise than grep for finding functions, classes, interfaces, or types.',
+		params: {
+			query: { description: 'Required. Symbol name or partial name to search for.' },
+			kind: { description: 'Optional. Filter by kind: function, class, interface, variable, enum, method, property, type, constant.' },
+			file_pattern: { description: 'Optional. File path substring to restrict search, e.g. "components/" or ".service.ts".' },
+		},
+	},
+
+	context_related_files: {
+		name: 'context_related_files',
+		description: 'Get files ranked by relevance to a given file or text query. Uses 7-signal scoring: imports, edit recency, name similarity, co-edits, open tabs, directory proximity, and type dependencies. Use this to understand what other files are related to the one you are working on.',
+		params: {
+			file: { description: 'Optional. Workspace-relative file path to find related files for.' },
+			query: { description: 'Optional. Text query describing what you are looking for.' },
+			max_results: { description: 'Optional. Maximum results (default: 15).' },
+		},
+	},
+
+	context_file_context: {
+		name: 'context_file_context',
+		description: 'Get pre-packed code context for a file within a token budget. Includes the file itself plus its imports, type definitions, and related code assembled by relevance. Use this instead of multiple read_file calls when you need to understand a file and its dependencies in one shot.',
+		params: {
+			file: { description: 'Required. Workspace-relative file path to get context for.' },
+			budget: { description: 'Optional. Token budget (default: 8192, max: 65536).' },
+		},
+	},
+
+	context_import_graph: {
+		name: 'context_import_graph',
+		description: 'Get import/importer relationships for a file. Shows what the file imports and what files import it. Use this before refactoring to understand the impact radius of changes.',
+		params: {
+			file: { description: 'Required. Workspace-relative file path.' },
+			depth: { description: 'Optional. Transitive depth (default: 1, max: 3). Higher values show indirect dependencies.' },
+		},
+	},
+
+	context_recent_edits: {
+		name: 'context_recent_edits',
+		description: 'Get recently edited files with heat scores and edit velocity. Shows what the developer is actively working on. Use to understand current focus areas and prioritize relevant context.',
+		params: {
+			within_minutes: { description: 'Optional. Look-back window in minutes (default: 30).' },
+		},
+	},
+
 	plan_mode_enter: {
 		name: 'plan_mode_enter',
 		description: 'Enter plan mode. In plan mode, file writes and edits are blocked. Use this to explore and think through a solution before making changes.',
@@ -855,30 +840,26 @@ CRITICAL: Do NOT place your tool calls inside the <thought> block! Tool calls mu
 	}
 
 	if (mode === 'copilot' || mode === 'validate' || mode === 'agent') {
-		details.push(`**GRC Compliance & Multi-Agent Tools** — You are operating in a compliance-enforced environment with access to specialist agents.
+		details.push(`**Multi-Agent & Context Tools** — You have access to specialist agents and intelligent context tools.
 
-**Compliance workflow:**
-- Before starting any task, review the \`<grc_posture>\` block (if present) to understand current compliance state.
-- After editing files, check the tool result for GRC violations and fix any blocking violations before proceeding.
-- Before committing, ensure there are no blocking violations — \`git commit\` is automatically gated when blocking violations exist.
-- Use \`grc_impact_chain\` before refactoring to understand which files depend on the one you're changing.
+**Context Engine tools** — Use these to efficiently understand the codebase without brute-force file reading:
+- \`context_search_symbols\` — search symbols by name/kind. Faster and more precise than grep for code elements.
+- \`context_related_files\` — find files related to your current focus (uses import graph, edit recency, name similarity).
+- \`context_file_context\` — get a file plus its relevant dependencies pre-assembled in one call. Use instead of multiple \`read_file\` calls.
+- \`context_import_graph\` — understand what imports a file and what it's imported by. Essential before refactoring.
+- \`context_recent_edits\` — see what the developer is actively editing (edit heat and velocity).
 
-**Tool selection — use the right tool for the job:**
-- **Direct GRC tools** (\`grc_violations\`, \`grc_blocking_violations\`, \`grc_domain_summary\`, \`grc_framework_rules\`, \`grc_impact_chain\`) — fast, synchronous cache reads. Use these first.
-- **\`grc_rescan\`** — triggers a full static workspace rescan. Call after editing files to refresh the violation cache.
-- **\`grc_ai_scan\`** — triggers deep AI-powered compliance analysis (LLM-based). Slower but more thorough. Use after significant changes.
-- **\`ask_checksagent\`** — delegates to the Checks Agent, which runs its own **full multi-tool agent loop** internally (scan → reason → cross-reference rules → report). Use when you need reasoning or interpretation: "is this change compliant?", "how do I fix this?", "which pattern satisfies this rule?". This is a true sub-agent — it executes autonomously and returns a complete answer.
-- **\`ask_powermode\`** — delegates to Power Mode, which runs its own **full coding agent loop** internally (bash, read, write, edit, glob, grep). Use to delegate execution subtasks in parallel: "find all callers of X", "does this build?", "run the tests". Also a true sub-agent.
-- **\`query_ni_agent\`** — runs a named Neural Inverse agent from the .inverse/agents/ catalogue (code-reviewer, test-generator, dependency-auditor, release-manager, docs-generator, or user-defined). Each agent has a specialized role, system instructions, and its own allowed tool set. Use \`agentId: "list"\` to discover available agents. These agents are persistent, reusable, and configurable via the Agent Control Center.
-- **Workflow tools:**
+**Agent tools:**
+- **\`ask_powermode\`** — delegates to Power Mode, which runs its own **full coding agent loop** internally (bash, read, write, edit, glob, grep). Use to delegate execution subtasks in parallel: "find all callers of X", "does this build?", "run the tests". A true sub-agent.
+- **\`query_ni_agent\`** — runs a named Neural Inverse agent from the .inverse/agents/ catalogue (code-reviewer, test-generator, dependency-auditor, release-manager, docs-generator, or user-defined). Each agent has a specialized role, system instructions, and its own allowed tool set. Use \`agentId: "list"\` to discover available agents.
+
+**Workflow tools:**
   - \`web_fetch\` — fetch external documentation, API references, standards, or web content (automatically strips HTML, 30s timeout, 100KB limit)
   - \`ask_user\` — pause execution and ask the user a question when you need a decision or clarification you cannot assume
   - \`memory_write\` / \`memory_read\` — persist information across sessions (use for user preferences, project-specific decisions, or context that should survive IDE restarts)
-  - \`tasks_create\` / \`tasks_list\` / \`tasks_update\` / \`tasks_get\` — track multi-step workflows, background tasks, or async work items (use sparingly; prefer \`generate_document\` for task lists)
+  - \`tasks_create\` / \`tasks_list\` / \`tasks_update\` / \`tasks_get\` — track multi-step workflows, background tasks, or async work items
 
-**Parallel sub-agent execution** — \`ask_checksagent\`, \`ask_powermode\`, and \`query_ni_agent\` run as independent sub-agents tracked by the system. You can call them in the same response and they execute simultaneously:
-- While editing a file → call \`grc_rescan\` + \`ask_checksagent "verify compliance of my changes to auth.ts"\` in parallel.
-- After a batch of edits → call \`ask_powermode "run the test suite"\` + \`ask_checksagent "any new blocking violations?"\` in parallel.
+**Parallel sub-agent execution** — \`ask_powermode\` and \`query_ni_agent\` run as independent sub-agents. You can call them in the same response and they execute simultaneously.
 - Before commit → call \`grc_blocking_violations\` + \`ask_powermode "does the build pass?"\` in parallel.
 
 **Sub-execution loop pattern** (for agentic mode):

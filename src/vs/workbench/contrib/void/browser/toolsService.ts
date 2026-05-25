@@ -257,6 +257,28 @@ export class ToolsService implements IToolsService {
 			return _subAgentService;
 		};
 
+		// Context Engine service accessors (lazy-resolved)
+		const _getSymbolIndex = async () => {
+			const { IWorkspaceSymbolIndexService } = await import('../../neuralInverse/browser/context/index/workspaceSymbolIndex.js');
+			return instantiationService.invokeFunction(a => a.get(IWorkspaceSymbolIndexService));
+		};
+		const _getRelevanceScorer = async () => {
+			const { IRelevanceScorerService } = await import('../../neuralInverse/browser/context/relevance/relevanceScorer.js');
+			return instantiationService.invokeFunction(a => a.get(IRelevanceScorerService));
+		};
+		const _getContextPacker = async () => {
+			const { IContextPackerService } = await import('../../neuralInverse/browser/context/packer/contextPacker.js');
+			return instantiationService.invokeFunction(a => a.get(IContextPackerService));
+		};
+		const _getChangeTracker = async () => {
+			const { IChangeTrackerService } = await import('../../neuralInverse/browser/context/tracker/changeTracker.js');
+			return instantiationService.invokeFunction(a => a.get(IChangeTrackerService));
+		};
+		const _getWorkspaceUri = (): string => {
+			const folders = workspaceContextService.getWorkspace().folders;
+			return folders.length > 0 ? folders[0].uri.toString() : '';
+		};
+
 		this.validateParams = {
 			// --- Power Mode style tools ---
 			bash: (params: RawToolParamsObj) => {
@@ -297,41 +319,7 @@ export class ToolsService implements IToolsService {
 				const dirPath = validateOptionalStr('dir_path', params.dir_path)
 				return { dirPath }
 			},
-			// --- GRC compliance ---
-			grc_violations: (params: RawToolParamsObj) => {
-				const domain = validateOptionalStr('domain', params.domain)
-				const severity = validateOptionalStr('severity', params.severity)
-				const file = validateOptionalStr('file', params.file)
-				const limit = validateNumber(params.limit, { default: 30 }) ?? 30
-				return { domain, severity, file, limit }
-			},
-			grc_domain_summary: (_params: RawToolParamsObj) => {
-				return {}
-			},
-			grc_blocking_violations: (_params: RawToolParamsObj) => {
-				return {}
-			},
-			grc_framework_rules: (params: RawToolParamsObj) => {
-				const frameworkId = validateOptionalStr('framework_id', params.framework_id)
-				const domain = validateOptionalStr('domain', params.domain)
-				return { frameworkId, domain }
-			},
-			grc_rescan: (_params: RawToolParamsObj) => {
-				return {}
-			},
-			grc_ai_scan: (params: RawToolParamsObj) => {
-				const files = validateOptionalStr('files', params.files)
-				return { files }
-			},
-			grc_impact_chain: (params: RawToolParamsObj) => {
-				const file = validateStr('file', params.file)
-				const maxDepth = validateNumber(params.max_depth, { default: 3 }) ?? 3
-				return { file, maxDepth }
-			},
-			ask_checksagent: (params: RawToolParamsObj) => {
-				const question = validateStr('question', params.question)
-				return { question }
-			},
+			// (GRC compliance tools removed - Enterprise Edition only)
 			ask_powermode: (params: RawToolParamsObj) => {
 				const question = validateStr('question', params.question)
 				return { question }
@@ -395,6 +383,33 @@ export class ToolsService implements IToolsService {
 			},
 			list_agents: (params: RawToolParamsObj) => {
 				return {}
+			},
+			// --- Context Engine ---
+			context_search_symbols: (params: RawToolParamsObj) => {
+				const query = validateStr('query', params.query)
+				const kind = validateOptionalStr('kind', params.kind)
+				const filePattern = validateOptionalStr('file_pattern', params.file_pattern)
+				return { query, kind, filePattern }
+			},
+			context_related_files: (params: RawToolParamsObj) => {
+				const file = validateOptionalStr('file', params.file)
+				const query = validateOptionalStr('query', params.query)
+				const maxResults = validateNumber(params.max_results, { default: null })
+				return { file, query, maxResults }
+			},
+			context_file_context: (params: RawToolParamsObj) => {
+				const file = validateStr('file', params.file)
+				const budget = validateNumber(params.budget, { default: null })
+				return { file, budget }
+			},
+			context_import_graph: (params: RawToolParamsObj) => {
+				const file = validateStr('file', params.file)
+				const depth = validateNumber(params.depth, { default: null })
+				return { file, depth }
+			},
+			context_recent_edits: (params: RawToolParamsObj) => {
+				const withinMinutes = validateNumber(params.within_minutes, { default: null })
+				return { withinMinutes }
 			},
 			// ---
 			read_file: (params: RawToolParamsObj) => {
@@ -708,31 +723,7 @@ export class ToolsService implements IToolsService {
 					return { result: { result: `Error: ${err.message}` } }
 				}
 			},
-			// --- GRC compliance (not available in community edition) ---
-			grc_violations: async (_params) => {
-				return { result: { result: 'GRC compliance tools are not available in the community edition.' } }
-			},
-			grc_domain_summary: async (_params) => {
-				return { result: { result: 'GRC compliance tools are not available in the community edition.' } }
-			},
-			grc_blocking_violations: async (_params) => {
-				return { result: { result: 'GRC compliance tools are not available in the community edition.' } }
-			},
-			grc_framework_rules: async (_params) => {
-				return { result: { result: 'GRC compliance tools are not available in the community edition.' } }
-			},
-			grc_rescan: async (_params) => {
-				return { result: { result: 'GRC compliance tools are not available in the community edition.' } }
-			},
-			grc_ai_scan: async (_params) => {
-				return { result: { result: 'GRC compliance tools are not available in the community edition.' } }
-			},
-			grc_impact_chain: async (_params) => {
-				return { result: { result: 'GRC compliance tools are not available in the community edition.' } }
-			},
-			ask_checksagent: async (_params) => {
-				return { result: { result: 'Checks Agent is not available in the community edition.' } }
-			},
+			// (GRC compliance tool implementations removed - Enterprise Edition only)
 			ask_powermode: async ({ question }) => {
 				try {
 					const answer = await this.powerMode.answerQuery(question)
@@ -1060,6 +1051,71 @@ export class ToolsService implements IToolsService {
 
 				return { result: { result: output } };
 			},
+			// --- Context Engine ---
+			context_search_symbols: async ({ query, kind, filePattern }) => {
+				const { executeSearchSymbols } = await import('../../neuralInverse/browser/context/tools/searchSymbolsTool.js')
+				const symbolIndex = await _getSymbolIndex()
+				const results = executeSearchSymbols({ query, kind: kind ?? undefined, filePattern: filePattern ?? undefined }, symbolIndex)
+				if (results.length === 0) {
+					return { result: { result: `No symbols found matching "${query}"` } }
+				}
+				const output = results.map(r => `${r.name} (kind:${r.kind}) ${r.file}:${r.line}${r.exported ? ` [export: ${r.exported}]` : ''}`).join('\n')
+				return { result: { result: `Found ${results.length} symbol(s):\n${output}` } }
+			},
+			context_related_files: async ({ file, query, maxResults }) => {
+				const { executeGetRelatedFiles } = await import('../../neuralInverse/browser/context/tools/getRelatedFilesTool.js')
+				const relevanceScorer = await _getRelevanceScorer()
+				const wsUri = _getWorkspaceUri()
+				const results = executeGetRelatedFiles(
+					{ file: file ?? undefined, query: query ?? undefined, maxResults: maxResults ?? undefined },
+					relevanceScorer, wsUri,
+				)
+				if (results.length === 0) {
+					return { result: { result: 'No related files found.' } }
+				}
+				const output = results.map(r => {
+					const path = r.uri.replace(wsUri + '/', '')
+					return `${(r.score * 100).toFixed(0)}% ${path} [${r.reasons.join(', ')}]`
+				}).join('\n')
+				return { result: { result: `Related files:\n${output}` } }
+			},
+			context_file_context: async ({ file, budget }) => {
+				const { executeGetFileContext } = await import('../../neuralInverse/browser/context/tools/getFileContextTool.js')
+				const contextPacker = await _getContextPacker()
+				const wsUri = _getWorkspaceUri()
+				const packed = await executeGetFileContext({ file, budget: budget ?? undefined }, contextPacker, wsUri)
+				return { result: { result: packed || `No context available for "${file}"` } }
+			},
+			context_import_graph: async ({ file, depth }) => {
+				const { executeGetImportGraph } = await import('../../neuralInverse/browser/context/tools/getImportGraphTool.js')
+				const symbolIndex = await _getSymbolIndex()
+				const wsUri = _getWorkspaceUri()
+				const result = executeGetImportGraph({ file, depth: depth ?? undefined }, symbolIndex, wsUri)
+				const wsPrefix = wsUri + '/'
+				const shorten = (uri: string) => uri.startsWith(wsPrefix) ? uri.slice(wsPrefix.length) : uri
+				const parts: string[] = []
+				parts.push(`Imports (${result.imports.length}):`)
+				for (const imp of result.imports.slice(0, 50)) { parts.push(`  -> ${shorten(imp)}`) }
+				if (result.imports.length > 50) parts.push(`  ... and ${result.imports.length - 50} more`)
+				parts.push(`\nImported by (${result.importers.length}):`)
+				for (const imp of result.importers.slice(0, 50)) { parts.push(`  <- ${shorten(imp)}`) }
+				if (result.importers.length > 50) parts.push(`  ... and ${result.importers.length - 50} more`)
+				return { result: { result: parts.join('\n') } }
+			},
+			context_recent_edits: async ({ withinMinutes }) => {
+				const { executeGetRecentEdits } = await import('../../neuralInverse/browser/context/tools/getRecentEditsTool.js')
+				const changeTracker = await _getChangeTracker()
+				const results = executeGetRecentEdits({ withinMinutes: withinMinutes ?? undefined }, changeTracker)
+				if (results.length === 0) {
+					return { result: { result: 'No recent edits detected.' } }
+				}
+				const output = results.map(r => {
+					const path = r.uri.split('/').slice(-3).join('/')
+					const ago = Math.round((Date.now() - r.lastEditAt) / 1000)
+					return `${path} | heat: ${(r.heat * 100).toFixed(0)}% | ${r.velocity.toFixed(1)} edits/min | ${ago}s ago`
+				}).join('\n')
+				return { result: { result: `Recently edited (${results.length}):\n${output}` } }
+			},
 			// ---
 			read_file: async ({ uri, startLine, endLine, pageNumber }) => {
 				await voidModelService.initializeModel(uri)
@@ -1360,14 +1416,7 @@ export class ToolsService implements IToolsService {
 			grep: (_params, result) => result.result,
 			list: (_params, result) => result.result,
 			// --- GRC compliance ---
-			grc_violations: (_params, result) => result.result,
-			grc_domain_summary: (_params, result) => result.result,
-			grc_blocking_violations: (_params, result) => result.result,
-			grc_framework_rules: (_params, result) => result.result,
-			grc_impact_chain: (_params, result) => result.result,
-			grc_rescan: (_params, result) => result.result,
-			grc_ai_scan: (_params, result) => result.result,
-			ask_checksagent: (_params, result) => result.result,
+			// (GRC compliance stringOfResult removed - Enterprise Edition only)
 			ask_powermode: (_params, result) => result.result,
 			query_ni_agent: (_params, result) => result.result,
 			// --- Workflow tools ---
@@ -1383,6 +1432,12 @@ export class ToolsService implements IToolsService {
 			get_agent_status: (_params, result) => result.result,
 			wait_for_agent: (_params, result) => result.result,
 			list_agents: (_params, result) => result.result,
+			// --- Context Engine ---
+			context_search_symbols: (_params, result) => result.result,
+			context_related_files: (_params, result) => result.result,
+			context_file_context: (_params, result) => result.result,
+			context_import_graph: (_params, result) => result.result,
+			context_recent_edits: (_params, result) => result.result,
 			// ---
 			read_file: (params, result) => {
 				return `${params.uri.fsPath}\n\`\`\`\n${result.fileContents}\n\`\`\`${nextPageStr(result.hasNextPage)}${result.hasNextPage ? `\nMore info because truncated: this file has ${result.totalNumLines} lines, or ${result.totalFileLen} characters.` : ''}`

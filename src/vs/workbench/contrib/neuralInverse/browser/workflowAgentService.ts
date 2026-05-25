@@ -39,6 +39,11 @@ import { ALL_GIT_TOOLS } from './tools/gitTools.js';
 import { ALL_HTTP_TOOLS } from './tools/httpTools.js';
 import { createCommunicationTools } from './tools/communicationTools.js';
 import { createGRCTools } from './tools/grcTools.js';
+import { createWorkflowContextTools } from './context/tools/adapters/workflowAgentAdapter.js';
+import { IContextPackerService } from './context/packer/index.js';
+import { IWorkspaceSymbolIndexService } from './context/index/workspaceSymbolIndex.js';
+import { IRelevanceScorerService } from './context/relevance/relevanceScorer.js';
+import { IChangeTrackerService } from './context/tracker/changeTracker.js';
 import { IPowerBusService } from '../../powerMode/browser/powerBusService.js';
 import { INotificationService } from '../../../../platform/notification/common/notification.js';
 import { IAccessibilitySignalService } from '../../../../platform/accessibilitySignal/browser/accessibilitySignalService.js';
@@ -129,6 +134,10 @@ export class WorkflowAgentService extends Disposable implements IWorkflowAgentSe
 		@ITextFileService private readonly textFileService: ITextFileService,
 		@ITerminalService private readonly terminalService: ITerminalService,
 		@IPowerBusService private readonly powerBusService: IPowerBusService,
+		@IContextPackerService private readonly contextPackerService: IContextPackerService,
+		@IWorkspaceSymbolIndexService private readonly symbolIndexService: IWorkspaceSymbolIndexService,
+		@IRelevanceScorerService private readonly relevanceScorerService: IRelevanceScorerService,
+		@IChangeTrackerService private readonly changeTrackerService: IChangeTrackerService,
 	) {
 		super();
 
@@ -152,6 +161,15 @@ export class WorkflowAgentService extends Disposable implements IWorkflowAgentSe
 		const grcTools = createGRCTools(null);
 		this._toolRegistry.registerMany(grcTools);
 
+		// ── Context Engine tools ─────────────────────────────────────────────
+		const contextTools = createWorkflowContextTools({
+			contextPacker: this.contextPackerService,
+			symbolIndex: this.symbolIndexService,
+			relevanceScorer: this.relevanceScorerService,
+			changeTracker: this.changeTrackerService,
+		});
+		this._toolRegistry.registerMany(contextTools);
+
 		// ── Register on PowerBus ─────────────────────────────────────────────
 		this.powerBusService.register('ni-agent-runner', ['send:query', 'receive:tool-result', 'broadcast'], 'NI Agent Runner');
 
@@ -168,6 +186,7 @@ export class WorkflowAgentService extends Disposable implements IWorkflowAgentSe
 			this.llmService,
 			this.settingsService,
 			this._toolRegistry,
+			this.contextPackerService,
 		);
 
 		// ── Trigger Manager ───────────────────────────────────────────────────
@@ -195,8 +214,8 @@ export class WorkflowAgentService extends Disposable implements IWorkflowAgentSe
 			this._triggerManager.refresh(this._configLoader.getWorkflows());
 		}));
 
-		const totalTools = ALL_FS_TOOLS.length + ALL_TERMINAL_TOOLS.length + ALL_GIT_TOOLS.length + ALL_HTTP_TOOLS.length + commTools.length + grcTools.length;
-		console.log('[WorkflowAgentService] Initialized with', totalTools, 'tools (including', grcTools.length, 'GRC tools)');
+		const totalTools = ALL_FS_TOOLS.length + ALL_TERMINAL_TOOLS.length + ALL_GIT_TOOLS.length + ALL_HTTP_TOOLS.length + commTools.length + grcTools.length + contextTools.length;
+		console.log('[WorkflowAgentService] Initialized with', totalTools, 'tools (including', grcTools.length, 'GRC,', contextTools.length, 'context)');
 	}
 
 	// ─── Workflow Registry ────────────────────────────────────────────────────

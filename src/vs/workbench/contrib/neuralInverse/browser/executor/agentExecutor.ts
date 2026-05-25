@@ -30,9 +30,10 @@ import { IVoidSettingsService } from '../../../void/common/voidSettingsService.j
 import { ModelSelection } from '../../../void/common/voidSettingsTypes.js';
 import { LLMChatMessage } from '../../../void/common/sendLLMMessageTypes.js';
 import { IAgentDefinition } from '../../common/workflowTypes.js';
-import { IWorkflowStep, IStepRun, IToolCallRecord, IToolExecutionContext } from '../../common/workflowTypes.js';
+import { IWorkflowStep, IStepRun, IToolCallRecord, IToolExecutionContext, IStepContextConfig } from '../../common/workflowTypes.js';
 import { ScopedToolRegistry } from '../tools/toolRegistry.js';
 import { parseToolCalls, stripToolCallBlocks } from './toolCallParser.js';
+import { IContextPackerService, ContextMode } from '../context/packer/index.js';
 
 const DEFAULT_MAX_ITERATIONS = 20;
 
@@ -58,6 +59,7 @@ export class AgentExecutor {
 		private readonly llmService: ILLMMessageService,
 		private readonly settingsService: IVoidSettingsService,
 		private readonly scopedTools: ScopedToolRegistry,
+		private readonly contextPacker?: IContextPackerService,
 	) {}
 
 	/**
@@ -86,9 +88,28 @@ export class AgentExecutor {
 		const maxIterations = step.maxIterations ?? DEFAULT_MAX_ITERATIONS;
 		const history: LLMChatMessage[] = [];
 
-		// ── System prompt ──────────────────────────────────────────────────────
+		// ── System prompt (with optional context pre-injection) ─────────────
 		const toolSchemas = this.scopedTools.getSchema();
-		const systemPrompt = this._buildSystemPrompt(agent, toolSchemas, priorOutputs);
+		const contextConfig = step.contextConfig;
+		let workspaceContext = '';
+
+		if (this.contextPacker && (!contextConfig || !contextConfig.disableAutoContext)) {
+			try {
+				const mode = (contextConfig?.mode ?? 'agent') as ContextMode;
+				const budget = contextConfig?.budget ?? this.contextPacker.getDefaultBudget(mode);
+				workspaceContext = await this.contextPacker.packToString({
+					mode,
+					query: { type: 'message', text: input },
+					budget,
+					includeActiveFile: contextConfig?.includeActiveFile ?? true,
+					priorityFiles: contextConfig?.priorityFiles,
+				});
+			} catch {
+				// Context packing is best-effort; don't fail the step
+			}
+		}
+
+		const systemPrompt = this._buildSystemPrompt(agent, toolSchemas, priorOutputs, workspaceContext);
 		history.push({ role: 'system', content: systemPrompt });
 
 		// ── Initial user message ───────────────────────────────────────────────
@@ -221,11 +242,17 @@ export class AgentExecutor {
 		agent: IAgentDefinition,
 		toolSchemas: object[],
 		priorOutputs: IPriorStepOutput[],
+		workspaceContext?: string,
 	): string {
 		const parts: string[] = [];
 
 		// Agent's own instructions
 		parts.push(agent.systemInstructions.trim());
+
+		// Pre-packed workspace context (from Context Engine)
+		if (workspaceContext && workspaceContext.length > 0) {
+			parts.push(`\n## Workspace Context\n\nThe following code context was automatically assembled based on relevance to your task. Use it to inform your work without needing to read these files manually.\n\n${workspaceContext}`);
+		}
 
 		// Tool usage instructions + schemas
 		if (toolSchemas.length > 0) {
