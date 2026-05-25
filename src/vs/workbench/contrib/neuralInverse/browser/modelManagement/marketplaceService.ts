@@ -38,7 +38,6 @@ export class ModelMarketplaceService extends Disposable implements IModelMarketp
 	}
 
 	async fetchModels(provider: ProviderName, searchQuery?: string): Promise<IAvailableModel[]> {
-		console.log('ModelMarketplaceService: Fetching models for', provider, 'search:', searchQuery);
 
 		const searchTerm = searchQuery || 'code';
 		const searches = this._buildSearchTerms(searchTerm);
@@ -49,7 +48,6 @@ export class ModelMarketplaceService extends Disposable implements IModelMarketp
 		for (const term of searches.slice(0, 5)) {
 			try {
 				const url = `${this.HUGGINGFACE_API}?search=${encodeURIComponent(term)}&sort=downloads&direction=-1&limit=100&filter=gguf`;
-				console.log(`Fetching from HuggingFace: ${url}`);
 
 				const response = await fetch(url, {
 					method: 'GET',
@@ -63,7 +61,6 @@ export class ModelMarketplaceService extends Disposable implements IModelMarketp
 				}
 
 				const data = await response.json();
-				console.log(`HuggingFace data received: ${Array.isArray(data) ? data.length : 0} models`);
 
 				if (Array.isArray(data)) {
 					for (const m of data) {
@@ -100,7 +97,6 @@ export class ModelMarketplaceService extends Disposable implements IModelMarketp
 		// Sort by NeuralInverse relevance score
 		allModels.sort((a, b) => this._calculateRelevanceScore(b) - this._calculateRelevanceScore(a));
 
-		console.log(`ModelMarketplaceService: Returning ${allModels.length} models`);
 		return allModels;
 	}
 
@@ -176,7 +172,7 @@ export class ModelMarketplaceService extends Disposable implements IModelMarketp
 		const name = modelId.toLowerCase();
 
 		// Extract size from model name (e.g., "7b", "13b", "70b")
-		const sizeMatch = name.match(/(\d+)b/);
+		const sizeMatch = name.match(/\b(\d+)b\b/);
 		if (sizeMatch) {
 			const params = parseInt(sizeMatch[1]);
 

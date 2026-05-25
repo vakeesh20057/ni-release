@@ -44,7 +44,6 @@ export class ModelManagementService extends Disposable implements IModelManageme
 
 	// Discovery
 	async browseModels(provider: ProviderName, searchQuery?: string): Promise<IAvailableModel[]> {
-		console.log('browseModels called with provider:', provider, 'search:', searchQuery);
 
 		try {
 			// Fetch LIVE from HuggingFace API with NeuralInverse-specific filters
@@ -59,20 +58,16 @@ export class ModelManagementService extends Disposable implements IModelManageme
 				try {
 					// Use correct HuggingFace API endpoint
 					const url = `https://huggingface.co/api/models?search=${encodeURIComponent(term)}&sort=downloads&direction=-1&limit=20`;
-					console.log('Fetching from HuggingFace:', url);
 
 					const response = await fetch(url, {
 						method: 'GET',
-						headers: {
-							'Accept': 'application/json'
-						}
+						headers: { 'Accept': 'application/json' },
+						signal: AbortSignal.timeout(10000)
 					});
 
-					console.log('HuggingFace response status:', response.status);
 
 					if (response.ok) {
 						const data = await response.json();
-						console.log('HuggingFace data received:', data?.length, 'models');
 
 						if (Array.isArray(data)) {
 							for (const m of data) {
@@ -102,7 +97,6 @@ export class ModelManagementService extends Disposable implements IModelManageme
 				}
 			}
 
-			console.log('Total models fetched:', allModels.length);
 
 			if (allModels.length > 0) {
 				// Sort by relevance to NeuralInverse use cases
@@ -119,7 +113,6 @@ export class ModelManagementService extends Disposable implements IModelManageme
 		}
 
 		// Fallback to curated list
-		console.log('Using fallback curated list');
 		if (provider === 'ollama') {
 			return this._browseOllamaLibrary(searchQuery);
 		}
@@ -260,11 +253,10 @@ export class ModelManagementService extends Disposable implements IModelManageme
 		}
 
 		return new Promise<void>((resolve, reject) => {
-			let cancelled = false;
+			const abortController = new AbortController();
 
-			// Setup cancellation
 			const cancel = () => {
-				cancelled = true;
+				abortController.abort();
 				this.activePulls.delete(pullKey);
 				this._onPullProgress.fire({
 					modelId,
@@ -279,15 +271,13 @@ export class ModelManagementService extends Disposable implements IModelManageme
 				token.onCancellationRequested(() => cancel());
 			}
 
-			// Emit queued status
 			this._onPullProgress.fire({
 				modelId,
 				provider,
 				status: 'queued'
 			});
 
-			// Call Ollama pull API
-			this._ollamaPull(modelId, provider, cancelled)
+			this._ollamaPull(modelId, provider, abortController.signal)
 				.then(() => {
 					this.activePulls.delete(pullKey);
 					this._onPullProgress.fire({
@@ -340,7 +330,6 @@ export class ModelManagementService extends Disposable implements IModelManageme
 	async testModel(provider: ProviderName, modelId: string, testPrompt: string): Promise<IModelTestResult> {
 		const startTime = Date.now();
 		let firstTokenTime: number | undefined;
-		let outputTokens = 0;
 
 		return new Promise((resolve, reject) => {
 			const requestId = this.llmMessageService.sendLLMMessage({
@@ -358,12 +347,13 @@ export class ModelManagementService extends Disposable implements IModelManageme
 					if (firstTokenTime === undefined) {
 						firstTokenTime = Date.now();
 					}
-					outputTokens++;
 				},
 				onFinalMessage: ({ fullText }) => {
 					const totalTime = Date.now() - startTime;
 					const ttft = firstTokenTime ? firstTokenTime - startTime : totalTime;
-					const tokensPerSecond = outputTokens > 0 ? (outputTokens / (totalTime / 1000)) : 0;
+					const estimatedOutputTokens = Math.ceil(fullText.length / 4);
+					const generationTime = (totalTime - (ttft || 0)) / 1000;
+					const tokensPerSecond = generationTime > 0 ? estimatedOutputTokens / generationTime : 0;
 
 					resolve({
 						modelId,
@@ -376,7 +366,7 @@ export class ModelManagementService extends Disposable implements IModelManageme
 						},
 						tokens: {
 							input: Math.ceil(testPrompt.length / 4),
-							output: outputTokens
+							output: estimatedOutputTokens
 						},
 						response: fullText
 					});
@@ -393,13 +383,17 @@ export class ModelManagementService extends Disposable implements IModelManageme
 	}
 
 	async compareModels(models: { provider: ProviderName; modelId: string }[], testPrompt: string): Promise<IModelComparisonResult> {
-		const results = await Promise.all(
+		const settled = await Promise.allSettled(
 			models.map(async ({ provider, modelId }) => ({
 				modelId,
 				provider,
 				result: await this.testModel(provider, modelId, testPrompt)
 			}))
 		);
+
+		const results = settled
+			.filter((s): s is PromiseFulfilledResult<{ modelId: string; provider: ProviderName; result: IModelTestResult }> => s.status === 'fulfilled')
+			.map(s => s.value);
 
 		return {
 			models: results,
@@ -435,15 +429,43 @@ export class ModelManagementService extends Disposable implements IModelManageme
 			};
 		}
 
-		// TODO: Implement actual health check ping
-		// For now, return mock status
-		return {
-			provider,
-			status: 'healthy',
-			endpoint,
-			latency: 45,
-			lastChecked: new Date()
-		};
+		const healthPath = provider === 'ollama' ? '/' : '/models';
+		const start = performance.now();
+
+		try {
+			const response = await fetch(`${endpoint}${healthPath}`, {
+				method: 'GET',
+				signal: AbortSignal.timeout(5000)
+			});
+			const latency = Math.round(performance.now() - start);
+
+			if (response.ok) {
+				return {
+					provider,
+					status: latency > 2000 ? 'degraded' : 'healthy',
+					endpoint,
+					latency,
+					lastChecked: new Date()
+				};
+			}
+
+			return {
+				provider,
+				status: 'degraded',
+				endpoint,
+				latency,
+				error: `HTTP ${response.status}`,
+				lastChecked: new Date()
+			};
+		} catch (err) {
+			return {
+				provider,
+				status: 'offline',
+				endpoint,
+				error: err instanceof Error ? err.message : 'Connection failed',
+				lastChecked: new Date()
+			};
+		}
 	}
 
 	async detectProviders(): Promise<IProviderDetectionResult[]> {
@@ -453,29 +475,29 @@ export class ModelManagementService extends Disposable implements IModelManageme
 		for (const provider of localProviders) {
 			const settings = this.voidSettingsService.state.settingsOfProvider[provider];
 			let endpoint = 'endpoint' in settings ? settings.endpoint as string : '';
-		endpoint = endpoint.replace('127.0.0.1', 'localhost'); // Fix CSP
+			endpoint = endpoint.replace('127.0.0.1', 'localhost');
 			const configured = settings._didFillInProviderSettings || false;
 
-			// Fix CSP issue: Replace 127.0.0.1 with localhost
-			endpoint = endpoint.replace('127.0.0.1', 'localhost');
-
-			// Ping the endpoint to check if running
+			const healthPath = provider === 'ollama' ? '/api/tags' : '/models';
 			let detected = false;
 			let modelsAvailable = 0;
 
 			try {
-				const response = await fetch(`${endpoint}/api/tags`, {
+				const response = await fetch(`${endpoint}${healthPath}`, {
 					method: 'GET',
-					signal: AbortSignal.timeout(3000) // 3s timeout
+					signal: AbortSignal.timeout(3000)
 				});
 
 				if (response.ok) {
 					detected = true;
 					const data = await response.json();
-					modelsAvailable = data.models?.length || 0;
+					if (provider === 'ollama') {
+						modelsAvailable = data.models?.length || 0;
+					} else {
+						modelsAvailable = data.data?.length || 0;
+					}
 				}
-			} catch (err) {
-				// Provider not running
+			} catch {
 				detected = false;
 			}
 
@@ -492,16 +514,14 @@ export class ModelManagementService extends Disposable implements IModelManageme
 	}
 
 	async getDiskSpace(provider: ProviderName): Promise<IDiskSpaceInfo> {
-		// Disk space checking requires filesystem access through main process
-		// For now, assume sufficient space (models will fail on pull if not enough)
-		// TODO: Add IPC call to main process to check actual disk space using Node.js fs
 		const modelStoragePath = provider === 'ollama' ? '~/.ollama/models' :
 			provider === 'vLLM' ? '~/.cache/huggingface' : '~/.cache/lm-studio';
 
+		// Disk space requires main process IPC — skip pre-check and let Ollama report errors
 		return {
-			available: 100 * 1024 * 1024 * 1024, // Conservative estimate
-			total: 500 * 1024 * 1024 * 1024,
-			used: 400 * 1024 * 1024 * 1024,
+			available: Infinity,
+			total: Infinity,
+			used: 0,
 			modelStoragePath
 		};
 	}
@@ -854,16 +874,16 @@ export class ModelManagementService extends Disposable implements IModelManageme
 		});
 	}
 
-	private async _ollamaPull(modelId: string, provider: ProviderName, cancelled: boolean): Promise<void> {
+	private async _ollamaPull(modelId: string, provider: ProviderName, abortSignal: AbortSignal): Promise<void> {
 		const settings = this.voidSettingsService.state.settingsOfProvider[provider];
 		let endpoint = 'endpoint' in settings ? settings.endpoint as string : 'http://localhost:11434';
-		endpoint = endpoint.replace('127.0.0.1', 'localhost'); // Fix CSP
+		endpoint = endpoint.replace('127.0.0.1', 'localhost');
 
 		const response = await fetch(`${endpoint}/api/pull`, {
 			method: 'POST',
 			headers: { 'Content-Type': 'application/json' },
 			body: JSON.stringify({ name: modelId, stream: true }),
-			signal: cancelled ? AbortSignal.abort() : undefined
+			signal: abortSignal
 		});
 
 		if (!response.ok) {
@@ -880,7 +900,7 @@ export class ModelManagementService extends Disposable implements IModelManageme
 
 		try {
 			while (true) {
-				if (cancelled) {
+				if (abortSignal.aborted) {
 					reader.cancel();
 					break;
 				}

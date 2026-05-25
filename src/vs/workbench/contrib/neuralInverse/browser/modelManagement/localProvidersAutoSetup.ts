@@ -75,6 +75,7 @@ export class LocalProvidersAutoSetupContribution extends Disposable implements I
 	static readonly ID = 'workbench.contrib.localProvidersAutoSetup';
 
 	private pollIntervals: Map<ProviderName, NodeJS.Timeout> = new Map();
+	private pollTimeouts: Map<ProviderName, NodeJS.Timeout> = new Map();
 
 	constructor(
 		@IModelManagementService private readonly modelManagementService: IModelManagementService,
@@ -200,14 +201,15 @@ export class LocalProvidersAutoSetupContribution extends Disposable implements I
 
 		this.pollIntervals.set(providerInfo.provider, interval);
 
-		// Timeout after 5 minutes
-		setTimeout(() => {
+		const timeout = setTimeout(() => {
 			const stillRunning = this.pollIntervals.get(providerInfo.provider);
 			if (stillRunning) {
 				clearInterval(stillRunning);
 				this.pollIntervals.delete(providerInfo.provider);
 			}
+			this.pollTimeouts.delete(providerInfo.provider);
 		}, POLL_TIMEOUT);
+		this.pollTimeouts.set(providerInfo.provider, timeout);
 	}
 
 	private async showFirstModelNotification(provider: ProviderName, displayName: string): Promise<void> {
@@ -224,16 +226,21 @@ export class LocalProvidersAutoSetupContribution extends Disposable implements I
 
 	private async downloadModel(provider: ProviderName, modelId: string, modelName: string): Promise<void> {
 		this.notificationService.info(`Downloading ${modelName}...`);
+		let lastReportedTen = 0;
 
 		const disposable = this.modelManagementService.onPullProgress((p: IModelPullProgress) => {
 			if (p.provider === provider && p.modelId === modelId) {
 				if (p.status === 'downloading' && p.percentage) {
-					this.notificationService.info(`Downloading: ${p.percentage}%`);
+					const currentTen = Math.floor(p.percentage / 10) * 10;
+					if (currentTen > lastReportedTen) {
+						lastReportedTen = currentTen;
+						this.notificationService.info(`Downloading ${modelName}: ${currentTen}%`);
+					}
 				} else if (p.status === 'completed') {
-					this.notificationService.info(`✅ ${modelName} ready!`);
+					this.notificationService.info(`${modelName} ready!`);
 					disposable.dispose();
 				} else if (p.status === 'failed') {
-					this.notificationService.error(`Failed: ${p.error}`);
+					this.notificationService.error(`Download failed: ${p.error || 'Unknown error'}`);
 					disposable.dispose();
 				}
 			}
@@ -258,7 +265,11 @@ export class LocalProvidersAutoSetupContribution extends Disposable implements I
 		for (const interval of this.pollIntervals.values()) {
 			clearInterval(interval);
 		}
+		for (const timeout of this.pollTimeouts.values()) {
+			clearTimeout(timeout);
+		}
 		this.pollIntervals.clear();
+		this.pollTimeouts.clear();
 		super.dispose();
 	}
 }

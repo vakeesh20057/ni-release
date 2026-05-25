@@ -306,9 +306,9 @@ export class CloudDeploymentService extends Disposable implements ICloudDeployme
 		const launchCmd = [
 			`set -euo pipefail`,
 			'',
-			// Export credentials securely — values are shell-escaped
-			`export AWS_ACCESS_KEY_ID=${this._shellEscape(credentials.awsAccessKeyId || '')}`,
-			`export AWS_SECRET_ACCESS_KEY=${this._shellEscape(credentials.awsSecretAccessKey || '')}`,
+			`read -r AWS_ACCESS_KEY_ID <<< ${this._shellEscape(credentials.awsAccessKeyId || '')}`,
+			`read -r AWS_SECRET_ACCESS_KEY <<< ${this._shellEscape(credentials.awsSecretAccessKey || '')}`,
+			`export AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY`,
 			`export AWS_DEFAULT_REGION=${this._shellEscape(region)}`,
 			'',
 			`echo "[NeuralInverse] Deploying ${this._shellEscape(modelName)} on ${config.instanceType}"`,
@@ -396,12 +396,12 @@ export class CloudDeploymentService extends Disposable implements ICloudDeployme
 			`echo "║  Instance ID:  $INSTANCE_ID"`,
 			`echo "║  Public IP:    $PUBLIC_IP"`,
 			`echo "║  Endpoint:     http://$PUBLIC_IP:8000/v1"`,
-			`echo "║  API Key:      ${apiKey}"`,
+			`echo "║  API Key:      ${apiKey.slice(0, 7)}...${apiKey.slice(-4)} (stored securely)"`,
 			`echo "║                                                              ║"`,
 			`echo "║  vLLM is downloading the model and starting up.              ║"`,
 			`echo "║  This typically takes 5-15 minutes depending on model size.  ║"`,
 			`echo "║                                                              ║"`,
-			`echo "║  Test:  curl -H 'Authorization: Bearer ${apiKey}' \\\\      ║"`,
+			`echo "║  Test:  curl -H 'Authorization: Bearer <key>' \\\\          ║"`,
 			`echo "║           http://$PUBLIC_IP:8000/v1/models                    ║"`,
 			`echo "╚══════════════════════════════════════════════════════════════╝"`,
 			'',
@@ -505,7 +505,7 @@ export class CloudDeploymentService extends Disposable implements ICloudDeployme
 			`  exit 1`,
 			`fi`,
 			'',
-			`PUBLIC_IP=$(echo "$VM_OUTPUT" | python3 -c "import sys,json; print(json.load(sys.stdin).get('publicIpAddress',''))" 2>/dev/null || echo "")`,
+			`PUBLIC_IP=$(echo "$VM_OUTPUT" | grep -o '"publicIpAddress"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | cut -d'"' -f4 2>/dev/null || echo "")`,
 			`if [ -z "$PUBLIC_IP" ]; then`,
 			`  PUBLIC_IP=$(az vm show --resource-group ${this._shellEscape(rgName)} --name ${this._shellEscape(vmName)} --show-details --query publicIps --output tsv 2>/dev/null || echo "")`,
 			`fi`,
@@ -518,12 +518,12 @@ export class CloudDeploymentService extends Disposable implements ICloudDeployme
 			`echo "║  Resource Group: ${rgName}"`,
 			`echo "║  Public IP:     $PUBLIC_IP"`,
 			`echo "║  Endpoint:      http://$PUBLIC_IP:8000/v1"`,
-			`echo "║  API Key:       ${apiKey}"`,
+			`echo "║  API Key:       ${apiKey.slice(0, 7)}...${apiKey.slice(-4)} (stored securely)"`,
 			`echo "║                                                              ║"`,
 			`echo "║  vLLM is downloading the model and starting up.              ║"`,
 			`echo "║  This typically takes 5-15 minutes depending on model size.  ║"`,
 			`echo "║                                                              ║"`,
-			`echo "║  Test:  curl -H 'Authorization: Bearer ${apiKey}' \\\\      ║"`,
+			`echo "║  Test:  curl -H 'Authorization: Bearer <key>' \\\\          ║"`,
 			`echo "║           http://$PUBLIC_IP:8000/v1/models                    ║"`,
 			`echo "╚══════════════════════════════════════════════════════════════╝"`,
 		].join('\n');
@@ -759,17 +759,10 @@ export class CloudDeploymentService extends Disposable implements ICloudDeployme
 	}
 
 	private _generateApiKey(): string {
-		const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
-		const segments: string[] = [];
-		for (let s = 0; s < 4; s++) {
-			let segment = '';
-			for (let i = 0; i < 8; i++) {
-				const randomIndex = Math.floor(Math.random() * chars.length);
-				segment += chars[randomIndex];
-			}
-			segments.push(segment);
-		}
-		return `ni-${segments.join('-')}`;
+		const bytes = new Uint8Array(32);
+		crypto.getRandomValues(bytes);
+		const hex = Array.from(bytes, b => b.toString(16).padStart(2, '0')).join('');
+		return `ni-${hex.slice(0, 8)}-${hex.slice(8, 16)}-${hex.slice(16, 24)}-${hex.slice(24, 32)}`;
 	}
 
 	// --- Helpers ---
