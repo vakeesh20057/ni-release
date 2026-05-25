@@ -54,6 +54,8 @@ export interface IWorkflowComposerService {
 
 	mount(container: HTMLElement): void;
 	unmount(): void;
+	/** Re-measure the canvas and re-render after the container becomes visible (e.g. on tab switch). */
+	refresh(): void;
 }
 
 export const IWorkflowComposerService = createDecorator<IWorkflowComposerService>('workflowComposerService');

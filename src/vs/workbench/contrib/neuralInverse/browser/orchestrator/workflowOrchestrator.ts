@@ -9,11 +9,17 @@
  * Coordinates a multi-agent workflow: resolves step execution order,
  * runs each step via AgentExecutor, and threads outputs between steps.
  *
- * ## Step Ordering
+ * ## Step Ordering & Parallel Execution
  *
- * Steps are sorted topologically based on their dependsOn declarations.
- * Steps with no dependencies may be run concurrently (future: parallel execution).
- * Currently executed sequentially for predictability.
+ * Steps are grouped into concurrency levels based on their dependsOn
+ * declarations. All steps within a level have no mutual dependencies and
+ * run concurrently via Promise.all. Levels execute sequentially — level N+1
+ * starts only after every step in level N has completed successfully.
+ *
+ * Example: steps A, B (no deps), C (depends on A), D (depends on A, B)
+ *   Level 0: [A, B]   — run concurrently
+ *   Level 1: [C]      — runs after A finishes
+ *   Level 2: [D]      — runs after both A and B finish
  *
  * ## Output Threading
  *
@@ -23,9 +29,9 @@
  *
  * ## Failure Handling
  *
- * If any step fails, the workflow is marked failed immediately. Steps that
- * have not yet run are marked 'skipped'. The error from the failing step
- * is propagated to the IAgentRun.error field.
+ * If any step in a level fails, the workflow is marked failed immediately.
+ * Steps that have not yet run are marked 'skipped'. The error from the first
+ * failing step is propagated to the IAgentRun.error field.
  */
 
 import { ILLMMessageService } from '../../../void/common/sendLLMMessageService.js';
@@ -65,10 +71,10 @@ export class WorkflowOrchestrator {
 		run.status = 'planning';
 		onUpdate(run);
 
-		// Resolve execution order
-		let orderedSteps: IWorkflowStep[];
+		// Build concurrency levels: each level is a group of steps that can run in parallel
+		let levels: IWorkflowStep[][];
 		try {
-			orderedSteps = this._topoSort(workflow.steps);
+			levels = this._buildConcurrencyLevels(workflow.steps);
 		} catch (e: any) {
 			run.status = 'failed';
 			run.error = `Step ordering error: ${e.message}`;
@@ -80,80 +86,60 @@ export class WorkflowOrchestrator {
 		run.status = 'running';
 		onUpdate(run);
 
-		// Output map: stepId → finalOutput (for dependency injection)
+		// Output map: stepId → finalOutput (for dependency injection into downstream steps)
 		const stepOutputs = new Map<string, string>();
 
-		for (const step of orderedSteps) {
+		for (const level of levels) {
 			if (cancellation.cancelled) {
 				run.status = 'cancelled';
-				this._markRemainingSkipped(run, orderedSteps, stepOutputs);
+				this._markRemainingSkipped(run, levels.flat(), stepOutputs);
 				break;
 			}
 
-			const stepRun = run.steps.find(s => s.stepId === step.id);
-			if (!stepRun) continue;
-
-			// Resolve agent definition
-			const agent = agents.get(step.agentId);
-			if (!agent) {
-				stepRun.status = 'failed';
-				stepRun.error = `Agent definition "${step.agentId}" not found in .inverse/agents/`;
-				run.status = 'failed';
-				run.error = stepRun.error;
-				run.endedAt = Date.now();
-				onUpdate(run);
-				return run;
-			}
-
-			// Build prior outputs for this step
-			const priorOutputs: IPriorStepOutput[] = (step.dependsOn ?? [])
-				.map(depId => {
-					const depStep = workflow.steps.find(s => s.id === depId);
-					return {
-						stepId: depId,
-						role: depStep?.role ?? 'unknown',
-						output: stepOutputs.get(depId) ?? '',
-					};
-				})
-				.filter(p => p.output.length > 0);
-
-			// Build scoped tool context with live logging
-			const scopedTools = this.toolRegistry.scope(step.allowedTools);
-			const toolCtx: IToolExecutionContext = {
-				workspaceUri: baseCtx.workspaceUri,
-				fileService: baseCtx.fileService,
-				log: (msg: string) => {
-					stepRun.outputLog.push(`[${new Date().toISOString()}] ${msg}`);
+			// Validate all agents in this level before launching any
+			for (const step of level) {
+				if (!agents.get(step.agentId)) {
+					const stepRun = run.steps.find(s => s.stepId === step.id);
+					const err = `Agent definition "${step.agentId}" not found in .inverse/agents/`;
+					if (stepRun) { stepRun.status = 'failed'; stepRun.error = err; }
+					run.status = 'failed';
+					run.error = err;
+					run.endedAt = Date.now();
+					this._markRemainingSkipped(run, levels.flat(), stepOutputs);
 					onUpdate(run);
-				},
-			};
-
-			const executor = new AgentExecutor(this.llmService, this.settingsService, scopedTools);
-
-			// Determine input: first step gets the original user input,
-			// subsequent steps get a summary request unless they have prior outputs
-			const stepInput = this._buildStepInput(step, input, priorOutputs, orderedSteps.indexOf(step));
-
-			await executor.execute(agent, step, stepRun, priorOutputs, toolCtx, stepInput, cancellation);
-			onUpdate(run);
-
-			if (stepRun.status === 'failed') {
-				run.status = 'failed';
-				run.error = stepRun.error;
-				run.endedAt = Date.now();
-				this._markRemainingSkipped(run, orderedSteps, stepOutputs);
-				onUpdate(run);
-				return run;
+					return run;
+				}
 			}
 
-			if (stepRun.finalOutput) {
-				stepOutputs.set(step.id, stepRun.finalOutput);
+			// Run all steps in this level concurrently
+			await Promise.all(level.map(step => this._runStep(
+				step, run, agents, baseCtx, input, stepOutputs, cancellation, onUpdate,
+			)));
+
+			// Collect outputs and check for failures before advancing to next level
+			for (const step of level) {
+				const stepRun = run.steps.find(s => s.stepId === step.id);
+				if (!stepRun) continue;
+
+				if (stepRun.status === 'failed') {
+					run.status = 'failed';
+					run.error = stepRun.error;
+					run.endedAt = Date.now();
+					this._markRemainingSkipped(run, levels.flat(), stepOutputs);
+					onUpdate(run);
+					return run;
+				}
+
+				if (stepRun.finalOutput) {
+					stepOutputs.set(step.id, stepRun.finalOutput);
+				}
 			}
 		}
 
 		if (run.status !== 'cancelled') {
-			// Final output = last completed step's output
-			const lastStep = orderedSteps[orderedSteps.length - 1];
+			// Final output = last completed step's output (last step of the last level)
+			const allSteps = levels.flat();
+			const lastStep = allSteps[allSteps.length - 1];
 			run.finalOutput = stepOutputs.get(lastStep.id);
 			run.status = 'done';
 		}
@@ -163,36 +149,108 @@ export class WorkflowOrchestrator {
 		return run;
 	}
 
-	// ─── Topological Sort ────────────────────────────────────────────────────
+	/**
+	 * Execute a single step. Mutates stepRun and fires onUpdate on the parent run.
+	 * Does NOT write to stepOutputs — the caller collects outputs after Promise.all settles.
+	 */
+	private async _runStep(
+		step: IWorkflowStep,
+		run: IAgentRun,
+		agents: Map<string, IAgentDefinition>,
+		baseCtx: Omit<IToolExecutionContext, 'log'>,
+		input: string,
+		stepOutputs: Map<string, string>,
+		cancellation: ICancellationToken,
+		onUpdate: RunUpdateCallback,
+	): Promise<void> {
+		const stepRun = run.steps.find(s => s.stepId === step.id);
+		if (!stepRun) return;
 
-	private _topoSort(steps: IWorkflowStep[]): IWorkflowStep[] {
-		const stepMap = new Map(steps.map(s => [s.id, s]));
-		const visited = new Set<string>();
-		const inStack = new Set<string>(); // cycle detection
-		const result: IWorkflowStep[] = [];
+		const agent = agents.get(step.agentId)!;
 
-		const visit = (id: string) => {
-			if (visited.has(id)) return;
-			if (inStack.has(id)) throw new Error(`Cycle detected in workflow steps: "${id}"`);
+		const priorOutputs: IPriorStepOutput[] = (step.dependsOn ?? [])
+			.map(depId => {
+				const depStep = run.steps.find(s => s.stepId === depId);
+				return {
+					stepId: depId,
+					role: depStep?.role ?? 'unknown',
+					output: stepOutputs.get(depId) ?? '',
+				};
+			})
+			.filter(p => p.output.length > 0);
 
-			inStack.add(id);
-			const step = stepMap.get(id);
-			if (!step) throw new Error(`Step "${id}" referenced in dependsOn but not defined`);
-
-			for (const dep of step.dependsOn ?? []) {
-				visit(dep);
-			}
-
-			inStack.delete(id);
-			visited.add(id);
-			result.push(step);
+		const scopedTools = this.toolRegistry.scope(step.allowedTools);
+		const toolCtx: IToolExecutionContext = {
+			workspaceUri: baseCtx.workspaceUri,
+			fileService: baseCtx.fileService,
+			log: (msg: string) => {
+				stepRun.outputLog.push(`[${new Date().toISOString()}] ${msg}`);
+				onUpdate(run);
+			},
 		};
 
+		const executor = new AgentExecutor(this.llmService, this.settingsService, scopedTools);
+		const stepInput = this._buildStepInput(step, input, priorOutputs, priorOutputs.length === 0 ? 0 : 1);
+
+		await executor.execute(agent, step, stepRun, priorOutputs, toolCtx, stepInput, cancellation);
+		onUpdate(run);
+	}
+
+	// ─── Concurrency Level Builder ───────────────────────────────────────────
+
+	/**
+	 * Groups steps into levels using Kahn's algorithm (BFS topological sort).
+	 * Steps within the same level have no mutual dependencies and can run in parallel.
+	 * Throws if a cycle is detected or a dependsOn reference is undefined.
+	 */
+	private _buildConcurrencyLevels(steps: IWorkflowStep[]): IWorkflowStep[][] {
+		const stepMap = new Map(steps.map(s => [s.id, s]));
+
+		// Validate all dependsOn references
 		for (const step of steps) {
-			visit(step.id);
+			for (const dep of step.dependsOn ?? []) {
+				if (!stepMap.has(dep)) {
+					throw new Error(`Step "${step.id}" depends on "${dep}" which is not defined`);
+				}
+			}
 		}
 
-		return result;
+		// Build in-degree map and reverse adjacency (dep → steps that depend on it)
+		const inDegree = new Map<string, number>(steps.map(s => [s.id, s.dependsOn?.length ?? 0]));
+		const dependents = new Map<string, string[]>(steps.map(s => [s.id, []]));
+		for (const step of steps) {
+			for (const dep of step.dependsOn ?? []) {
+				dependents.get(dep)!.push(step.id);
+			}
+		}
+
+		const levels: IWorkflowStep[][] = [];
+		// Seed queue with all steps that have no dependencies
+		let frontier = steps.filter(s => (s.dependsOn?.length ?? 0) === 0);
+
+		while (frontier.length > 0) {
+			levels.push(frontier);
+			const next: IWorkflowStep[] = [];
+			for (const step of frontier) {
+				for (const dependentId of dependents.get(step.id) ?? []) {
+					const remaining = inDegree.get(dependentId)! - 1;
+					inDegree.set(dependentId, remaining);
+					if (remaining === 0) {
+						next.push(stepMap.get(dependentId)!);
+					}
+				}
+			}
+			frontier = next;
+		}
+
+		// If any step still has unresolved in-degree, there is a cycle
+		const processed = levels.flat().length;
+		if (processed !== steps.length) {
+			const cycleIds = steps.filter(s => inDegree.get(s.id)! > 0).map(s => s.id);
+			throw new Error(`Cycle detected among steps: ${cycleIds.join(', ')}`);
+		}
+
+		return levels;
 	}
 
 	// ─── Helpers ─────────────────────────────────────────────────────────────

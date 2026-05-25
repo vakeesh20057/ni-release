@@ -216,6 +216,8 @@ export class WorkflowComposerServiceImpl extends Disposable implements IWorkflow
 		container.style.position = 'relative';
 
 		const paletteContainer = document.createElement('div');
+		paletteContainer.style.height = '100%';
+		paletteContainer.style.flexShrink = '0';
 		container.appendChild(paletteContainer);
 
 		const centerArea = document.createElement('div');
@@ -230,7 +232,9 @@ export class WorkflowComposerServiceImpl extends Disposable implements IWorkflow
 
 		const canvasContainer = document.createElement('div');
 		canvasContainer.style.flex = '1';
+		canvasContainer.style.minHeight = '0';
 		canvasContainer.style.position = 'relative';
+		canvasContainer.style.overflow = 'hidden';
 		centerArea.appendChild(canvasContainer);
 
 		const runPanelContainer = document.createElement('div');
@@ -239,6 +243,8 @@ export class WorkflowComposerServiceImpl extends Disposable implements IWorkflow
 		container.appendChild(centerArea);
 
 		const propertyContainer = document.createElement('div');
+		propertyContainer.style.height = '100%';
+		propertyContainer.style.flexShrink = '0';
 		container.appendChild(propertyContainer);
 
 		this._canvas = this._register(new WorkflowCanvas());
@@ -274,6 +280,11 @@ export class WorkflowComposerServiceImpl extends Disposable implements IWorkflow
 		this._palette.mount(paletteContainer);
 		this._refreshAgentPalette();
 
+		// Refresh palette whenever agents load or change (they load async after mount)
+		this._register(this._agentStoreService.onDidChange(() => {
+			this._refreshAgentPalette();
+		}));
+
 		this._propertyPanel = this._register(new PropertyPanel(
 			this._model, this._history, this._nodeRegistry,
 			() => this._getToolNames()
@@ -285,6 +296,11 @@ export class WorkflowComposerServiceImpl extends Disposable implements IWorkflow
 		this._register(this._runPanel.onCancel(runId => this.cancelRun(runId)));
 
 		this._mounted = true;
+
+		// Start with a blank workflow so the canvas is never empty on first open
+		if (this._model.nodes.size === 0) {
+			this.createNew();
+		}
 	}
 
 	unmount(): void {
@@ -303,6 +319,13 @@ export class WorkflowComposerServiceImpl extends Disposable implements IWorkflow
 		this._propertyPanel = null;
 		this._runPanel = null;
 		this._mounted = false;
+	}
+
+	refresh(): void {
+		if (!this._canvas || !this._renderer) { return; }
+		// Re-measure after the container becomes visible (tab switch restores display)
+		this._canvas.updateContainerRect();
+		this._renderer.render();
 	}
 
 	private async _saveWithMetadata(metadata: { id: string; name: string; description: string }): Promise<void> {

@@ -82,6 +82,8 @@ export class AgentStoreService extends Disposable implements IAgentStoreService 
 	readonly onDidChange: Event<void> = this._onDidChange.event;
 
 	private _agents = new Map<string, IAgentDefinition>();
+	private _reloadPending = false;
+	private _reloading = false;
 
 	constructor(
 		@IFileService private readonly fileService: IFileService,
@@ -111,8 +113,26 @@ export class AgentStoreService extends Disposable implements IAgentStoreService 
 	}
 
 	private async _reload(): Promise<void> {
-		this._agents.clear();
+		// Coalesce concurrent reload requests: if one is in flight, just mark pending and skip
+		if (this._reloading) {
+			this._reloadPending = true;
+			return;
+		}
+		this._reloading = true;
+		try {
+			await this._doReload();
+			// If more file changes arrived while we were reloading, do one final pass
+			if (this._reloadPending) {
+				this._reloadPending = false;
+				await this._doReload();
+			}
+		} finally {
+			this._reloading = false;
+			this._reloadPending = false;
+		}
+	}
 
+	private async _doReload(): Promise<void> {
 		const dir = this._agentsDirUri();
 		if (!dir) return;
 
@@ -131,19 +151,23 @@ export class AgentStoreService extends Disposable implements IAgentStoreService 
 			return;
 		}
 
+		// Build into a local map so getAgent() is never broken during reload
+		const incoming = new Map<string, IAgentDefinition>();
 		for (const child of dirStat.children) {
 			if (!child.name.endsWith('.json')) continue;
 			try {
 				const raw = (await this.fileService.readFile(child.resource)).value.toString();
 				const def = JSON.parse(raw) as IAgentDefinition;
 				if (def.id) {
-					this._agents.set(def.id, def);
+					incoming.set(def.id, def);
 				}
 			} catch (e) {
 				console.warn('[AgentStoreService] Failed to parse agent file', child.name, e);
 			}
 		}
 
+		// Atomic swap — no window where getAgent() returns undefined
+		this._agents = incoming;
 		this._onDidChange.fire();
 	}
 

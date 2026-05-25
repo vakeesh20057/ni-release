@@ -27,6 +27,7 @@ import { ICloudDeploymentService } from './modelManagement/cloudDeploymentServic
 import { IDeploymentRegistryService } from './modelManagement/deployment/deploymentRegistryService.js';
 import { IUnifiedDeployment, isLocalDeployment, isCloudDeployment, isDeploymentActive, getDeploymentEndpoint } from './modelManagement/deployment/deploymentTypes.js';
 import { CloudProvider, CloudDeploymentStatus, ICloudCredentials, ICloudDeployment, getRecommendedInstances } from '../common/modelManagement/cloudTypes.js';
+import { IWorkflowComposerService } from './composer/service.js';
 
 export class AgentManagerPart extends Part {
 
@@ -59,6 +60,7 @@ export class AgentManagerPart extends Part {
         @ICloudCredentialService private readonly cloudCredentialService: ICloudCredentialService,
         @ICloudDeploymentService private readonly cloudDeploymentService: ICloudDeploymentService,
         @IDeploymentRegistryService private readonly deploymentRegistryService: IDeploymentRegistryService,
+        @IWorkflowComposerService private readonly workflowComposerService: IWorkflowComposerService,
     ) {
         super(AgentManagerPart.ID, { hasTitle: false }, themeService, storageService, layoutService);
         this.registerListeners();
@@ -155,11 +157,20 @@ export class AgentManagerPart extends Part {
         deploymentsContainer.style.background = 'var(--vscode-editor-background)';
         body.appendChild(deploymentsContainer);
 
-        // State Management
-        const allContainers = [agentContainer, voidContainer, controlCenterContainer, modelsContainer, deploymentsContainer];
-        let allTabs: HTMLElement[] = [];
+        // VIEW 6: Workflow Composer
+        const workflowsContainer = document.createElement('div');
+        workflowsContainer.style.width = '100%';
+        workflowsContainer.style.height = '100%';
+        workflowsContainer.style.overflow = 'hidden';
+        workflowsContainer.style.background = 'var(--vscode-editor-background)';
+        body.appendChild(workflowsContainer);
 
-        const updateView = (view: 'manager' | 'chat' | 'control' | 'models' | 'deployments') => {
+        // State Management
+        const allContainers = [agentContainer, voidContainer, controlCenterContainer, modelsContainer, deploymentsContainer, workflowsContainer];
+        let allTabs: HTMLElement[] = [];
+        let composerMounted = false;
+
+        const updateView = (view: 'manager' | 'chat' | 'control' | 'models' | 'deployments' | 'workflows') => {
             for (const c of allContainers) { c.style.display = 'none'; }
             for (const t of allTabs) { styleInactive(t); }
 
@@ -180,6 +191,17 @@ export class AgentManagerPart extends Part {
                 deploymentsContainer.style.display = 'block';
                 styleActive(tabDeployments);
                 this._renderDeploymentsView(deploymentsContainer);
+            } else if (view === 'workflows') {
+                workflowsContainer.style.display = 'block';
+                styleActive(tabWorkflows);
+                if (!composerMounted) {
+                    composerMounted = true;
+                    this.workflowComposerService.mount(workflowsContainer);
+                    this.disposables.add(toDisposable(() => this.workflowComposerService.unmount()));
+                } else {
+                    // Re-measure after display:none → display:block so SVG fills correctly
+                    requestAnimationFrame(() => this.workflowComposerService.refresh());
+                }
             }
         };
 
@@ -197,13 +219,15 @@ export class AgentManagerPart extends Part {
 
         const tabChat = createTab('Chat', () => updateView('chat'));
         const tabAgents = createTab('Agents', () => updateView('manager'));
+        const tabWorkflows = createTab('Workflows', () => updateView('workflows'));
         const tabModels = createTab('Models', () => updateView('models'));
         const tabDeployments = createTab('Deployments', () => updateView('deployments'));
 
-        allTabs = [tabChat, tabAgents, tabModels, tabDeployments];
+        allTabs = [tabChat, tabAgents, tabWorkflows, tabModels, tabDeployments];
 
         tabsContainer.appendChild(tabChat);
         tabsContainer.appendChild(tabAgents);
+        tabsContainer.appendChild(tabWorkflows);
         tabsContainer.appendChild(tabModels);
         tabsContainer.appendChild(tabDeployments);
 
@@ -1434,10 +1458,8 @@ export class AgentManagerPart extends Part {
             document.getElementById('edit-agent-instructions').value = agent.systemInstructions || '';
             var editModelSel = document.getElementById('edit-agent-model');
             var agentModelVal = agent.model ? (agent.model.providerName + '::' + agent.model.modelName) : '';
-            if (editModelSel.options.length === 0) {
-                // Models not yet populated — populate from current models
-                syncEditModelDropdown();
-            }
+            // Always sync — the initial placeholder has 1 option but no real values
+            syncEditModelDropdown();
             editModelSel.value = agentModelVal;
             var eg = document.getElementById('edit-tool-grid');
             if (eg) eg.innerHTML = buildToolGridHtml('edit-tool-check', agent.allowedTools || []);
