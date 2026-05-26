@@ -30,7 +30,7 @@ import { IVoidSettingsService } from '../../../void/common/voidSettingsService.j
 import { ModelSelection } from '../../../void/common/voidSettingsTypes.js';
 import { LLMChatMessage } from '../../../void/common/sendLLMMessageTypes.js';
 import { IAgentDefinition } from '../../common/workflowTypes.js';
-import { IWorkflowStep, IStepRun, IToolCallRecord, IToolExecutionContext, IStepContextConfig } from '../../common/workflowTypes.js';
+import { IWorkflowStep, IStepRun, IToolCallRecord, IToolExecutionContext } from '../../common/workflowTypes.js';
 import { ScopedToolRegistry } from '../tools/toolRegistry.js';
 import { parseToolCalls, stripToolCallBlocks } from './toolCallParser.js';
 import { IContextPackerService, ContextMode } from '../context/packer/index.js';

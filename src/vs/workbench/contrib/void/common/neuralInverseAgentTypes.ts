@@ -51,15 +51,12 @@ export const toolRiskLevels: Record<BuiltinToolName, ToolRiskLevel> = {
 	'grep': 'safe',
 	'list': 'safe',
 
-	// GRC compliance tools (read-only, no side effects)
-	'grc_violations': 'safe',
-	'grc_domain_summary': 'safe',
-	'grc_blocking_violations': 'safe',
-	'grc_framework_rules': 'safe',
-	'grc_impact_chain': 'safe',
-	'grc_rescan': 'safe',
-	'grc_ai_scan': 'safe',
-	'ask_checksagent': 'safe',
+	// Context Engine tools (read-only, no side effects)
+	'context_search_symbols': 'safe',
+	'context_related_files': 'safe',
+	'context_file_context': 'safe',
+	'context_import_graph': 'safe',
+	'context_recent_edits': 'safe',
 	'ask_powermode': 'safe',
 	'query_ni_agent': 'safe',
 
@@ -194,15 +191,12 @@ export const defaultApprovalTiers: Record<BuiltinToolName, ApprovalTier> = {
 	'grep': 'auto',
 	'list': 'auto',
 
-	// GRC compliance tools
-	'grc_violations': 'auto',
-	'grc_domain_summary': 'auto',
-	'grc_blocking_violations': 'auto',
-	'grc_framework_rules': 'auto',
-	'grc_impact_chain': 'auto',
-	'grc_rescan': 'auto',
-	'grc_ai_scan': 'auto',
-	'ask_checksagent': 'auto',
+	// Context Engine tools
+	'context_search_symbols': 'auto',
+	'context_related_files': 'auto',
+	'context_file_context': 'auto',
+	'context_import_graph': 'auto',
+	'context_recent_edits': 'auto',
 	'ask_powermode': 'auto',
 	'query_ni_agent': 'auto',
 
