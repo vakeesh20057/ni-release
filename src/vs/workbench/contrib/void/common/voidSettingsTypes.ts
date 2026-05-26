@@ -110,6 +110,12 @@ export const displayInfoOfProviderName = (providerName: ProviderName): DisplayIn
 	else if (providerName === 'githubModels') {
 		return { title: 'GitHub Models', }
 	}
+	else if (providerName === 'fireworksAI') {
+		return { title: 'Fireworks AI', }
+	}
+	else if (providerName === 'cerebras') {
+		return { title: 'Cerebras', }
+	}
 
 	throw new Error(`descOfProviderName: Unknown provider name: "${providerName}"`)
 }
@@ -133,6 +139,8 @@ export const subTextMdOfProviderName = (providerName: ProviderName): string => {
 	if (providerName === 'lmStudio') return 'Read more about custom [Endpoints here](https://lmstudio.ai/docs/app/api/endpoints/openai).'
 	if (providerName === 'liteLLM') return 'Read more about endpoints [here](https://docs.litellm.ai/docs/providers/openai_compatible).'
 	if (providerName === 'githubModels') return 'Use a [GitHub PAT](https://github.com/settings/tokens) with the `models:read` scope. Free tier available with rate limits.'
+	if (providerName === 'fireworksAI') return 'Get your [API Key here](https://fireworks.ai/account/api-keys). Fastest open-model inference with native function calling.'
+	if (providerName === 'cerebras') return 'Get your [API Key here](https://cloud.cerebras.ai). Extremely fast inference (2000+ tokens/sec) on wafer-scale hardware.'
 
 	throw new Error(`subTextMdOfProviderName: Unknown provider name: "${providerName}"`)
 }
@@ -162,6 +170,8 @@ export const displayInfoOfSettingName = (providerName: ProviderName, settingName
 													providerName === 'microsoftAzure' ? 'key-...' :
 														providerName === 'awsBedrock' ? 'key-...' :
 											providerName === 'githubModels' ? 'ghp_...' :
+											providerName === 'fireworksAI' ? 'fw_...' :
+												providerName === 'cerebras' ? 'csk-...' :
 																'',
 
 			isPasswordField: true,
@@ -362,6 +372,18 @@ export const defaultSettingsOfProvider: SettingsOfProvider = {
 		...defaultCustomSettings,
 		...defaultProviderSettings.githubModels,
 		...modelInfoOfDefaultModelNames(defaultModelsOfProvider.githubModels),
+		_didFillInProviderSettings: undefined,
+	},
+	fireworksAI: {
+		...defaultCustomSettings,
+		...defaultProviderSettings.fireworksAI,
+		...modelInfoOfDefaultModelNames(defaultModelsOfProvider.fireworksAI),
+		_didFillInProviderSettings: undefined,
+	},
+	cerebras: {
+		...defaultCustomSettings,
+		...defaultProviderSettings.cerebras,
+		...modelInfoOfDefaultModelNames(defaultModelsOfProvider.cerebras),
 		_didFillInProviderSettings: undefined,
 	},
 }

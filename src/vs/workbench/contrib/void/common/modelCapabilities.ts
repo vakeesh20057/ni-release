@@ -69,6 +69,12 @@ export const defaultProviderSettings = {
 	githubModels: {
 		apiKey: '', // GitHub PAT with models:read scope
 	},
+	fireworksAI: {
+		apiKey: '',
+	},
+	cerebras: {
+		apiKey: '',
+	},
 } as const
 
 
@@ -158,6 +164,20 @@ export const defaultModelsOfProvider = {
 		'meta/llama-4-scout-17b-16e-instruct',
 		'mistralai/mistral-small-2503',
 		'xai/grok-3-mini',
+	],
+	fireworksAI: [ // https://fireworks.ai/models
+		'accounts/fireworks/models/llama-v3p3-70b-instruct',
+		'accounts/fireworks/models/deepseek-r1',
+		'accounts/fireworks/models/qwen3-235b-a22b',
+		'accounts/fireworks/models/qwen3-32b',
+		'accounts/fireworks/models/gemma-4-31b-it',
+		'accounts/fireworks/models/gpt-oss-120b',
+		'accounts/fireworks/models/gpt-oss-20b',
+	],
+	cerebras: [ // https://cloud.cerebras.ai
+		'llama3.1-8b',
+		'gpt-oss-120b',
+		'qwen-3-235b-a22b-instruct-2507',
 	],
 	openAICompatible: [], // fallback
 	googleVertex: [],
@@ -1595,6 +1615,146 @@ const githubModelsSettings: VoidStaticProviderInfo = {
 }
 
 
+// ---------------- FIREWORKS AI ----------------
+const fireworksAIModelOptions = {
+	'accounts/fireworks/models/llama-v3p3-70b-instruct': {
+		contextWindow: 131_072,
+		reservedOutputTokenSpace: 8_192,
+		cost: { input: 0.20, output: 0.20 },
+		downloadable: false,
+		supportsFIM: false,
+		specialToolFormat: 'openai-style',
+		supportsSystemMessage: 'system-role',
+		reasoningCapabilities: false,
+	},
+	'accounts/fireworks/models/deepseek-r1': {
+		contextWindow: 163_840,
+		reservedOutputTokenSpace: 8_192,
+		cost: { input: 0, output: 0 },
+		downloadable: false,
+		supportsFIM: false,
+		specialToolFormat: 'openai-style',
+		supportsSystemMessage: false,
+		reasoningCapabilities: { supportsReasoning: true, canTurnOffReasoning: false, canIOReasoning: true, openSourceThinkTags: ['<think>', '</think>'] },
+	},
+	'accounts/fireworks/models/qwen3-235b-a22b': {
+		contextWindow: 131_072,
+		reservedOutputTokenSpace: 8_192,
+		cost: { input: 0, output: 0 },
+		downloadable: false,
+		supportsFIM: false,
+		specialToolFormat: 'openai-style',
+		supportsSystemMessage: 'system-role',
+		reasoningCapabilities: { supportsReasoning: true, canTurnOffReasoning: true, canIOReasoning: true, openSourceThinkTags: ['<think>', '</think>'] },
+	},
+	'accounts/fireworks/models/qwen3-32b': {
+		contextWindow: 131_072,
+		reservedOutputTokenSpace: 8_192,
+		cost: { input: 0, output: 0 },
+		downloadable: false,
+		supportsFIM: false,
+		specialToolFormat: 'openai-style',
+		supportsSystemMessage: 'system-role',
+		reasoningCapabilities: { supportsReasoning: true, canTurnOffReasoning: true, canIOReasoning: true, openSourceThinkTags: ['<think>', '</think>'] },
+	},
+	'accounts/fireworks/models/gemma-4-31b-it': {
+		contextWindow: 262_144,
+		reservedOutputTokenSpace: 8_192,
+		cost: { input: 0, output: 0 },
+		downloadable: false,
+		supportsFIM: false,
+		specialToolFormat: 'openai-style',
+		supportsSystemMessage: 'system-role',
+		reasoningCapabilities: false,
+	},
+	'accounts/fireworks/models/gpt-oss-120b': {
+		contextWindow: 131_072,
+		reservedOutputTokenSpace: 8_192,
+		cost: { input: 0.15, output: 0.60 },
+		downloadable: false,
+		supportsFIM: false,
+		specialToolFormat: 'openai-style',
+		supportsSystemMessage: 'system-role',
+		reasoningCapabilities: false,
+	},
+	'accounts/fireworks/models/gpt-oss-20b': {
+		contextWindow: 131_072,
+		reservedOutputTokenSpace: 8_192,
+		cost: { input: 0.07, output: 0.30 },
+		downloadable: false,
+		supportsFIM: false,
+		specialToolFormat: 'openai-style',
+		supportsSystemMessage: 'system-role',
+		reasoningCapabilities: false,
+	},
+} as const satisfies { [s: string]: VoidStaticModelInfo }
+
+const fireworksAISettings: VoidStaticProviderInfo = {
+	modelOptions: fireworksAIModelOptions,
+	modelOptionsFallback: (modelName) => {
+		const res = extensiveModelOptionsFallback(modelName)
+		if (res?.specialToolFormat === 'anthropic-style' || res?.specialToolFormat === 'gemini-style') {
+			res.specialToolFormat = 'openai-style'
+		}
+		return res
+	},
+	providerReasoningIOSettings: {
+		input: { includeInPayload: openAICompatIncludeInPayloadReasoning },
+		output: { needsManualParse: true },
+	},
+}
+
+
+// ---------------- CEREBRAS ----------------
+const cerebrasModelOptions = {
+	'llama3.1-8b': {
+		contextWindow: 128_000,
+		reservedOutputTokenSpace: 8_192,
+		cost: { input: 0.10, output: 0.10 },
+		downloadable: false,
+		supportsFIM: false,
+		specialToolFormat: 'openai-style',
+		supportsSystemMessage: 'system-role',
+		reasoningCapabilities: false,
+	},
+	'gpt-oss-120b': {
+		contextWindow: 128_000,
+		reservedOutputTokenSpace: 8_192,
+		cost: { input: 0, output: 0 },
+		downloadable: false,
+		supportsFIM: false,
+		specialToolFormat: 'openai-style',
+		supportsSystemMessage: 'system-role',
+		reasoningCapabilities: false,
+	},
+	'qwen-3-235b-a22b-instruct-2507': {
+		contextWindow: 128_000,
+		reservedOutputTokenSpace: 8_192,
+		cost: { input: 0, output: 0 },
+		downloadable: false,
+		supportsFIM: false,
+		specialToolFormat: 'openai-style',
+		supportsSystemMessage: 'system-role',
+		reasoningCapabilities: { supportsReasoning: true, canTurnOffReasoning: true, canIOReasoning: true, openSourceThinkTags: ['<think>', '</think>'] },
+	},
+} as const satisfies { [s: string]: VoidStaticModelInfo }
+
+const cerebrasSettings: VoidStaticProviderInfo = {
+	modelOptions: cerebrasModelOptions,
+	modelOptionsFallback: (modelName) => {
+		const res = extensiveModelOptionsFallback(modelName)
+		if (res?.specialToolFormat === 'anthropic-style' || res?.specialToolFormat === 'gemini-style') {
+			res.specialToolFormat = 'openai-style'
+		}
+		return res
+	},
+	providerReasoningIOSettings: {
+		input: { includeInPayload: openAICompatIncludeInPayloadReasoning },
+		output: { needsManualParse: true },
+	},
+}
+
+
 // ---------------- model settings of everything above ----------------
 
 const modelSettingsOfProvider: { [providerName in ProviderName]: VoidStaticProviderInfo } = {
@@ -1621,6 +1781,8 @@ const modelSettingsOfProvider: { [providerName in ProviderName]: VoidStaticProvi
 	microsoftAzure: microsoftAzureSettings,
 	awsBedrock: awsBedrockSettings,
 	githubModels: githubModelsSettings,
+	fireworksAI: fireworksAISettings,
+	cerebras: cerebrasSettings,
 } as const
 
 
