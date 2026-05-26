@@ -12,6 +12,8 @@ import { MistralCore } from '@mistralai/mistralai/core.js';
 import { fimComplete } from '@mistralai/mistralai/funcs/fimComplete.js';
 import { Tool as GeminiTool, FunctionDeclaration, GoogleGenAI, ThinkingConfig, Schema, Type } from '@google/genai';
 import { GoogleAuth } from 'google-auth-library'
+import { BedrockRuntimeClient, ConverseStreamCommand } from '@aws-sdk/client-bedrock-runtime';
+import { defaultProvider as awsDefaultProvider } from '@aws-sdk/credential-provider-node';
 /* eslint-enable */
 
 import { AnthropicLLMChatMessage, GeminiLLMChatMessage, LLMChatMessage, LLMFIMMessage, ModelListParams, OllamaModelResponse, OnError, OnFinalMessage, OnText, RawToolCallObj, RawToolParamsObj } from '../../common/sendLLMMessageTypes.js';
@@ -893,6 +895,82 @@ const sendGeminiChat = async ({
 
 
 
+// ------------ AWS BEDROCK NATIVE (ConverseStream API) ------------
+
+const _sendBedrockNativeChat = async (params: SendChatParams_Internal) => {
+	const { messages, onText, onFinalMessage, onError, settingsOfProvider, modelName: modelName_, _setAborter, separateSystemMessage, overridesOfModel } = params
+
+	const { region } = settingsOfProvider.awsBedrock
+
+	const bedrockRegion = region || 'us-east-1'
+
+	const client = new BedrockRuntimeClient({
+		region: bedrockRegion,
+		credentials: awsDefaultProvider(),
+	})
+
+	const { modelName } = getModelCapabilities('awsBedrock', modelName_, overridesOfModel)
+
+	// Convert messages to Bedrock Converse format
+	const converseMessages: any[] = []
+	for (const msg of messages) {
+		const m = msg as any
+		if (m.role === 'system') continue
+		const text = typeof m.content === 'string' ? m.content : JSON.stringify(m.content)
+		converseMessages.push({
+			role: m.role === 'assistant' ? 'assistant' : 'user',
+			content: [{ text }],
+		})
+	}
+
+	const systemPrompts: any[] = []
+	if (separateSystemMessage) {
+		systemPrompts.push({ text: separateSystemMessage })
+	}
+	const firstSystem = messages.find(m => (m as any).role === 'system') as any | undefined
+	if (firstSystem && typeof firstSystem.content === 'string') {
+		systemPrompts.push({ text: firstSystem.content })
+	}
+
+	const abortController = new AbortController()
+	_setAborter(() => abortController.abort())
+
+	try {
+		const command = new ConverseStreamCommand({
+			modelId: modelName,
+			messages: converseMessages,
+			...(systemPrompts.length > 0 ? { system: systemPrompts } : {}),
+		})
+
+		const response = await client.send(command, { abortSignal: abortController.signal })
+
+		let fullText = ''
+
+		if (response.stream) {
+			for await (const event of response.stream) {
+				if (event.contentBlockDelta?.delta?.text) {
+					const chunk = event.contentBlockDelta.delta.text
+					fullText += chunk
+					onText({ fullText, fullReasoning: '' })
+				}
+			}
+		}
+
+		onFinalMessage({ fullText, fullReasoning: '', anthropicReasoning: null })
+	} catch (error: any) {
+		if (error?.name === 'AbortError') return
+		const msg = error?.message || String(error)
+		if (msg.includes('credentials') || msg.includes('UnrecognizedClientException')) {
+			onError({ message: 'AWS credentials invalid or expired. Set AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY, or configure a proxy endpoint.', fullError: error })
+		} else if (msg.includes('AccessDeniedException')) {
+			onError({ message: `Access denied for model ${modelName}. Enable it in the AWS Bedrock console.`, fullError: error })
+		} else {
+			onError({ message: msg, fullError: error })
+		}
+	}
+}
+
+
 type CallFnOfProvider = {
 	[providerName in ProviderName]: {
 		sendChat: (params: SendChatParams_Internal) => Promise<void>;
@@ -980,7 +1058,7 @@ export const sendLLMMessageToProviderImplementation = {
 		list: null,
 	},
 	awsBedrock: {
-		sendChat: (params) => _sendOpenAICompatibleChat(params),
+		sendChat: (params) => _sendBedrockNativeChat(params),
 		sendFIM: null,
 		list: null,
 	},

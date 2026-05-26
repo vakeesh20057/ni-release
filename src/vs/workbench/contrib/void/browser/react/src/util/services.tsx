@@ -57,6 +57,7 @@ import { IStorageService, StorageScope } from '../../../../../../../platform/sto
 import { OPT_OUT_KEY } from '../../../../common/storageKeys.js'
 import { INeuralInverseAgentService } from '../../../neuralInverseAgentService.js'
 import { INeuralInverseSubAgentService } from '../../../neuralInverseSubAgentService.js'
+import { IAutoConnectService } from '../../../autoConnect/autoConnectService.js'
 import { AgentTask } from '../../../../common/neuralInverseAgentTypes.js'
 import { SubAgentTask } from '../../../../common/subAgentTypes.js'
 
@@ -272,6 +273,7 @@ const getReactAccessor = (accessor: ServicesAccessor) => {
 		IMCPService: accessor.get(IMCPService),
 		IStorageService: accessor.get(IStorageService),
 		ILabelService: accessor.get(ILabelService),
+		IAutoConnectService: accessor.get(IAutoConnectService),
 
 	}
 

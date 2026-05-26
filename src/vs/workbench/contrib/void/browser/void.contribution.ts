@@ -87,6 +87,9 @@ import './fileService.js'
 
 import './voidCommandBarService.js' // Register Command Bar Service
 
+// register Auto-Connect (env var credential detection)
+import './autoConnect/autoConnectService.js'
+
 // register source control management
 import './voidSCMService.js'
 

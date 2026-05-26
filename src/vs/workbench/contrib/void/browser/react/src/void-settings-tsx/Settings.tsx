@@ -26,6 +26,7 @@ import { StorageScope, StorageTarget } from '../../../../../../../platform/stora
 
 type Tab =
 	| 'models'
+	| 'autoDetect'
 	| 'localProviders'
 	| 'providers'
 	| 'featureOptions'
@@ -806,6 +807,97 @@ export const AutoDetectLocalModelsToggle = () => {
 
 }
 
+const AutoDetectCredentials = () => {
+	const accessor = useAccessor()
+	const autoConnectService = accessor.get('IAutoConnectService')
+	const metricsService = accessor.get('IMetricsService')
+
+	const [credentials, setCredentials] = useState(() => autoConnectService.detectedCredentials)
+	const [appliedSet, setAppliedSet] = useState<Set<string>>(new Set())
+	const [scanning, setScanning] = useState(false)
+
+	const runScan = useCallback(async () => {
+		setScanning(true)
+		const detected = await autoConnectService.detectCredentials()
+		setCredentials(detected)
+		setScanning(false)
+	}, [autoConnectService])
+
+	useEffect(() => { runScan() }, [runScan])
+
+	return <div className='mt-2'>
+		<div className='flex items-center gap-2 mb-3'>
+			<button
+				className='flex items-center gap-1.5 px-2 py-1 text-xs rounded-sm bg-void-bg-2 hover:bg-void-bg-3 text-void-fg-2'
+				onClick={runScan}
+				disabled={scanning}
+			>
+				<RefreshCw className={`w-3 h-3 ${scanning ? 'animate-spin' : ''}`} />
+				Scan Environment
+			</button>
+		</div>
+
+		{credentials.length === 0 ? (
+			<div className='text-void-fg-3 text-sm pl-1'>
+				No API keys detected in environment variables. Set variables like <code className='font-mono text-xs bg-void-bg-2 px-1 py-0.5 rounded'>ANTHROPIC_API_KEY</code>, <code className='font-mono text-xs bg-void-bg-2 px-1 py-0.5 rounded'>OPENAI_API_KEY</code>, etc. and re-scan.
+			</div>
+		) : (
+			<>
+				<div className='flex items-center gap-2 mb-2'>
+					<Check className='w-3.5 h-3.5 text-green-400' />
+					<span className='text-void-fg-2 text-sm'>Found {credentials.length} credential{credentials.length > 1 ? 's' : ''}</span>
+				</div>
+				<div className='flex flex-col gap-2 pl-1'>
+					{credentials.map((cred) => {
+						const { title } = displayInfoOfProviderName(cred.providerName)
+						const isApplied = appliedSet.has(cred.providerName)
+
+						return <div key={cred.providerName} className='flex items-center gap-3 py-1.5 px-2 rounded-sm bg-void-bg-2'>
+							<span className='text-void-fg-2 min-w-[130px] text-sm font-medium'>{title}</span>
+							<span className='text-void-fg-3 font-mono text-xs'>{cred.maskedDisplay}</span>
+							<span className='text-void-fg-3 text-xs opacity-70'>({cred.source})</span>
+							<div className='ml-auto'>
+								{isApplied
+									? <span className='text-green-400 text-xs flex items-center gap-1'><Check className='w-3 h-3' /> Configured</span>
+									: <button
+										className='text-xs px-2 py-0.5 rounded-sm bg-blue-600 hover:bg-blue-500 text-white'
+										onClick={async () => {
+											await autoConnectService.applyOne(cred)
+											setAppliedSet(prev => new Set([...prev, cred.providerName]))
+											metricsService.capture('Click', { action: 'Auto-connect Apply', provider: cred.providerName })
+										}}
+									>
+										Configure
+									</button>
+								}
+							</div>
+						</div>
+					})}
+				</div>
+				{credentials.length > 1 && !credentials.every(c => appliedSet.has(c.providerName)) && (
+					<button
+						className='mt-3 text-sm px-3 py-1.5 rounded-sm bg-blue-600 hover:bg-blue-500 text-white'
+						onClick={async () => {
+							await autoConnectService.applyCredentials(credentials)
+							setAppliedSet(new Set(credentials.map(c => c.providerName)))
+							metricsService.capture('Click', { action: 'Auto-connect Apply All' })
+						}}
+					>
+						Configure all ({credentials.length})
+					</button>
+				)}
+			</>
+		)}
+
+		<div className='mt-4 text-void-fg-3 text-xs'>
+			<p className='mb-1'>Supported environment variables:</p>
+			<div className='font-mono text-xs opacity-70 leading-relaxed'>
+				ANTHROPIC_API_KEY, OPENAI_API_KEY, DEEPSEEK_API_KEY, GOOGLE_API_KEY, GROQ_API_KEY, XAI_API_KEY, MISTRAL_API_KEY, OPENROUTER_API_KEY, GITHUB_TOKEN, FIREWORKS_API_KEY, CEREBRAS_API_KEY, AWS_ACCESS_KEY_ID, AZURE_OPENAI_API_KEY, GOOGLE_APPLICATION_CREDENTIALS
+			</div>
+		</div>
+	</div>
+}
+
 export const AIInstructionsBox = () => {
 	const accessor = useAccessor()
 	const voidSettingsService = accessor.get('IVoidSettingsService')
@@ -1097,6 +1189,7 @@ export const Settings = () => {
 
 	const navItems: { tab: Tab; label: string }[] = [
 		{ tab: 'models', label: 'Models' },
+		{ tab: 'autoDetect', label: 'Auto-Detect' },
 		{ tab: 'localProviders', label: 'Local Providers' },
 		{ tab: 'providers', label: 'Main Providers' },
 		{ tab: 'featureOptions', label: 'Feature Options' },
@@ -1243,6 +1336,15 @@ export const Settings = () => {
 									<div className='w-full h-[1px] my-4' />
 									<AutoDetectLocalModelsToggle />
 									<RefreshableModels />
+								</ErrorBoundary>
+							</div>
+
+							{/* Auto-Detect section */}
+							<div className={shouldShowTab('autoDetect') ? `` : 'hidden'}>
+								<ErrorBoundary>
+									<h2 className={`text-3xl mb-2`}>Auto-Detect Credentials</h2>
+									<h3 className={`text-void-fg-3 mb-2`}>Neural Inverse scans your environment for API keys and cloud credentials. One click to configure.</h3>
+									<AutoDetectCredentials />
 								</ErrorBoundary>
 							</div>
 
