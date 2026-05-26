@@ -66,6 +66,9 @@ export const defaultProviderSettings = {
 		region: 'us-east-1', // add region setting
 		endpoint: '', // optionally allow overriding default
 	},
+	githubModels: {
+		apiKey: '', // GitHub PAT with models:read scope
+	},
 } as const
 
 
@@ -144,6 +147,17 @@ export const defaultModelsOfProvider = {
 		'magistral-medium-1-2-25-09',
 		'magistral-small-1-2-25-09',
 		'mistral-small-4-0-26-03',
+	],
+	githubModels: [ // https://github.com/marketplace/models
+		'openai/gpt-4.1',
+		'openai/gpt-4.1-mini',
+		'openai/gpt-4.1-nano',
+		'openai/o4-mini',
+		'openai/o3-mini',
+		'deepseek/deepseek-r1',
+		'meta/llama-4-scout-17b-16e-instruct',
+		'mistralai/mistral-small-2503',
+		'xai/grok-3-mini',
 	],
 	openAICompatible: [], // fallback
 	googleVertex: [],
@@ -1472,6 +1486,115 @@ const openRouterSettings: VoidStaticProviderInfo = {
 
 
 
+// ---------------- GITHUB MODELS ----------------
+const githubModelsModelOptions = {
+	'openai/gpt-4.1': {
+		contextWindow: 1_047_576,
+		reservedOutputTokenSpace: 32_768,
+		cost: { input: 2.00, output: 8.00 },
+		downloadable: false,
+		supportsFIM: false,
+		specialToolFormat: 'openai-style',
+		supportsSystemMessage: 'developer-role',
+		reasoningCapabilities: false,
+	},
+	'openai/gpt-4.1-mini': {
+		contextWindow: 1_047_576,
+		reservedOutputTokenSpace: 32_768,
+		cost: { input: 0.40, output: 1.60 },
+		downloadable: false,
+		supportsFIM: false,
+		specialToolFormat: 'openai-style',
+		supportsSystemMessage: 'developer-role',
+		reasoningCapabilities: false,
+	},
+	'openai/gpt-4.1-nano': {
+		contextWindow: 1_047_576,
+		reservedOutputTokenSpace: 32_768,
+		cost: { input: 0.10, output: 0.40 },
+		downloadable: false,
+		supportsFIM: false,
+		specialToolFormat: 'openai-style',
+		supportsSystemMessage: 'developer-role',
+		reasoningCapabilities: false,
+	},
+	'openai/o4-mini': {
+		contextWindow: 200_000,
+		reservedOutputTokenSpace: 32_768,
+		cost: { input: 1.10, output: 4.40 },
+		downloadable: false,
+		supportsFIM: false,
+		specialToolFormat: 'openai-style',
+		supportsSystemMessage: 'developer-role',
+		reasoningCapabilities: { supportsReasoning: true, canTurnOffReasoning: false, canIOReasoning: false, reasoningSlider: { type: 'effort_slider', values: ['low', 'medium', 'high'], default: 'low' } },
+	},
+	'openai/o3-mini': {
+		contextWindow: 200_000,
+		reservedOutputTokenSpace: 100_000,
+		cost: { input: 1.10, output: 4.40 },
+		downloadable: false,
+		supportsFIM: false,
+		specialToolFormat: 'openai-style',
+		supportsSystemMessage: 'developer-role',
+		reasoningCapabilities: { supportsReasoning: true, canTurnOffReasoning: false, canIOReasoning: false, reasoningSlider: { type: 'effort_slider', values: ['low', 'medium', 'high'], default: 'low' } },
+	},
+	'deepseek/deepseek-r1': {
+		contextWindow: 64_000,
+		reservedOutputTokenSpace: 8_192,
+		cost: { input: 0, output: 0 },
+		downloadable: false,
+		supportsFIM: false,
+		specialToolFormat: 'openai-style',
+		supportsSystemMessage: false,
+		reasoningCapabilities: { supportsReasoning: true, canTurnOffReasoning: false, canIOReasoning: true, openSourceThinkTags: ['<think>', '</think>'] },
+	},
+	'meta/llama-4-scout-17b-16e-instruct': {
+		contextWindow: 512_000,
+		reservedOutputTokenSpace: 8_192,
+		cost: { input: 0, output: 0 },
+		downloadable: false,
+		supportsFIM: false,
+		specialToolFormat: 'openai-style',
+		supportsSystemMessage: 'system-role',
+		reasoningCapabilities: false,
+	},
+	'mistralai/mistral-small-2503': {
+		contextWindow: 32_000,
+		reservedOutputTokenSpace: 4_096,
+		cost: { input: 0, output: 0 },
+		downloadable: false,
+		supportsFIM: false,
+		specialToolFormat: 'openai-style',
+		supportsSystemMessage: 'system-role',
+		reasoningCapabilities: false,
+	},
+	'xai/grok-3-mini': {
+		contextWindow: 131_072,
+		reservedOutputTokenSpace: 8_192,
+		cost: { input: 0, output: 0 },
+		downloadable: false,
+		supportsFIM: false,
+		specialToolFormat: 'openai-style',
+		supportsSystemMessage: 'system-role',
+		reasoningCapabilities: { supportsReasoning: true, canTurnOffReasoning: false, canIOReasoning: false, reasoningSlider: { type: 'effort_slider', values: ['low', 'high'], default: 'low' } },
+	},
+} as const satisfies { [s: string]: VoidStaticModelInfo }
+
+const githubModelsSettings: VoidStaticProviderInfo = {
+	modelOptions: githubModelsModelOptions,
+	modelOptionsFallback: (modelName) => {
+		const res = extensiveModelOptionsFallback(modelName)
+		if (res?.specialToolFormat === 'anthropic-style' || res?.specialToolFormat === 'gemini-style') {
+			res.specialToolFormat = 'openai-style'
+		}
+		return res
+	},
+	providerReasoningIOSettings: {
+		input: { includeInPayload: openAICompatIncludeInPayloadReasoning },
+	},
+}
+
+
 // ---------------- model settings of everything above ----------------
 
 const modelSettingsOfProvider: { [providerName in ProviderName]: VoidStaticProviderInfo } = {
@@ -1497,6 +1620,7 @@ const modelSettingsOfProvider: { [providerName in ProviderName]: VoidStaticProvi
 	googleVertex: googleVertexSettings,
 	microsoftAzure: microsoftAzureSettings,
 	awsBedrock: awsBedrockSettings,
+	githubModels: githubModelsSettings,
 } as const
 
 
