@@ -12,7 +12,6 @@ import {
 	getDeploymentEndpoint,
 	ILocalDeployment,
 	ICloudDeploymentEntry,
-	IUnifiedDeployment,
 } from '../../../browser/modelManagement/deployment/deploymentTypes.js';
 
 suite('DeploymentTypes — Type Guards', () => {

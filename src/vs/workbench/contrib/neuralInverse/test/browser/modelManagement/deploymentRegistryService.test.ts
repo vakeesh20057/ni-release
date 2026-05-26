@@ -7,8 +7,8 @@ import assert from 'assert';
 import { Emitter, Event } from '../../../../../../base/common/event.js';
 import { DisposableStore } from '../../../../../../base/common/lifecycle.js';
 import { ensureNoDisposablesAreLeakedInTestSuite } from '../../../../../../base/test/common/utils.js';
-import { IStorageService, StorageScope, StorageTarget, InMemoryStorageService } from '../../../../../../platform/storage/common/storage.js';
-import { DeploymentRegistryService, IDeploymentRegistryService } from '../../../browser/modelManagement/deployment/deploymentRegistryService.js';
+import { StorageScope, StorageTarget, InMemoryStorageService } from '../../../../../../platform/storage/common/storage.js';
+import { DeploymentRegistryService } from '../../../browser/modelManagement/deployment/deploymentRegistryService.js';
 import { ICloudDeploymentService } from '../../../browser/modelManagement/cloudDeploymentService.js';
 import { ICloudDeployment, CloudDeploymentStatus } from '../../../common/modelManagement/cloudTypes.js';
 import { IUnifiedDeployment } from '../../../browser/modelManagement/deployment/deploymentTypes.js';
@@ -16,8 +16,8 @@ import { IUnifiedDeployment } from '../../../browser/modelManagement/deployment/
 class MockCloudDeploymentService implements Partial<ICloudDeploymentService> {
 	readonly _serviceBrand: undefined;
 	private _deployments: ICloudDeployment[] = [];
-	private readonly _onStatusChanged = new Emitter<{ deploymentId: string; status: CloudDeploymentStatus }>();
-	readonly onDeploymentStatusChanged: Event<{ deploymentId: string; status: CloudDeploymentStatus }> = this._onStatusChanged.event;
+	private readonly _onStatusChanged = new Emitter<ICloudDeployment>();
+	readonly onDeploymentStatusChanged: Event<ICloudDeployment> = this._onStatusChanged.event;
 
 	listDeployments(): ICloudDeployment[] {
 		return this._deployments;
@@ -27,8 +27,8 @@ class MockCloudDeploymentService implements Partial<ICloudDeploymentService> {
 		this._deployments = deployments;
 	}
 
-	fireStatusChanged(deploymentId: string, status: CloudDeploymentStatus): void {
-		this._onStatusChanged.fire({ deploymentId, status });
+	fireStatusChanged(deployment: ICloudDeployment, status: CloudDeploymentStatus): void {
+		this._onStatusChanged.fire({ ...deployment, status });
 	}
 
 	dispose(): void {

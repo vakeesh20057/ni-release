@@ -243,7 +243,7 @@ suite('ModelManagementService — Compare Models (allSettled)', () => {
 	});
 
 	test('Promise.allSettled returns empty when all fail', async () => {
-		const tasks = [
+		const tasks: Promise<any>[] = [
 			Promise.reject(new Error('fail1')),
 			Promise.reject(new Error('fail2')),
 		];
