@@ -97,7 +97,7 @@ suite('DeploymentAutoConfigService — Unit Tests', () => {
 	}
 
 	test('auto-configures local deployment with models when provider is unconfigured', () => {
-		const _service = createService();
+		createService();
 
 		const local: ILocalDeployment = {
 			kind: 'local',
@@ -119,7 +119,7 @@ suite('DeploymentAutoConfigService — Unit Tests', () => {
 
 	test('does NOT auto-configure when provider already has custom endpoint', () => {
 		mockSettings.state.settingsOfProvider.ollama.endpoint = 'http://custom-server:11434';
-		const _service = createService();
+		createService();
 
 		const local: ILocalDeployment = {
 			kind: 'local',
@@ -139,7 +139,7 @@ suite('DeploymentAutoConfigService — Unit Tests', () => {
 
 	test('does NOT auto-configure when provider has apiKey set', () => {
 		mockSettings.state.settingsOfProvider.vLLM.apiKey = 'sk-existing-key';
-		const _service = createService();
+		createService();
 
 		const cloud: ICloudDeploymentEntry = {
 			kind: 'cloud',
@@ -163,7 +163,7 @@ suite('DeploymentAutoConfigService — Unit Tests', () => {
 
 	test('does NOT auto-configure when _didFillInProviderSettings is true', () => {
 		mockSettings.state.settingsOfProvider.ollama._didFillInProviderSettings = true;
-		const _service = createService();
+		createService();
 
 		const local: ILocalDeployment = {
 			kind: 'local',
@@ -182,7 +182,7 @@ suite('DeploymentAutoConfigService — Unit Tests', () => {
 	});
 
 	test('does NOT auto-configure local deployment with empty models array', () => {
-		const _service = createService();
+		createService();
 
 		const local: ILocalDeployment = {
 			kind: 'local',
@@ -201,7 +201,7 @@ suite('DeploymentAutoConfigService — Unit Tests', () => {
 	});
 
 	test('auto-configures cloud deployment with endpoint + apiKey + model', () => {
-		const _service = createService();
+		createService();
 
 		const cloud: ICloudDeploymentEntry = {
 			kind: 'cloud',
@@ -231,7 +231,7 @@ suite('DeploymentAutoConfigService — Unit Tests', () => {
 	});
 
 	test('shows notification when auto-configuring cloud deployment', () => {
-		const _service = createService();
+		createService();
 
 		const cloud: ICloudDeploymentEntry = {
 			kind: 'cloud',
@@ -256,7 +256,7 @@ suite('DeploymentAutoConfigService — Unit Tests', () => {
 	});
 
 	test('shows info notification when auto-configuring local deployment', () => {
-		const _service = createService();
+		createService();
 
 		const local: ILocalDeployment = {
 			kind: 'local',
@@ -327,7 +327,7 @@ suite('DeploymentAutoConfigService — Unit Tests', () => {
 			StorageTarget.USER
 		);
 
-		const _service = createService();
+		createService();
 
 		const local: ILocalDeployment = {
 			kind: 'local',
@@ -347,7 +347,7 @@ suite('DeploymentAutoConfigService — Unit Tests', () => {
 	});
 
 	test('persists applied rules to storage', () => {
-		const _service = createService();
+		createService();
 
 		const local: ILocalDeployment = {
 			kind: 'local',
