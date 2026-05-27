@@ -897,11 +897,11 @@ const sendGeminiChat = async ({
 
 // ------------ AWS BEDROCK NATIVE (ConverseStream API) ------------
 
+
 const _sendBedrockNativeChat = async (params: SendChatParams_Internal) => {
-	const { messages, onText, onFinalMessage, onError, settingsOfProvider, modelName: modelName_, _setAborter, separateSystemMessage, overridesOfModel } = params
+	const { messages, onText, onFinalMessage, onError, settingsOfProvider, modelName: modelName_, _setAborter, separateSystemMessage, overridesOfModel, chatMode, mcpTools, allowedToolNames } = params
 
 	const { region } = settingsOfProvider.awsBedrock
-
 	const bedrockRegion = region || 'us-east-1'
 
 	const client = new BedrockRuntimeClient({
@@ -911,26 +911,50 @@ const _sendBedrockNativeChat = async (params: SendChatParams_Internal) => {
 
 	const { modelName } = getModelCapabilities('awsBedrock', modelName_, overridesOfModel)
 
-	// Convert messages to Bedrock Converse format
+	// Convert messages to Bedrock Converse format, preserving tool use/result history
 	const converseMessages: any[] = []
 	for (const msg of messages) {
 		const m = msg as any
 		if (m.role === 'system') continue
-		const text = typeof m.content === 'string' ? m.content : JSON.stringify(m.content)
-		converseMessages.push({
-			role: m.role === 'assistant' ? 'assistant' : 'user',
-			content: [{ text }],
-		})
+
+		if (Array.isArray(m.content)) {
+			const content: any[] = []
+			for (const block of m.content) {
+				if (block.type === 'text') {
+					if (block.text && block.text.trim()) content.push({ text: block.text }) // skip empty text blocks
+				} else if (block.type === 'tool_use') {
+					content.push({ toolUse: { toolUseId: block.id, name: block.name, input: block.input ?? {} } })
+				} else if (block.type === 'tool_result') {
+					const resultText = String(block.content || ' ')
+					content.push({ toolResult: { toolUseId: block.tool_use_id, content: [{ text: resultText || ' ' }] } })
+				}
+			}
+			if (content.length > 0) {
+				converseMessages.push({ role: m.role === 'assistant' ? 'assistant' : 'user', content })
+			} else {
+				// All content blocks were empty — keep message alternation with placeholder
+				converseMessages.push({ role: m.role === 'assistant' ? 'assistant' : 'user', content: [{ text: '...' }] })
+			}
+		} else {
+			let text = (typeof m.content === 'string' ? m.content : JSON.stringify(m.content)).trim()
+			// Strip Kimi K2 native pipe-format tool sections from history before sending back to Bedrock
+			if (text.includes('<|tool_calls_section_begin|>')) {
+				const sectionStart = text.indexOf('<|tool_calls_section_begin|>')
+				const sectionEnd = text.indexOf('<|tool_calls_section_end|>')
+				if (sectionEnd !== -1) text = (text.substring(0, sectionStart) + text.substring(sectionEnd + '<|tool_calls_section_end|>'.length)).trim()
+				else text = text.substring(0, sectionStart).trim()
+			}
+			// Bedrock rejects empty text blocks — use placeholder to preserve message alternation
+			converseMessages.push({ role: m.role === 'assistant' ? 'assistant' : 'user', content: [{ text: text || '...' }] })
+		}
 	}
 
 	const systemPrompts: any[] = []
-	if (separateSystemMessage) {
-		systemPrompts.push({ text: separateSystemMessage })
-	}
+	if (separateSystemMessage) systemPrompts.push({ text: separateSystemMessage })
 	const firstSystem = messages.find(m => (m as any).role === 'system') as any | undefined
-	if (firstSystem && typeof firstSystem.content === 'string') {
-		systemPrompts.push({ text: firstSystem.content })
-	}
+	if (firstSystem && typeof firstSystem.content === 'string') systemPrompts.push({ text: firstSystem.content })
+
+	const { newOnText, newOnFinalMessage } = extractXMLToolsWrapper(onText, onFinalMessage, chatMode, mcpTools, allowedToolNames)
 
 	const abortController = new AbortController()
 	_setAborter(() => abortController.abort())
@@ -949,14 +973,13 @@ const _sendBedrockNativeChat = async (params: SendChatParams_Internal) => {
 		if (response.stream) {
 			for await (const event of response.stream) {
 				if (event.contentBlockDelta?.delta?.text) {
-					const chunk = event.contentBlockDelta.delta.text
-					fullText += chunk
-					onText({ fullText, fullReasoning: '' })
+					fullText += event.contentBlockDelta.delta.text
+					newOnText({ fullText, fullReasoning: '' })
 				}
 			}
 		}
 
-		onFinalMessage({ fullText, fullReasoning: '', anthropicReasoning: null })
+		newOnFinalMessage({ fullText, fullReasoning: '', anthropicReasoning: null })
 	} catch (error: any) {
 		if (error?.name === 'AbortError') return
 		const msg = error?.message || String(error)

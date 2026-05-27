@@ -105,13 +105,14 @@ const findPartiallyWrittenToolTagAtEnd = (fullText: string, toolTags: string[]) 
 }
 
 const findIndexOfAny = (fullText: string, matches: string[]) => {
+	let earliest: [number, string] | null = null
 	for (const str of matches) {
 		const idx = fullText.indexOf(str);
-		if (idx !== -1) {
-			return [idx, str] as const
+		if (idx !== -1 && (earliest === null || idx < earliest[0])) {
+			earliest = [idx, str]
 		}
 	}
-	return null
+	return earliest
 }
 
 
@@ -260,6 +261,57 @@ const parseXMLPrefixToToolCall = <T extends ToolName,>(toolName: T | 'tool_call'
 	}
 }
 
+// =============== tools (Kimi K2 pipe format) ===============
+// <|tool_calls_section_begin|><|tool_call_begin|>functions.NAME:INDEX<|tool_call_argument_begin|>{JSON}<|tool_call_end|>...<|tool_calls_section_end|>
+
+const KIMI_SECTION_BEGIN = '<|tool_calls_section_begin|>'
+const KIMI_SECTION_END = '<|tool_calls_section_end|>'
+const KIMI_CALL_BEGIN = '<|tool_call_begin|>'
+const KIMI_CALL_END = '<|tool_call_end|>'
+const KIMI_ARG_BEGIN = '<|tool_call_argument_begin|>'
+
+const parseKimiToolCalls = (text: string): { toolCalls: RawToolCallObj[], strippedText: string } | null => {
+	const sectionStart = text.indexOf(KIMI_SECTION_BEGIN)
+	if (sectionStart === -1) return null
+
+	const sectionEnd = text.indexOf(KIMI_SECTION_END, sectionStart)
+	if (sectionEnd === -1) return null // section not complete yet — don't consume
+
+	const toolCalls: RawToolCallObj[] = []
+	const section = text.substring(sectionStart + KIMI_SECTION_BEGIN.length, sectionEnd)
+
+	let pos = 0
+	while (pos < section.length) {
+		const callStart = section.indexOf(KIMI_CALL_BEGIN, pos)
+		if (callStart === -1) break
+		const callEnd = section.indexOf(KIMI_CALL_END, callStart + KIMI_CALL_BEGIN.length)
+		if (callEnd === -1) break
+
+		const callBody = section.substring(callStart + KIMI_CALL_BEGIN.length, callEnd)
+		const argBegin = callBody.indexOf(KIMI_ARG_BEGIN)
+		if (argBegin === -1) { pos = callEnd + KIMI_CALL_END.length; continue }
+
+		const nameRaw = callBody.substring(0, argBegin).trim()
+		// nameRaw is like "functions.update_agent_status:0" or "functions.read_file:1"
+		const dotIdx = nameRaw.indexOf('.')
+		const colonIdx = nameRaw.lastIndexOf(':')
+		const name = nameRaw.substring(dotIdx + 1, colonIdx !== -1 && colonIdx > dotIdx ? colonIdx : undefined).trim() as ToolName
+
+		const argsStr = callBody.substring(argBegin + KIMI_ARG_BEGIN.length).trim()
+		try {
+			const rawParams = JSON.parse(argsStr)
+			if (rawParams && typeof rawParams === 'object') {
+				toolCalls.push({ id: generateUuid(), name, rawParams, doneParams: Object.keys(rawParams), isDone: true })
+			}
+		} catch { /* malformed JSON — skip this call */ }
+
+		pos = callEnd + KIMI_CALL_END.length
+	}
+
+	const strippedText = text.substring(0, sectionStart) + text.substring(sectionEnd + KIMI_SECTION_END.length)
+	return { toolCalls, strippedText }
+}
+
 export const extractXMLToolsWrapper = (
 	onText: OnText,
 	onFinalMessage: OnFinalMessage,
@@ -286,6 +338,22 @@ export const extractXMLToolsWrapper = (
 	const newOnText: OnText = (params) => {
 		try {
 			trueFullText = params.fullText
+
+			// Kimi K2 pipe-delimited tool format — only when section is complete
+			const kimiResult = parseKimiToolCalls(trueFullText)
+			if (kimiResult !== null) {
+				latestFullText = kimiResult.strippedText.trimEnd()
+				latestToolCalls = kimiResult.toolCalls
+				onText({ ...params, fullText: latestFullText, toolCalls: latestToolCalls.length > 0 ? latestToolCalls : undefined })
+				return
+			}
+			// suppress display of incomplete Kimi section while streaming
+			if (trueFullText.includes(KIMI_SECTION_BEGIN)) {
+				const sectionStart = trueFullText.indexOf(KIMI_SECTION_BEGIN)
+				latestFullText = trueFullText.substring(0, sectionStart).trimEnd()
+				onText({ ...params, fullText: latestFullText })
+				return
+			}
 
 			let currentIdx = 0;
 			let finalFullText = '';

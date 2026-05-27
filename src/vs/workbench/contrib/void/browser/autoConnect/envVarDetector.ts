@@ -74,7 +74,6 @@ async function readShellEnvVars(fileService: IFileService): Promise<Record<strin
 	];
 
 	const vars: Record<string, string> = {};
-	const exportPattern = /^\s*export\s+([A-Z0-9_]+)\s*=\s*["']?([^"'\n#]+?)["']?\s*(?:#.*)?$/m;
 
 	for (const filePath of shellFiles) {
 		const content = await readFileSafe(fileService, filePath);
