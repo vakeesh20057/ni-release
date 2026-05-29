@@ -38,6 +38,10 @@ import { IFileService } from '../../../../../platform/files/common/files.js';
 import { URI } from '../../../../../base/common/uri.js';
 import { ISvdFetchService } from '../engine/datasheet/svdFetchService.js';
 import { IPeripheralRegisterMap, COMMON_BAUD_RATES, FirmwareComplianceFramework } from '../../common/firmwareTypes.js';
+import { IPinMuxService } from '../engine/pinMux/service.js';
+import { IClockTreeService } from '../engine/clockTree/service.js';
+import { IMemoryLayoutService } from '../engine/memory/service.js';
+import { IPeripheralDependencyService } from '../engine/dependencies/service.js';
 
 
 // ─── DOM helpers (no innerHTML — Trusted Types compliant) ─────────────────────
@@ -118,6 +122,10 @@ export class FirmwarePart extends Part {
 		@IVoidSettingsService private readonly _voidSettings: IVoidSettingsService,
 		@IFileService private readonly _fileService: IFileService,
 		@ISvdFetchService private readonly _svdFetch: ISvdFetchService,
+		@IPinMuxService private readonly _pinMuxSvc: IPinMuxService,
+		@IClockTreeService private readonly _clockTreeSvc: IClockTreeService,
+		@IMemoryLayoutService private readonly _memoryLayoutSvc: IMemoryLayoutService,
+		@IPeripheralDependencyService private readonly _depSvc: IPeripheralDependencyService,
 	) {
 		super(FIRMWARE_PART_ID, { hasTitle: false }, themeService, storageService, layoutService);
 	}
@@ -556,6 +564,38 @@ export class FirmwarePart extends Part {
 			actCard.appendChild(row);
 		}
 		grid.appendChild(actCard);
+
+		// Developer productivity card
+		if (s.mcuConfig) {
+			const devCard = this._sectionCard('Developer Tools');
+			const pinConflicts = this._pinMuxSvc.getConflicts();
+			const clockConstraints = this._clockTreeSvc.getConstraints(s.mcuConfig.family);
+			const linkerPreview = this._memoryLayoutSvc.generateLinkerScript();
+			const hasLinkerScript = linkerPreview.includes('MEMORY');
+			const sampleDeps = this._depSvc.getDependencyChain('USART1');
+			const devRows: Array<[string, string]> = [
+				['Pin Mux', pinConflicts.length === 0 ? 'No conflicts' : `${pinConflicts.length} conflict(s)`],
+				['Clock Tree', `Max SYSCLK: ${clockConstraints.sysclkMax} MHz`],
+				['Memory', hasLinkerScript ? `Linker ready / ${_fmt(s.mcuConfig.flashSize)} Flash` : `Flash: ${_fmt(s.mcuConfig.flashSize)} / RAM: ${_fmt(s.mcuConfig.ramSize)}`],
+				['Dependencies', `${sampleDeps.nodes.length} init steps for USART1`],
+				['Agent Tools', '14 fw_* developer productivity tools active'],
+			];
+			for (const [key, val] of devRows) {
+				const row = $e('div', [
+					'display:flex', 'justify-content:space-between', 'align-items:baseline',
+					'padding:3px 0', 'border-bottom:1px solid var(--vscode-widget-border,var(--vscode-panel-border))',
+					'font-size:12px',
+				].join(';'));
+				row.appendChild($t('span', key, 'color:var(--vscode-descriptionForeground);'));
+				const valEl = $t('span', val, 'font-weight:600;font-family:var(--vscode-editor-font-family,monospace);font-size:11px;');
+				if (key === 'Pin Mux' && pinConflicts.length > 0) {
+					valEl.style.color = 'var(--vscode-errorForeground,#f48771)';
+				}
+				row.appendChild(valEl);
+				devCard.appendChild(row);
+			}
+			grid.appendChild(devCard);
+		}
 
 		scroll.appendChild(grid);
 	}
@@ -1410,12 +1450,19 @@ export class FirmwarePart extends Part {
 				}
 			}
 
-			// Conflicts
-			const conflicts = _detectPinConflicts(loadedMaps);
-			if (conflicts.length > 0) {
+			// Pin Mux Conflicts (real AF-level + source-level detection)
+			const muxConflicts = this._pinMuxSvc.getConflicts();
+			const svdConflicts = _detectPinConflicts(loadedMaps);
+			const allConflicts = [...muxConflicts.map(c => c.message), ...svdConflicts];
+			if (allConflicts.length > 0) {
 				padded.appendChild($e('hr', 'border:none;border-bottom:1px solid var(--vscode-widget-border);margin:12px 0;'));
-				padded.appendChild($t('div', `[!] ${conflicts.length} Conflict(s)`, 'font-size:11px;font-weight:700;color:var(--vscode-terminal-ansiYellow);margin-bottom:6px;'));
-				for (const c of conflicts) {
+				const conflictHdr = $e('div', 'display:flex;align-items:center;gap:6px;margin-bottom:6px;');
+				conflictHdr.appendChild($t('span', `[!] ${allConflicts.length} Conflict(s)`, 'font-size:11px;font-weight:700;color:var(--vscode-terminal-ansiYellow);'));
+				if (muxConflicts.length > 0) {
+					conflictHdr.appendChild($t('span', `${muxConflicts.length} pin mux`, 'font-size:9px;padding:1px 5px;border-radius:3px;background:rgba(255,180,0,0.15);color:#e0a84e;'));
+				}
+				padded.appendChild(conflictHdr);
+				for (const c of allConflicts) {
 					padded.appendChild($t('div', c, 'font-size:10px;color:var(--vscode-terminal-ansiYellow);padding:2px 0;'));
 				}
 			}

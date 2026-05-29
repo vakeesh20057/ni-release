@@ -6,9 +6,10 @@
 /**
  * FirmwareAgentToolService
  *
- * Implements all 15 fw_* agent tools for the firmware environment.
- * These tools are registered with VoidInternalToolService so they appear
- * in both Void sidebar chat and Power Mode terminal.
+ * Registers all fw_* agent tools for the firmware environment.
+ * Tools span 11 phases: debug, serial, build analysis, code generation,
+ * peripheral intelligence, simulation, compliance, pin mux, dependencies,
+ * clock tree, register compositor, and memory layout.
  *
  * Tools are only meaningful when a firmware session is active.
  */
@@ -29,6 +30,11 @@ import { buildCodegenTools } from './codegenTools.js';
 import { buildPeripheralIntelTools } from './peripheralIntelTools.js';
 import { buildSimulationTools } from './simulationTools.js';
 import { buildComplianceTools } from './complianceTools.js';
+import { buildPinMuxTools } from './pinMuxTools.js';
+import { buildDependencyTools } from './dependencyTools.js';
+import { buildClockTreeTools } from './clockTreeTools.js';
+import { buildRegisterValueTools } from './registerValueTools.js';
+import { buildMemoryTools } from './memoryTools.js';
 
 
 // ─── Service interface ────────────────────────────────────────────────────────
@@ -72,6 +78,16 @@ class FirmwareAgentToolService extends Disposable implements IFirmwareAgentToolS
 			...buildSimulationTools(this._session),
 			// ── Phase 6: Compliance depth ────────────────────────────────
 			...buildComplianceTools(undefined, this._session),
+			// ── Phase 7: Pin mux conflict detection ─────────────────────
+			...buildPinMuxTools(this._session),
+			// ── Phase 8: Peripheral dependency chains ───────────────────
+			...buildDependencyTools(this._session),
+			// ── Phase 9: Clock tree validation & solving ─────────────────
+			...buildClockTreeTools(this._session),
+			// ── Phase 10: Register value compositor ──────────────────────
+			...buildRegisterValueTools(this._session),
+			// ── Phase 11: Memory layout & linker scripts ─────────────────
+			...buildMemoryTools(this._session),
 			// ── Core hardware tools ─────────────────────────────────────────
 			this._fwGetMcuInfo(),
 			this._fwListPeripherals(),

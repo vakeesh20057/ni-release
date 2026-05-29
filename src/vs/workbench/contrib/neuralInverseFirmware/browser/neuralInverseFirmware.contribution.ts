@@ -67,6 +67,13 @@ import './engine/datasheet/datasheetIntelligenceService.js';
 import './engine/hardwareContext/hardwareContextProvider.js';
 import './engine/agentTools/firmwareAgentToolService.js';
 
+// Phase 7-11: Developer Productivity Services
+import './engine/pinMux/service.js';
+import './engine/dependencies/service.js';
+import './engine/clockTree/service.js';
+import './engine/registerCompositor/service.js';
+import './engine/memory/service.js';
+
 // Phase 2: IDE & Build Tools
 import './engine/lsp/firmwareHoverProvider.js';
 
