@@ -1,4 +1,14 @@
-# Neural Inverse OSS
+# Neural Inverse - Open Source ("Neural Inverse OSS")
+
+[![Feature Requests](https://img.shields.io/github/issues/NeuralInverse/neuralinverse/enhancement?label=Feature%20Requests&color=38b2ac)](https://github.com/NeuralInverse/neuralinverse/issues?q=is%3Aissue+is%3Aopen+label%3Aenhancement)
+[![Bugs](https://img.shields.io/github/issues/NeuralInverse/neuralinverse/bug?label=Bugs&color=e53e3e)](https://github.com/NeuralInverse/neuralinverse/issues?q=is%3Aissue+is%3Aopen+label%3Abug)
+[![Sponsor](https://img.shields.io/badge/Sponsor-NeuralInverse-ea4aaa?logo=github-sponsors&logoColor=white)](https://github.com/sponsors/NeuralInverse)
+
+## The Repository
+
+This repository ("Neural Inverse OSS") is where we (Neural Inverse) develop the Neural Inverse open-source edition together with the community. Not only do we work on code and issues here, but we also publish our [roadmap](https://github.com/orgs/NeuralInverse/projects) and iteration plans. This source code is available to everyone under the [Apache License 2.0](./License.txt).
+
+## NeuralInverse
 
 <div align="center">
 	<img
@@ -8,135 +18,86 @@
 	/>
 </div>
 
-**Code Modern. Code Legacy. Code Firmware.**
+[NeuralInverse](https://neuralinverse.com) is an AI-native IDE built for the work most AI tools ignore — modernizing legacy systems, developing firmware, and migrating regulated codebases. It is a distribution of the Neural Inverse OSS repository with additional features released under a commercial license.
 
-NeuralInverse CE is a free, open-source AI-native IDE built for the work most AI tools ignore - modernizing legacy systems, developing firmware, and migrating regulated codebases. Bring your own LLM, no cloud lock-in.
+NeuralInverse combines the editing experience of VS Code with purpose-built tooling for embedded engineers, enterprise architects, and teams maintaining safety-critical or regulated software. It is an open-source Cursor alternative with AI chat, inline edit, autocomplete, and an autonomous coding agent — plus specialized modules for firmware and legacy migration that no other AI IDE offers. Bring your own LLM — 20 providers supported, API keys never leave your machine.
 
-- 🌐 [Website](https://neuralinverse.com)
-- 📧 [Contact](mailto:github@neuralinverse.com)
-- 🏢 [Enterprise Edition](https://neuralinverse.com) - compliance, GRC, and legacy modernization for regulated industries
-- [![Sponsor NeuralInverse](https://img.shields.io/badge/Sponsor-NeuralInverse-ea4aaa?logo=github-sponsors&logoColor=white)](https://github.com/sponsors/NeuralInverse)
+NeuralInverse is updated regularly with new features and bug fixes. You can download it for Windows, macOS, and Linux on [NeuralInverse's website](https://neuralinverse.com).
 
+**Install:**
 
-## Install
-
-**macOS / Linux**
 ```bash
+# macOS / Linux
 curl -fsSL https://neuralinverse.com/sh | bash
-```
 
-**Windows** (PowerShell)
-```powershell
+# Windows (PowerShell)
 irm https://neuralinverse.com/win | iex
 ```
 
-
 ## Features
 
-### AI Chat & Inline Edit
-- **Sidebar chat** (Ctrl+L): multi-mode conversation with full codebase context (Ask, Reasoning, Agent, Gather, Copilot modes)
-- **Inline edit** (Ctrl+K): select code, describe what you want, get an inline diff in real-time
-- **Autocomplete** (Tab): AI-powered fill-in-middle and multi-line suggestions with LRU caching
-- **Fast Apply**: LLM changes stream directly into your editor as red/green diffs — accept or reject inline
-- **Commit messages**: auto-generated from staged diffs via Source Control panel
+- **AI Chat & Inline Edit** (Ctrl+L, Ctrl+K) — multi-mode sidebar chat, inline diffs, autocomplete, Fast Apply
+- **Power Mode** (Cmd+Alt+P) — autonomous coding agent with 22+ tools and concurrent sub-agents
+- **Bring Your Own LLM** — 20 providers (cloud, local, gateway), per-feature model selection, zero lock-in
+- **Firmware & Embedded** (Cmd+Alt+F) — 357 MCU variants, SVD register maps, 22 `fw_*` agent tools, serial monitor, MISRA/CERT-C compliance
+- **Legacy Modernisation** (Cmd+Alt+M) — 5-stage migration pipeline, 30+ source languages, 61 translation profiles, Knowledge Base, audit export
+- **Agent Manager** (Cmd+Alt+A) — model management, deployments, agent orchestration
 
-### Power Mode (Cmd+Alt+P)
-Autonomous coding agent in its own window:
-- Plans, edits files, runs terminal commands, and iterates until done
-- 22+ built-in tools (filesystem, search, sub-agents, knowledge base)
-- Spawns concurrent sub-agents (explorer, editor, verifier roles)
-- Configurable via `.neuralinverseagent` workspace file (auto-approval, iteration limits, command blocking)
+## Contributing
 
-### Bring Your Own LLM
-17 providers, zero lock-in. Your API keys never leave your machine.
-- **Cloud**: Anthropic, OpenAI, DeepSeek, Gemini, Groq, xAI, Mistral, OpenRouter, AWS Bedrock, Azure OpenAI, Google Vertex
-- **Local**: Ollama, vLLM, LM Studio (auto-detected on localhost)
-- **Gateway**: LiteLLM, OpenAI-Compatible
-- **Per-feature model selection**: use a fast local model for autocomplete, a powerful cloud model for chat — no compromise
+There are many ways in which you can participate in this project, for example:
 
-### Firmware & Embedded Development
-Purpose-built for embedded engineers - not just syntax highlighting:
-- **MCU database**: 357 MCU variants across 11 manufacturers (STM32, NXP, ESP32, Nordic, Renesas, TI, Infineon, RP2040, AURIX, and more) with full specs, memory maps, and peripheral lists
-- **SVD auto-load**: fetches CMSIS-SVD register maps on demand, parses peripheral trees with bit-field detail, handles `derivedFrom` inheritance
-- **Datasheet intelligence**: drop in a PDF and the agent extracts register maps, timing constraints, errata, and pinouts - 3-tier pipeline with LLM reclassification, content-hash caching (zero re-processing on re-open), and page-level citations
-- **22 `fw_*` agent tools**: register map queries, peripheral config, bit-field lookup, errata checks, timing constraints, build + flash, serial monitor, MISRA/CERT-C checks, GDB debug (breakpoints, step, memory read/write), binary size analysis, code generation for peripheral init / ISR / DMA / clock config
-- **Platform knowledge packs**: STM32, ESP32, nRF (Zephyr), RP2040 - clock trees, DMA patterns, ISR constraints, toolchain quirks injected into every agent session
-- **Build system support**: PlatformIO, CMake, ESP-IDF, Make, Zephyr, Arduino, Mbed, STM32CubeIDE - build and flash directly from the IDE
-- **Serial monitor**: Web Serial API, 10,000-line ring buffer, baud auto-detection, debug probe auto-detection (ST-Link, J-Link, CMSIS-DAP, FTDI, CH340, and more)
-- **Compliance-aware**: MISRA C:2012, CERT C, IEC 62304, ISO 26262 rules injected into the agent context so generated code respects safety constraints
+- [Submit bugs and feature requests](https://github.com/NeuralInverse/neuralinverse/issues), and help us verify as they are checked in
+- [Review source code changes](https://github.com/NeuralInverse/neuralinverse/pulls)
+- Add new LLM provider integrations
+- Add new language support to the modernisation engine
+- Add new MCU/platform support to the firmware module
 
-### Legacy Modernization
-A full 5-stage migration platform built into the IDE. Open it with `Cmd+Alt+M`.
+If you are interested in fixing issues and contributing directly to the code base, please see the document [How to Contribute](./HOW_TO_CONTRIBUTE.md), which covers:
 
-**Stage 1 - Discovery**
-Scans source trees across 30+ languages and build systems - COBOL, PL/SQL, RPG, Natural, FORTRAN, Assembler, AUTOSAR ARXML, CAN DBC, IEC 61131-3, TTCN-3, and all mainstream languages. Extracts:
-- Dependency graphs, cyclomatic complexity, tech debt categories (17 generic + 14 firmware/industrial)
-- Regulated data patterns: PCI-DSS, GDPR, HIPAA, SOX, financial-core, tax-compliance, ISO 26262, IEC 61850 GOOSE, 3GPP key material, CAN signal IDs
-- GRC snapshot: violation counts by domain and severity, blocking violations, top rule violations
-- Market-vertical detection: automotive (AUTOSAR/MISRA), safety (IEC 61508/61511), telecom (3GPP/GSMA), energy (IEC 61850/DNP3), industrial OT (IEC 62443), embedded MCU
+- How to [build and run from source](./HOW_TO_CONTRIBUTE.md)
+- The development workflow, including debugging and running tests
+- [Coding guidelines](./CONTRIBUTING.md)
+- Submitting pull requests
 
-**Stage 2 - Planning**
-CPM critical path scheduling across 7 phases (foundation -> schema -> core-logic -> API layer -> integration -> compliance -> cutover):
-- 12+ blocker types including AUTOSAR RTE dependency, E2E protection gap, ASIL decomposition break, GOOSE protection relay, SIS/SIL downgrade
-- Market-vertical compliance gates: automotive ASIL-D formal verification, energy GOOSE path isolation, telecom 3GPP key externalisation, IIoT/OT IEC 62443 zone/conduit isolation
-- Effort estimation with safety-critical language surcharges (embedded-C, AUTOSAR, assembler, IEC 61131)
-- Stage 3 locked behind plan approval gate
+Full contributor guides are available at [neuralinverse.com/guides/contributing](https://neuralinverse.com/guides/contributing):
 
-**Stage 3 - Source Resolution**
-Prepares each migration unit for translation by inlining dependencies:
-- COBOL copybook inliner with cycle detection, CALL graph resolver
-- PL/SQL %TYPE/%ROWTYPE inliner, Java @EJB/@Autowired context injection
-- RPG /COPY+/INCLUDE expansion, Natural USING DA/CALLNAT resolution
-- Generic import inliner for TypeScript, Python, Go, Rust, C#, Kotlin, Scala and more
-- Leaf-node-first scheduling with risk priority and concurrency control
+- [Getting Started](https://neuralinverse.com/guides/contributing/getting-started) — dev setup and first contribution
+- [Architecture](https://neuralinverse.com/guides/contributing/architecture) — module map, DI, how features connect
+- [Bring Your Own LLM](https://neuralinverse.com/guides/contributing/byollm) — providers, per-feature model selection, adding providers
+- [AI Chat & Inline Edit](https://neuralinverse.com/guides/contributing/ai-chat) — sidebar chat, Ctrl+K, autocomplete, Fast Apply
+- [Power Mode](https://neuralinverse.com/guides/contributing/power-mode) — autonomous agent, tools, sub-agents, configuration
+- [Firmware & Embedded](https://neuralinverse.com/guides/contributing/firmware) — MCU database, SVD, serial monitor, agent tools
+- [Legacy Modernisation](https://neuralinverse.com/guides/contributing/modernisation) — 5-stage pipeline, adding languages and profiles
+- [Model Management](https://neuralinverse.com/guides/contributing/model-management) — deployment registry, cloud provisioning, agent manager UI
 
-**Stage 4 - Translation**
-Language-pair profiles with deep idiom mappings:
-- 36 profiles including: COBOL->Java (32 idioms), PL/SQL->TypeScript, RPG->Java, Natural->Java, FORTRAN->Python, Angular 1->18, Vue 2->3
-- 25 firmware profiles: bare-metal C->FreeRTOS, bare-metal C->Zephyr, AUTOSAR CP->AP, CAN DBC->CANopen, IEC 61850->OPC-UA, O-RAN C->Go, EtherCAT->EtherCAT NG, TTCN-3->pytest, and more
-- 6-priority context budget (source, type/naming, interfaces, rule patterns, rules/glossary, annotations)
-- Verification checks: non-empty, no placeholders, no truncation, balanced braces, length sanity
-- Decision tracking: every IRaisedDecision (naming, type, rule interpretation) stored and reviewable
+## Feedback
 
-**Knowledge Base**
-Persistent store surviving IDE restarts - every translation decision, type mapping, glossary term, annotation, compliance gate result, checkpoint, and audit log entry. Importable/exportable.
+- [Request a new feature](https://github.com/NeuralInverse/neuralinverse/issues/new?template=feature_request.md)
+- [File an issue](https://github.com/NeuralInverse/neuralinverse/issues/new?template=bug_report.md)
+- Email: github@neuralinverse.com
+- Website: [neuralinverse.com](https://neuralinverse.com)
 
-**Stage 5 - Cutover**
-- 8-point readiness gate (4 blocking, 2 warning, 2 info)
-- Audit bundle export with FNV-1a chain integrity hash and verifiable bundle integrity
-- Committed file writing to target tree via VS Code file service
+## Related Projects
 
-**Autonomy Engine**
-Optional autonomous execution: auto-approval policies, concurrent sub-task scheduling, batch progress events, configurable iteration limits and command blocklists via `.neuralinverseagent` config.
+| Module | Path | What it does |
+|--------|------|--------------|
+| AI Chat & Core | `src/vs/workbench/contrib/void/` | Sidebar chat, inline edit, autocomplete, LLM routing, settings |
+| Power Mode | `src/vs/workbench/contrib/powerMode/` | Autonomous agent with tool calling |
+| Agent Manager | `src/vs/workbench/contrib/neuralInverse/` | Model management, deployments, agent orchestration |
+| Firmware | `src/vs/workbench/contrib/neuralInverseFirmware/` | MCU database, SVD register maps, serial monitor, fw_* tools |
+| Modernisation | `src/vs/workbench/contrib/neuralInverseModernisation/` | 5-stage legacy migration engine |
 
-## What is not in CE
+## Development Container
 
-The following features are available in [NeuralInverse Enterprise](https://neuralinverse.com):
+This repository includes a [Visual Studio Code Dev Containers](https://aka.ms/vscode-remote/download/containers) / [GitHub Codespaces](https://github.com/features/codespaces) development container.
 
-- neuralInverseChecks - real-time GRC and compliance enforcement (HIPAA, SOC2, FDA 21 CFR Part 11, ISO 26262, etc.)
-- Checks Agent - AI agent with programmatic access to violations, rule explanations, and compliance reporting
-- NeuralInverse auth and team collaboration features
+- For **Dev Containers**, use the **Dev Containers: Clone Repository in Container Volume...** command which creates a Docker volume for better disk I/O on macOS and Windows.
+- For **Codespaces**, install the [GitHub Codespaces](https://marketplace.visualstudio.com/items?itemName=GitHub.codespaces) extension in VS Code and use the **Codespaces: Create New Codespace** command.
 
+Docker / the Codespace should have at least 4 cores and 6 GB of RAM (8 GB recommended) to run a full build.
 
-## Credits
-
-NeuralInverse CE is built on top of [VS Code](https://github.com/microsoft/vscode) by Microsoft. We are grateful to the VS Code team and all upstream contributors.
-
-
-## Architecture
-
-Built on [VS Code](https://github.com/microsoft/vscode). All Neural Inverse code lives under `src/vs/workbench/contrib/`:
-
-| Module | Path | Shortcut |
-|--------|------|----------|
-| AI Chat & Core | `contrib/void/` | Ctrl+L, Ctrl+K |
-| Power Mode | `contrib/powerMode/` | Cmd+Alt+P |
-| Agent Manager | `contrib/neuralInverse/` | Cmd+Alt+A |
-| Firmware & Embedded | `contrib/neuralInverseFirmware/` | Cmd+Alt+F |
-| Legacy Modernisation | `contrib/neuralInverseModernisation/` | Cmd+Alt+M |
-
-
-## Building from source
+## Building from Source
 
 ```bash
 npm install
@@ -146,15 +107,12 @@ npm run watchreact     # Terminal 2: watch React UI
 .\scripts\code.bat     # Terminal 3: launch dev instance (Windows)
 ```
 
-See [HOW_TO_CONTRIBUTE.md](./HOW_TO_CONTRIBUTE.md) for full setup instructions.
-
+See [HOW_TO_CONTRIBUTE.md](./HOW_TO_CONTRIBUTE.md) for full platform-specific setup instructions.
 
 ## License
 
-Copyright 2026 Neural Inverse Inc. Licensed under the Apache License 2.0. See [License.txt](./License.txt) for details.
+Copyright (c) Neural Inverse Inc. All rights reserved.
 
+Licensed under the [Apache License 2.0](./License.txt).
 
-## Support
-
-- Email: github@neuralinverse.com
-- Website: https://neuralinverse.com
+Neural Inverse OSS is built on [VS Code](https://github.com/microsoft/vscode) by Microsoft, licensed under MIT.
