@@ -232,7 +232,7 @@
     "path-browserify": "^1.0.1",
     "postcss": "^8.5.14",
     "postcss-nesting": "^12.0.2",
-    "pump": "^1.0.1",
+    "pump": "^1.0.3",
     "rcedit": "^1.1.0",
     "rimraf": "^2.2.8",
     "scope-tailwind": "^1.0.9",
