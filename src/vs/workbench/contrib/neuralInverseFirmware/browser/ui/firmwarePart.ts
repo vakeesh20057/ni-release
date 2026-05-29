@@ -777,12 +777,19 @@ export class FirmwarePart extends Part {
 		const periphInput = this._hwInput('Peripheral (e.g. USART1)', 'USART1', '140px');
 		const afInput = this._hwInput('AF', '7', '50px');
 		const validateBtn = this._btn('Validate', true, () => {
+			const pinStr = pinInput.value.trim().toUpperCase();
+			const pinMatch = pinStr.match(/^P?([A-K])(\d+)$/);
+			const out = root.querySelector<HTMLElement>('[data-af-out]')!;
+			if (!pinMatch) {
+				out.textContent = `Invalid pin format. Use e.g. PA9 or A9.`;
+				out.style.color = 'var(--vscode-errorForeground,#f48771)';
+				return;
+			}
 			const result = this._pinMuxSvc.validateAF(
-				{ port: pinInput.value.replace(/^P/, '').charAt(0).toUpperCase(), pin: parseInt(pinInput.value.slice(-2).replace(/\D/, '')) },
-				periphInput.value,
+				{ port: pinMatch[1], pin: parseInt(pinMatch[2]) },
+				periphInput.value.trim(),
 				parseInt(afInput.value),
 			);
-			const out = root.querySelector<HTMLElement>('[data-af-out]')!;
 			out.textContent = result.message;
 			out.style.color = result.valid ? 'var(--vscode-terminal-ansiGreen,#4caf50)' : 'var(--vscode-errorForeground,#f48771)';
 		}, 'font-size:11px;padding:4px 12px;');
@@ -858,11 +865,17 @@ export class FirmwarePart extends Part {
 		const apb1In  = this._hwInput('APB1 div', '4', '64px');
 		const apb2In  = this._hwInput('APB2 div', '2', '64px');
 		const validateClkBtn = this._btn('Validate', true, () => {
-			const result = this._clockTreeSvc.validate(
-				{ m: +mIn.value, n: +nIn.value, p: +pIn.value, q: +qIn.value },
-				+hseIn.value, +ahbIn.value, +apb1In.value, +apb2In.value, family,
-			);
+			const m = +mIn.value, n = +nIn.value, p = +pIn.value, q = +qIn.value;
+			const hse = +hseIn.value, ahb = Math.max(1, +ahbIn.value), apb1 = Math.max(1, +apb1In.value), apb2 = Math.max(1, +apb2In.value);
 			const out = root.querySelector<HTMLElement>('[data-clk-out]')!;
+			if (!m || !n || !p || !q || !hse) {
+				while (out.firstChild) { out.removeChild(out.firstChild); }
+				out.appendChild($t('div', 'All fields required. Enter numeric values.', 'font-size:12px;color:var(--vscode-errorForeground,#f48771);'));
+				return;
+			}
+			const result = this._clockTreeSvc.validate(
+				{ m, n, p, q }, hse, ahb, apb1, apb2, family,
+			);
 			while (out.firstChild) { out.removeChild(out.firstChild); }
 			if (result.valid) {
 				const cv = result.computedValues;
@@ -910,11 +923,16 @@ export class FirmwarePart extends Part {
 		usbLabel.appendChild(usbCb);
 		usbLabel.appendChild(document.createTextNode('USB 48MHz'));
 		const solveBtn = this._btn('Find Solutions', true, () => {
-			const solutions = this._clockTreeSvc.solve(+solveHse.value, { sysclkMHz: +solveFreq.value, usb48Required: usbCb.checked }, family);
+			const hseVal = +solveHse.value, freqVal = +solveFreq.value;
 			const out = root.querySelector<HTMLElement>('[data-solve-out]')!;
 			while (out.firstChild) { out.removeChild(out.firstChild); }
+			if (!hseVal || !freqVal || isNaN(hseVal) || isNaN(freqVal)) {
+				out.appendChild($t('div', 'Enter valid HSE and target SYSCLK values.', 'font-size:12px;color:var(--vscode-errorForeground,#f48771);'));
+				return;
+			}
+			const solutions = this._clockTreeSvc.solve(hseVal, { sysclkMHz: freqVal, usb48Required: usbCb.checked }, family);
 			if (solutions.length === 0) {
-				out.appendChild($t('div', `No valid PLL combinations found for ${solveFreq.value} MHz with HSE=${solveHse.value} MHz.`, 'font-size:12px;color:var(--vscode-descriptionForeground);'));
+				out.appendChild($t('div', `No valid PLL combinations found for ${freqVal} MHz with HSE=${hseVal} MHz.`, 'font-size:12px;color:var(--vscode-descriptionForeground);'));
 			} else {
 				out.appendChild($t('div', `${solutions.length} solution(s) found — sorted by quality:`, 'font-size:11px;color:var(--vscode-descriptionForeground);margin-bottom:8px;'));
 				for (const [i, sol] of solutions.entries()) {
@@ -1024,9 +1042,14 @@ export class FirmwarePart extends Part {
 		const decBtn      = this._btn('Decode', true, () => {
 			const v = decValIn.value.trim();
 			const num = parseInt(v, v.startsWith('0x') || v.startsWith('0X') ? 16 : 10);
-			const decoded = this._regCompositorSvc.decodeRegisterValue(decPeriphIn.value, decRegIn.value, num);
 			const out = root.querySelector<HTMLElement>('[data-dec-out]')!;
-			out.textContent = decoded ? this._regCompositorSvc.formatDecoded(decoded) : `Register ${decPeriphIn.value}.${decRegIn.value} not found in loaded SVD.`;
+			if (isNaN(num)) {
+				out.textContent = 'Invalid value. Use decimal or hex (0x...).';
+				out.style.color = 'var(--vscode-errorForeground,#f48771)';
+				return;
+			}
+			const decoded = this._regCompositorSvc.decodeRegisterValue(decPeriphIn.value.trim(), decRegIn.value.trim(), num);
+			out.textContent = decoded ? this._regCompositorSvc.formatDecoded(decoded) : `Register ${decPeriphIn.value}.${decRegIn.value} not found in loaded SVD. Load an SVD file first.`;
 			out.style.color = decoded ? 'var(--vscode-editor-foreground)' : 'var(--vscode-errorForeground,#f48771)';
 		}, 'font-size:11px;padding:4px 12px;');
 		decodeForm.appendChild(decPeriphIn); decodeForm.appendChild(decRegIn); decodeForm.appendChild(decValIn); decodeForm.appendChild(decBtn);
@@ -1043,10 +1066,16 @@ export class FirmwarePart extends Part {
 		const diffBeforeIn  = this._hwInput('Before', '0x2000', '90px');
 		const diffAfterIn   = this._hwInput('After', '0x200C', '90px');
 		const diffBtn = this._btn('Diff', true, () => {
-			const parse = (v: string) => parseInt(v, v.startsWith('0x') ? 16 : 10);
-			const diff = this._regCompositorSvc.diffRegisters(diffPeriphIn.value, diffRegIn.value, parse(diffBeforeIn.value), parse(diffAfterIn.value));
+			const parse = (v: string) => parseInt(v.trim(), v.trim().startsWith('0x') ? 16 : 10);
+			const before = parse(diffBeforeIn.value), after = parse(diffAfterIn.value);
 			const out = root.querySelector<HTMLElement>('[data-diff-out]')!;
-			out.textContent = diff ? this._regCompositorSvc.formatDiff(diff) : `Register not found in SVD.`;
+			if (isNaN(before) || isNaN(after)) {
+				out.textContent = 'Invalid values. Use decimal or hex (0x...).';
+				out.style.color = 'var(--vscode-errorForeground,#f48771)';
+				return;
+			}
+			const diff = this._regCompositorSvc.diffRegisters(diffPeriphIn.value.trim(), diffRegIn.value.trim(), before, after);
+			out.textContent = diff ? this._regCompositorSvc.formatDiff(diff) : `Register ${diffPeriphIn.value}.${diffRegIn.value} not found in loaded SVD. Load an SVD file first.`;
 			out.style.color = diff ? 'var(--vscode-editor-foreground)' : 'var(--vscode-errorForeground,#f48771)';
 		}, 'font-size:11px;padding:4px 12px;');
 		diffForm.appendChild(diffPeriphIn); diffForm.appendChild(diffRegIn); diffForm.appendChild(diffBeforeIn); diffForm.appendChild(diffAfterIn); diffForm.appendChild(diffBtn);

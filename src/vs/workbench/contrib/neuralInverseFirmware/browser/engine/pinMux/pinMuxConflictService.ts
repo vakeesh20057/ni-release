@@ -178,32 +178,78 @@ export class PinMuxConflictService {
 	scanSourceForAllocations(content: string, fileUri?: string): IPinAllocation[] {
 		const allocations: IPinAllocation[] = [];
 
-		// Pattern: GPIO_InitStruct.Pin = GPIO_PIN_9; GPIO_InitStruct.Alternate = GPIO_AF7_USART1;
-		const halInitPattern = /\.Alternate\s*=\s*GPIO_AF(\d+)_(\w+)/g;
+		// ── Strategy 1: HAL GPIO_InitStruct blocks ───────────────────────────
+		// Parse contiguous blocks: collect .Pin, .Alternate, and HAL_GPIO_Init()
+		// within a 20-line window of each other, matching all three to build a
+		// complete allocation with real port, pin, and AF.
+		//
+		// Typical HAL pattern:
+		//   GPIO_InitStruct.Pin       = GPIO_PIN_9;
+		//   GPIO_InitStruct.Mode      = GPIO_MODE_AF_PP;
+		//   GPIO_InitStruct.Alternate = GPIO_AF7_USART1;
+		//   HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
 
-		// Pattern: LL_GPIO_SetAFPin_0_7(GPIOA, LL_GPIO_PIN_9, LL_GPIO_AF_7);
-		const llAfPattern = /LL_GPIO_SetAFPin_\d+_\d+\s*\(\s*GPIO([A-K])\s*,\s*LL_GPIO_PIN_(\d+)\s*,\s*LL_GPIO_AF_(\d+)\s*\)/g;
+		const lines = content.split('\n');
 
-		let match;
-		while ((match = halInitPattern.exec(content)) !== null) {
-			const af = parseInt(match[1]);
-			const signal = match[2];
-			const peripheral = signal.replace(/_.*$/, '');
+		// Forward pass: when we see a .Pin or .Alternate assignment, open a
+		// context window and look for all three fields within ±10 lines.
+		const halPinPattern      = /\.Pin\s*=\s*GPIO_PIN_(\d+)/;
+		const halAlternatePattern = /\.Alternate\s*=\s*GPIO_AF(\d+)_(\w+)/;
+		const halInitCallPattern  = /HAL_GPIO_Init\s*\(\s*GPIO([A-K])\s*,/;
+
+		// Collect all events with line index
+		const pinEvents:       Array<{ line: number; pin: number }> = [];
+		const alternateEvents: Array<{ line: number; af: number; signal: string }> = [];
+		const initCallEvents:  Array<{ line: number; port: string }> = [];
+
+		for (let i = 0; i < lines.length; i++) {
+			const l = lines[i];
+			let m: RegExpMatchArray | null;
+			if ((m = l.match(halPinPattern))) {
+				pinEvents.push({ line: i, pin: parseInt(m[1]) });
+			}
+			if ((m = l.match(halAlternatePattern))) {
+				alternateEvents.push({ line: i, af: parseInt(m[1]), signal: m[2] });
+			}
+			if ((m = l.match(halInitCallPattern))) {
+				initCallEvents.push({ line: i, port: m[1] });
+			}
+		}
+
+		// For each .Alternate event, find the nearest .Pin and HAL_GPIO_Init within ±15 lines
+		for (const alt of alternateEvents) {
+			const nearPin = pinEvents
+				.filter(e => Math.abs(e.line - alt.line) <= 15)
+				.sort((a, b) => Math.abs(a.line - alt.line) - Math.abs(b.line - alt.line))[0];
+
+			const nearInit = initCallEvents
+				.filter(e => Math.abs(e.line - alt.line) <= 15)
+				.sort((a, b) => Math.abs(a.line - alt.line) - Math.abs(b.line - alt.line))[0];
+
+			if (!nearPin || !nearInit) {
+				// Can't resolve port/pin for this block — skip rather than emitting garbage
+				continue;
+			}
+
+			const peripheral = alt.signal.replace(/_.*$/, '');
+			const suffix = alt.signal.replace(`${peripheral}_`, '');
 			allocations.push({
-				pin: { port: 'X', pin: 0 }, // Need more context to determine exact pin
+				pin: { port: nearInit.port, pin: nearPin.pin },
 				peripheral,
-				signal: `${peripheral}_${signal.replace(`${peripheral}_`, '')}`,
-				af,
+				signal: suffix ? `${peripheral}_${suffix}` : peripheral,
+				af: alt.af,
 				source: 'source-scan',
 				fileUri,
 			});
 		}
 
+		// ── Strategy 2: LL_GPIO_SetAFPin_0_7(GPIOA, LL_GPIO_PIN_9, LL_GPIO_AF_7) ──
+		const llAfPattern = /LL_GPIO_SetAFPin_\d+_\d+\s*\(\s*GPIO([A-K])\s*,\s*LL_GPIO_PIN_(\d+)\s*,\s*LL_GPIO_AF_(\d+)\s*\)/g;
+		let match: RegExpExecArray | null;
 		while ((match = llAfPattern.exec(content)) !== null) {
 			const port = match[1];
 			const pin = parseInt(match[2]);
 			const af = parseInt(match[3]);
-
 			const afEntry = this._afDatabase.find(e => e.port === port && e.pin === pin && e.af === af);
 			allocations.push({
 				pin: { port, pin },
@@ -214,6 +260,11 @@ export class PinMuxConflictService {
 				fileUri,
 			});
 		}
+
+		// ── Strategy 3: Direct register write GPIOx->AFR[LH] ────────────────
+		// LL bare-register: GPIOA->AFR[0] |= (7UL << (1 * 4));  /* USART1_TX on PA1 AF7 */
+		// This pattern is too varied to parse reliably without semantic analysis;
+		// already covered by LL strategy above for named macros.
 
 		return allocations;
 	}
