@@ -22,17 +22,32 @@
 import { IFirmwareSessionService } from '../../firmwareSessionService.js';
 import { IPeripheralRegisterMap } from '../../../common/firmwareTypes.js';
 import { getPlatformSkill } from '../skills/platformSkills.js';
+import { INIMdService } from '../projectConfig/niMdService.js';
+import { IPeripheralCatalogService } from '../peripheralCatalog/peripheralCatalogService.js';
 
 
 /**
  * Build a compact firmware context block for system prompt injection.
  * Returns undefined when no session is active — keeps prompt clean for normal coding tasks.
  */
-export function buildFirmwareContext(sessionService: IFirmwareSessionService): string | undefined {
+export function buildFirmwareContext(
+	sessionService: IFirmwareSessionService,
+	niMdService?: INIMdService,
+	peripheralCatalog?: IPeripheralCatalogService,
+): string | undefined {
 	const session = sessionService.session;
 	if (!session.isActive || !session.mcuConfig) { return undefined; }
 
 	const lines: string[] = [];
+
+	// ── NI.md Project Config (highest priority — injected first) ──
+	if (niMdService) {
+		const niMdSection = niMdService.getSystemPromptSection();
+		if (niMdSection.trim()) {
+			lines.push(niMdSection);
+			lines.push('');
+		}
+	}
 
 	// ── Header ──
 	lines.push('## Active Firmware Session');
@@ -147,6 +162,15 @@ export function buildFirmwareContext(sessionService: IFirmwareSessionService): s
 	lines.push('  Platform:     fw_init_sequence, fw_platform_info');
 	lines.push('  Compliance:   fw_misra_check, fw_cert_c_check, fw_safety_audit');
 	lines.push('  Session:      fw_session_info, fw_scan_workspace');
+
+	// ── Attached peripherals (from catalog) ──
+	if (peripheralCatalog) {
+		const peripheralSection = peripheralCatalog.getSystemPromptSection();
+		if (peripheralSection.trim()) {
+			lines.push('');
+			lines.push(peripheralSection);
+		}
+	}
 
 	// ── Coding guidelines ──
 	lines.push('');

@@ -46,6 +46,7 @@ export interface ILogicCapture {
 	durationSec: number;
 	sampleRate: number;          // Hz
 	frames: IDecodedFrame[];
+	rawSamples?: Record<number, number[]>;  // channelId -> array of 0/1 bit values at sampleRate
 	csvPath?: string;            // exported CSV file path
 	nativePath?: string;         // .sal (Saleae) or .dwf capture file
 	capturedAt: number;          // Date.now()

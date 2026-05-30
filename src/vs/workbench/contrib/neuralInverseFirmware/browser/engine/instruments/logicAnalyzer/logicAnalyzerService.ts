@@ -492,6 +492,16 @@ print(json.dumps(result))
 			throw new Error(`Digilent error: ${parsed.error}`);
 		}
 
+		// Store raw sample data for software decoding
+		const rawSamples: Record<number, number[]> = {};
+		if (parsed['channels'] && typeof parsed['channels'] === 'object') {
+			for (const [chId, bits] of Object.entries(parsed['channels'] as Record<string, unknown>)) {
+				if (Array.isArray(bits)) {
+					rawSamples[parseInt(chId)] = bits as number[];
+				}
+			}
+		}
+
 		const capture: ILogicCapture = {
 			captureId,
 			backend: 'digilent',
@@ -499,6 +509,7 @@ print(json.dumps(result))
 			durationSec,
 			sampleRate,
 			frames: [],
+			rawSamples,
 			capturedAt: Date.now(),
 		};
 
@@ -560,43 +571,285 @@ print(json.dumps({"triggered": True}))
 	}
 
 	private _decodeUART(capture: ILogicCapture, config: IProtocolConfig): IDecodedFrame[] {
-		// Simple NRZ UART decoder: find start bit (high→low), sample data bits at baud center
 		const baudRate = config.baudRate ?? 115200;
-		const bitPeriod = capture.sampleRate / baudRate;
-		const frames: IDecodedFrame[] = [];
+		const dataBits = config.dataBits ?? 8;
+		const stopBits = config.stopBits ?? 1;
+		const parity = config.parity ?? 'none';
+		const sampleRate = capture.sampleRate;
+		const bitPeriod = sampleRate / baudRate;  // samples per bit
 
-		// This is a placeholder structure — real implementation processes the sample buffer
-		// from the Digilent capture. Since Digilent captures return raw bit arrays, we
-		// reconstruct the UART frames by finding start bits and sampling at the baud rate.
-		frames.push({
-			timestamp: 0,
-			protocol: 'uart',
-			data: [],
-			dataHex: '',
-			dataAscii: `[Decoded at ${baudRate} baud, bit period = ${bitPeriod.toFixed(1)} samples]`,
-		});
+		// Use the data channel; default channel 0
+		const chId = config.dataChannel ?? 0;
+		const samples = capture.rawSamples?.[chId];
+		if (!samples || samples.length === 0) {
+			return [{ timestamp: 0, protocol: 'uart', data: [], dataHex: '', dataAscii: '', error: `No raw samples for channel ${chId}` }];
+		}
+
+		const frames: IDecodedFrame[] = [];
+		let i = 0;
+
+		while (i < samples.length - bitPeriod * (dataBits + 2)) {
+			// Look for start bit: HIGH → LOW transition (UART idle = HIGH)
+			if (samples[i] !== 1 || samples[i + 1] !== 0) { i++; continue; }
+
+			const frameStart = i;
+			// Sample center of start bit to verify it's really a start bit
+			const startCenter = i + Math.floor(bitPeriod / 2);
+			if (startCenter >= samples.length || samples[startCenter] !== 0) { i++; continue; }
+
+			// Sample each data bit at center of bit period
+			let byteVal = 0;
+			let bitError = false;
+
+			for (let b = 0; b < dataBits; b++) {
+				const sampleIdx = Math.round(startCenter + (b + 1) * bitPeriod);
+				if (sampleIdx >= samples.length) { bitError = true; break; }
+				if (config.bitOrder === 'msb') {
+					byteVal = (byteVal << 1) | (samples[sampleIdx] ?? 0);
+				} else {
+					byteVal |= ((samples[sampleIdx] ?? 0) << b);
+				}
+			}
+
+			if (bitError) { i++; continue; }
+
+			// Check parity bit if enabled
+			let parityError = false;
+			let parityOffset = 0;
+			if (parity !== 'none') {
+				parityOffset = 1;
+				const parityIdx = Math.round(startCenter + (dataBits + 1) * bitPeriod);
+				if (parityIdx < samples.length) {
+					const parityBit = samples[parityIdx] ?? 0;
+					const expectedParity = parity === 'even'
+						? (_popcount(byteVal) % 2 === 0 ? 0 : 1)
+						: (_popcount(byteVal) % 2 === 0 ? 1 : 0);
+					if (parityBit !== expectedParity) { parityError = true; }
+				}
+			}
+
+			// Check stop bit
+			const stopIdx = Math.round(startCenter + (dataBits + parityOffset + 1) * bitPeriod);
+			const stopSample = stopIdx < samples.length ? samples[stopIdx] : 1;
+			const framingError = stopSample !== 1;
+
+			const timestamp = frameStart / sampleRate;
+			frames.push({
+				timestamp,
+				protocol: 'uart',
+				data: [byteVal],
+				dataHex: `0x${byteVal.toString(16).toUpperCase().padStart(2, '0')}`,
+				dataAscii: (byteVal >= 0x20 && byteVal < 0x7F) ? String.fromCharCode(byteVal) : '.',
+				direction: 'unknown',
+				error: framingError ? 'Framing error (stop bit not HIGH)' : parityError ? 'Parity error' : undefined,
+			});
+
+			// Advance past this frame
+			i = Math.round(startCenter + (dataBits + parityOffset + stopBits) * bitPeriod);
+		}
+
 		return frames;
 	}
 
 	private _decodeI2C(capture: ILogicCapture, config: IProtocolConfig): IDecodedFrame[] {
-		// I2C: detect START (SDA falls while SCL high), read address+data, detect STOP
-		return [{
-			timestamp: 0,
-			protocol: 'i2c',
-			data: [],
-			dataHex: '',
-			dataAscii: `[I2C decoded on SDA=CH${config.dataChannel ?? 0}, SCL=CH${config.clockChannel ?? 1}]`,
-		}];
+		const sdaCh = config.dataChannel ?? 0;
+		const sclCh = config.clockChannel ?? 1;
+		const sampleRate = capture.sampleRate;
+		const sda = capture.rawSamples?.[sdaCh];
+		const scl = capture.rawSamples?.[sclCh];
+
+		if (!sda || !scl || sda.length === 0) {
+			return [{ timestamp: 0, protocol: 'i2c', data: [], dataHex: '', dataAscii: '', error: `No raw samples for SDA=CH${sdaCh}/SCL=CH${sclCh}` }];
+		}
+
+		const frames: IDecodedFrame[] = [];
+		let i = 0;
+		const len = Math.min(sda.length, scl.length);
+
+		while (i < len - 1) {
+			// Detect START condition: SDA falls while SCL is HIGH
+			if (scl[i] === 1 && sda[i] === 1 && i + 1 < len && sda[i + 1] === 0) {
+				const startIdx = i;
+				i++;
+
+				// Read bits: sample on SCL rising edge
+				const bits: number[] = [];
+				let bitPos = i;
+
+				while (bitPos < len - 1) {
+					// Find SCL rising edge
+					if (scl[bitPos] === 0 && scl[bitPos + 1] === 1) {
+						// Sample SDA on rising edge
+						bits.push(sda[bitPos + 1] ?? 0);
+
+						// Check for STOP: SDA rises while SCL is HIGH (after at least 9 bits)
+						if (bits.length >= 9) {
+							let stopSearch = bitPos + 2;
+							while (stopSearch < len - 1 && scl[stopSearch] === 1) {
+								if (sda[stopSearch] === 0 && sda[stopSearch + 1] === 1) {
+									// STOP condition found
+									break;
+								}
+								stopSearch++;
+							}
+						}
+					}
+
+					// Check for STOP or RESTART
+					if (scl[bitPos] === 1 && sda[bitPos] === 0 && (bitPos + 1) < len && sda[bitPos + 1] === 1) {
+						break; // STOP condition
+					}
+					if (scl[bitPos] === 1 && sda[bitPos] === 1 && (bitPos + 1) < len && sda[bitPos + 1] === 0) {
+						break; // RESTART
+					}
+
+					bitPos++;
+					if (bitPos >= len - 1 || bits.length >= 256) { break; }
+				}
+
+				// Parse address and data bytes from bits (8 data + 1 ACK per byte)
+				let bitIdx = 0;
+				let isFirstByte = true;
+				let direction: 'read' | 'write' = 'write';
+				let address = 0;
+
+				while (bitIdx + 8 < bits.length) {
+					let byteVal = 0;
+					for (let b = 0; b < 8; b++) {
+						byteVal = (byteVal << 1) | (bits[bitIdx + b] ?? 0);
+					}
+					const ack = bits[bitIdx + 8] === 0; // ACK = SDA LOW
+
+					if (isFirstByte) {
+						address = byteVal >> 1;
+						direction = (byteVal & 0x01) === 0 ? 'write' : 'read';
+						isFirstByte = false;
+						frames.push({
+							timestamp: startIdx / sampleRate,
+							protocol: 'i2c',
+							address,
+							data: [],
+							dataHex: '',
+							dataAscii: `ADDR 0x${address.toString(16).toUpperCase().padStart(2, '0')} ${direction.toUpperCase()}`,
+							direction,
+							error: ack ? undefined : 'NACK (address not acknowledged)',
+						});
+					} else {
+						frames.push({
+							timestamp: (startIdx + bitIdx) / sampleRate,
+							protocol: 'i2c',
+							address,
+							data: [byteVal],
+							dataHex: `0x${byteVal.toString(16).toUpperCase().padStart(2, '0')}`,
+							dataAscii: (byteVal >= 0x20 && byteVal < 0x7F) ? String.fromCharCode(byteVal) : '.',
+							direction,
+							error: ack ? undefined : 'NACK',
+						});
+					}
+
+					bitIdx += 9; // 8 data + 1 ACK
+				}
+
+				i = bitPos;
+			} else {
+				i++;
+			}
+		}
+
+		return frames;
 	}
 
 	private _decodeSPI(capture: ILogicCapture, config: IProtocolConfig): IDecodedFrame[] {
-		return [{
-			timestamp: 0,
-			protocol: 'spi',
-			data: [],
-			dataHex: '',
-			dataAscii: `[SPI decoded on MOSI=CH${config.dataChannel ?? 0}, SCK=CH${config.clockChannel ?? 2}]`,
-		}];
+		const mosiCh = config.dataChannel ?? 0;
+		const sckCh = config.clockChannel ?? 2;
+		const csCh = config.csChannel ?? 3;
+		const bitOrder = config.bitOrder ?? 'msb';
+		const sampleRate = capture.sampleRate;
+		const cpol = (config as Record<string,unknown>)['cpol'] ? 1 : 0;  // clock polarity
+
+		const mosi = capture.rawSamples?.[mosiCh];
+		const sck = capture.rawSamples?.[sckCh];
+
+		if (!mosi || !sck || mosi.length === 0) {
+			return [{ timestamp: 0, protocol: 'spi', data: [], dataHex: '', dataAscii: '', error: `No raw samples for MOSI=CH${mosiCh}/SCK=CH${sckCh}` }];
+		}
+
+		const frames: IDecodedFrame[] = [];
+		const len = Math.min(mosi.length, sck.length);
+
+		// Determine active CS state (if available)
+		const cs = capture.rawSamples?.[csCh];
+
+		let i = 1;
+		let currentByte = 0;
+		let bitCount = 0;
+		let frameStart = 0;
+		let inTransaction = false;
+
+		while (i < len) {
+			// Check CS (active low)
+			const csActive = cs ? cs[i] === 0 : true;
+
+			if (!csActive) {
+				// End of transaction
+				if (inTransaction && bitCount > 0) {
+					const byte = bitOrder === 'msb' ? currentByte : _reverseBits(currentByte, bitCount);
+					frames.push({
+						timestamp: frameStart / sampleRate,
+						protocol: 'spi',
+						data: [byte],
+						dataHex: `0x${byte.toString(16).toUpperCase().padStart(2, '0')}`,
+						dataAscii: (byte >= 0x20 && byte < 0x7F) ? String.fromCharCode(byte) : '.',
+						direction: 'write',
+					});
+					currentByte = 0;
+					bitCount = 0;
+				}
+				inTransaction = false;
+				i++;
+				continue;
+			}
+
+			// Detect clock edge for sampling
+			const prevSck = sck[i - 1] ?? cpol;
+			const currSck = sck[i] ?? cpol;
+			const risingEdge = prevSck === 0 && currSck === 1;
+			const fallingEdge = prevSck === 1 && currSck === 0;
+
+			// CPOL=0, CPHA=0: sample on rising; CPOL=1, CPHA=0: sample on falling
+			const sampleEdge = cpol === 0 ? risingEdge : fallingEdge;
+
+			if (sampleEdge) {
+				if (!inTransaction) { frameStart = i; inTransaction = true; }
+
+				const bit = mosi[i] ?? 0;
+				if (bitOrder === 'msb') {
+					currentByte = (currentByte << 1) | bit;
+				} else {
+					currentByte |= (bit << bitCount);
+				}
+				bitCount++;
+
+				if (bitCount === 8) {
+					const byte = currentByte & 0xFF;
+					frames.push({
+						timestamp: frameStart / sampleRate,
+						protocol: 'spi',
+						data: [byte],
+						dataHex: `0x${byte.toString(16).toUpperCase().padStart(2, '0')}`,
+						dataAscii: (byte >= 0x20 && byte < 0x7F) ? String.fromCharCode(byte) : '.',
+						direction: 'write',
+					});
+					currentByte = 0;
+					bitCount = 0;
+					frameStart = i;
+				}
+			}
+
+			i++;
+		}
+
+		return frames;
 	}
 
 	// ─── Python subprocess helper ─────────────────────────────────────────────
@@ -634,3 +887,22 @@ print(json.dumps({"triggered": True}))
 
 
 registerSingleton(ILogicAnalyzerService, LogicAnalyzerServiceImpl, InstantiationType.Delayed);
+
+
+// ─── Bit manipulation helpers ─────────────────────────────────────────────────
+
+function _popcount(n: number): number {
+	let count = 0;
+	let v = n;
+	while (v) { count += v & 1; v >>>= 1; }
+	return count;
+}
+
+function _reverseBits(n: number, width: number): number {
+	let result = 0;
+	for (let i = 0; i < width; i++) {
+		result = (result << 1) | (n & 1);
+		n >>>= 1;
+	}
+	return result;
+}

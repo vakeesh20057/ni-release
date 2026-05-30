@@ -174,6 +174,8 @@ async function _scenarioSleepRegression(
 	// Step 4: Logic analyzer UART decode
 	if (laStatus.connected) {
 		results.push(`Step 4: Capturing UART log for ${Math.min(sleepWindowSec, 3)}s...`);
+		// Record start time to correlate with power measurement
+		const captureStartEpoch = Date.now();
 		try {
 			const capture = await la.captureChannels(
 				[{ id: 0, label: 'UART_TX', threshold: 1.65, pullup: false }],
@@ -184,12 +186,15 @@ async function _scenarioSleepRegression(
 			if (frames.length > 0) {
 				results.push(`  ${frames.length} UART frames decoded:`);
 				for (const frame of frames.slice(0, 10)) {
-					results.push(`    ${frame.timestamp.toFixed(3)}s: "${frame.dataAscii}"`);
+					// Convert logic capture timestamp to wall-clock epoch for correlation
+					const wallClock = captureStartEpoch + frame.timestamp * 1000;
+					results.push(`    +${frame.timestamp.toFixed(3)}s (${new Date(wallClock).toISOString().slice(11, 23)}): "${frame.dataAscii}"`);
 				}
 				// Look for sleep entry message
 				const sleepFrame = frames.find(f => f.dataAscii.toLowerCase().includes('sleep') || f.dataAscii.toLowerCase().includes('deep'));
 				if (sleepFrame) {
-					results.push(`  [KEY] Sleep entry logged at ${sleepFrame.timestamp.toFixed(3)}s: "${sleepFrame.dataAscii}"`);
+					results.push(`  [KEY] Sleep entry logged at +${sleepFrame.timestamp.toFixed(3)}s: "${sleepFrame.dataAscii}"`);
+					results.push(`  Cross-reference: check power trace at this timestamp for current drop`);
 				}
 			} else {
 				results.push(`  No UART frames — device may not be logging sleep transitions`);
@@ -254,19 +259,37 @@ async function _scenarioI2CNack(
 	results.push('');
 
 	const laStatus = await la.detect();
-	results.push(`Step 2: Starting I2C capture (SDA=CH${sdaChannel}, SCL=CH${sclChannel})...`);
+	results.push(`Step 2: Starting I2C capture (SDA=CH${sdaChannel}, SCL=CH${sclCh}) — trigger on SCL falling edge...`);
 
 	if (laStatus.connected) {
 		try {
-			// Arm trigger: start on any edge, capture 5 seconds
-			const capture = await la.captureChannels(
-				[
-					{ id: sdaChannel, label: 'SDA', threshold: 1.65, pullup: true },
-					{ id: sclChannel, label: 'SCL', threshold: 1.65, pullup: true },
-				],
-				5,
-				12000000,
-			);
+			// Trigger on SCL falling edge to start capture exactly when I2C activity begins
+			// This avoids capturing silence and ensures we get actual transaction data
+			let capture;
+			try {
+				capture = await la.armTrigger(
+					{ channel: sclCh, edge: 'falling' },
+					{
+						channels: [
+							{ id: sdaChannel, label: 'SDA', threshold: 1.65, pullup: true },
+							{ id: sclCh, label: 'SCL', threshold: 1.65, pullup: true },
+						],
+						durationSec: 2,
+					},
+				);
+				results.push(`  Triggered capture: ${capture.captureId} (${capture.durationSec}s)`);
+			} catch {
+				// Trigger timed out — fall back to free-running 5s capture
+				results.push(`  SCL trigger timed out — using free-running 5s capture`);
+				capture = await la.captureChannels(
+					[
+						{ id: sdaChannel, label: 'SDA', threshold: 1.65, pullup: true },
+						{ id: sclCh, label: 'SCL', threshold: 1.65, pullup: true },
+					],
+					5,
+					12000000,
+				);
+			}
 
 			results.push(`  Capture complete: ${capture.captureId}`);
 
@@ -274,7 +297,7 @@ async function _scenarioI2CNack(
 			const frames = await la.decodeProtocol(capture.captureId, {
 				protocol: 'i2c',
 				dataChannel: sdaChannel,
-				clockChannel: sclChannel,
+				clockChannel: sclCh,
 			});
 
 			const errors = frames.filter(f => f.error);

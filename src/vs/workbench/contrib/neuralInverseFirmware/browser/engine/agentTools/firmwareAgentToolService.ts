@@ -42,6 +42,13 @@ import { buildCombinedInstrumentTools } from './combinedInstrumentTools.js';
 import { ILogicAnalyzerService } from '../instruments/logicAnalyzer/logicAnalyzerService.js';
 import { IPowerAnalyzerService } from '../instruments/powerAnalyzer/powerAnalyzerService.js';
 import { IOscilloscopeService } from '../instruments/oscilloscope/oscilloscopeService.js';
+import { buildRTTTools } from './rttTools.js';
+import { buildPeripheralCatalogTools } from './peripheralCatalogTools.js';
+import { buildSchematicTools } from './schematicTools.js';
+import { IRTTService } from '../serial/rttService.js';
+import { IITMService } from '../serial/itmService.js';
+import { IPeripheralCatalogService } from '../peripheralCatalog/peripheralCatalogService.js';
+import { ISchematicService } from '../schematic/schematicService.js';
 
 
 // ─── Service interface ────────────────────────────────────────────────────────
@@ -70,6 +77,10 @@ class FirmwareAgentToolService extends Disposable implements IFirmwareAgentToolS
 		@ILogicAnalyzerService private readonly _la: ILogicAnalyzerService,
 		@IPowerAnalyzerService private readonly _pa: IPowerAnalyzerService,
 		@IOscilloscopeService private readonly _scope: IOscilloscopeService,
+		@IRTTService private readonly _rtt: IRTTService,
+		@IITMService private readonly _itm: IITMService,
+		@IPeripheralCatalogService private readonly _catalog: IPeripheralCatalogService,
+		@ISchematicService private readonly _schematic: ISchematicService,
 	) {
 		super();
 	}
@@ -103,6 +114,12 @@ class FirmwareAgentToolService extends Disposable implements IFirmwareAgentToolS
 			...buildPowerAnalyzerTools(this._session, this._pa),
 			...buildOscilloscopeTools(this._session, this._scope),
 			...buildCombinedInstrumentTools(this._session, this._debug, this._la, this._pa, this._scope),
+			// ── Phase 13: RTT / ITM / SWO tracing ────────────────────────
+			...buildRTTTools(this._session, this._rtt, this._itm),
+			// ── Phase 14: Peripheral catalog ─────────────────────────────
+			...buildPeripheralCatalogTools(this._session, this._catalog),
+			// ── Phase 15: Schematic / Pinout ─────────────────────────────
+			...buildSchematicTools(this._session, this._schematic),
 			// ── Core hardware tools ─────────────────────────────────────────
 			this._fwGetMcuInfo(),
 			this._fwListPeripherals(),

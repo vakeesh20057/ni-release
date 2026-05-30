@@ -31,8 +31,13 @@ import {
  * Build the firmware-specialized system prompt for Power Mode.
  * This completely replaces the generic BUILD_AGENT_PROMPT when a firmware session is active.
  */
-export function buildFirmwareSystemPrompt(session: IFirmwareSessionData): string {
+export function buildFirmwareSystemPrompt(session: IFirmwareSessionData, niMdSection?: string, peripheralSection?: string): string {
 	const parts: string[] = [];
+
+	// NI.md project config is injected FIRST — highest priority context
+	if (niMdSection && niMdSection.trim()) {
+		parts.push(niMdSection);
+	}
 
 	parts.push(FIRMWARE_AGENT_IDENTITY);
 	parts.push(FIRMWARE_TOOL_DISPATCH);
@@ -43,6 +48,11 @@ export function buildFirmwareSystemPrompt(session: IFirmwareSessionData): string
 
 	if (session.platformId) {
 		parts.push(buildPlatformBlock(session.platformId, session.mcuConfig));
+	}
+
+	// Peripheral catalog context
+	if (peripheralSection && peripheralSection.trim()) {
+		parts.push(peripheralSection);
 	}
 
 	parts.push(FIRMWARE_CODING_RULES);

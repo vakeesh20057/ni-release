@@ -91,6 +91,21 @@ import './engine/instruments/logicAnalyzer/logicAnalyzerService.js';
 import './engine/instruments/powerAnalyzer/powerAnalyzerService.js';
 import './engine/instruments/oscilloscope/oscilloscopeService.js';
 
+// Phase 5: RTT / ITM / SWO Tracing
+import './engine/serial/rttService.js';
+import './engine/serial/itmService.js';
+
+// Phase 6: Project Config (NI.md, .niignore, Checkpoint)
+import './engine/projectConfig/niMdService.js';
+import './engine/projectConfig/niIgnoreService.js';
+import './engine/projectConfig/checkpointService.js';
+
+// Phase 7: Peripheral Catalog
+import './engine/peripheralCatalog/peripheralCatalogService.js';
+
+// Phase 8: Schematic / Pinout Visualizer
+import './engine/schematic/schematicService.js';
+
 // Infrastructure
 import './voidFirmwareToolsContrib.js';
 import './statusbar/firmwareStatus.contribution.js';
