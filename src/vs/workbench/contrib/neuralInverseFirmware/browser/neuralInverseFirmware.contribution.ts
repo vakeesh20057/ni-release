@@ -86,6 +86,11 @@ import './engine/serial/serialMonitorService.js';
 import './engine/debug/debugService.js';
 import './engine/firmwarePowerModeTools.js';
 
+// Phase 4: Debug Instruments (Logic Analyzer, Power Analyzer, Oscilloscope)
+import './engine/instruments/logicAnalyzer/logicAnalyzerService.js';
+import './engine/instruments/powerAnalyzer/powerAnalyzerService.js';
+import './engine/instruments/oscilloscope/oscilloscopeService.js';
+
 // Infrastructure
 import './voidFirmwareToolsContrib.js';
 import './statusbar/firmwareStatus.contribution.js';

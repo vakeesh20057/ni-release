@@ -35,6 +35,13 @@ import { buildDependencyTools } from './dependencyTools.js';
 import { buildClockTreeTools } from './clockTreeTools.js';
 import { buildRegisterValueTools } from './registerValueTools.js';
 import { buildMemoryTools } from './memoryTools.js';
+import { buildLogicAnalyzerTools } from './logicAnalyzerTools.js';
+import { buildPowerAnalyzerTools } from './powerAnalyzerTools.js';
+import { buildOscilloscopeTools } from './oscilloscopeTools.js';
+import { buildCombinedInstrumentTools } from './combinedInstrumentTools.js';
+import { ILogicAnalyzerService } from '../instruments/logicAnalyzer/logicAnalyzerService.js';
+import { IPowerAnalyzerService } from '../instruments/powerAnalyzer/powerAnalyzerService.js';
+import { IOscilloscopeService } from '../instruments/oscilloscope/oscilloscopeService.js';
 
 
 // ─── Service interface ────────────────────────────────────────────────────────
@@ -60,6 +67,9 @@ class FirmwareAgentToolService extends Disposable implements IFirmwareAgentToolS
 		@IBuildSystemService private readonly _build: IBuildSystemService,
 		@IFirmwareDebugService private readonly _debug: IFirmwareDebugService,
 		@IFileService private readonly _fileService: IFileService,
+		@ILogicAnalyzerService private readonly _la: ILogicAnalyzerService,
+		@IPowerAnalyzerService private readonly _pa: IPowerAnalyzerService,
+		@IOscilloscopeService private readonly _scope: IOscilloscopeService,
 	) {
 		super();
 	}
@@ -88,6 +98,11 @@ class FirmwareAgentToolService extends Disposable implements IFirmwareAgentToolS
 			...buildRegisterValueTools(this._session),
 			// ── Phase 11: Memory layout & linker scripts ─────────────────
 			...buildMemoryTools(this._session),
+			// ── Phase 12: Debug instruments (Logic, Power, Scope) ────────
+			...buildLogicAnalyzerTools(this._session, this._la),
+			...buildPowerAnalyzerTools(this._session, this._pa),
+			...buildOscilloscopeTools(this._session, this._scope),
+			...buildCombinedInstrumentTools(this._session, this._debug, this._la, this._pa, this._scope),
 			// ── Core hardware tools ─────────────────────────────────────────
 			this._fwGetMcuInfo(),
 			this._fwListPeripherals(),
