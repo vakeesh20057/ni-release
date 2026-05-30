@@ -7,34 +7,58 @@
  * Pin Mux Conflict Detector
  *
  * Maintains a live allocation table of GPIO pin assignments across the project.
- * Detects conflicts: two peripherals claiming the same pin, wrong AF number,
- * or pin not available on chip package. Operates entirely from SVD data.
+ * Detects conflicts: two peripherals claiming the same pin, wrong AF number.
+ *
+ * AF data source priority:
+ *   1. Static reference database (stm32AfDatabase.ts) — complete and verified
+ *      against STM32 reference manuals. Always available for supported families.
+ *   2. SVD enumeratedValues in GPIO AFR registers — supplements when present.
  */
 
 import { IFirmwareSessionService } from '../../firmwareSessionService.js';
 import { IPeripheralRegisterMap } from '../../../common/firmwareTypes.js';
+import { getAFDatabaseForFamily, IAFEntry } from './stm32AfDatabase.js';
 import {
 	IPinAllocation, IPinConflict, IPinSuggestion, IPinAvailability,
 	IPinIdentifier,
 	pinKey, parsePinKey,
 } from './pinMuxTypes.js';
 
-interface AFEntry { port: string; pin: number; af: number; signal: string }
-
 export class PinMuxConflictService {
 	private _allocations: Map<string, IPinAllocation[]> = new Map();
-	private _afDatabase: AFEntry[] = [];
+	private _afDatabase: IAFEntry[] = [];
 
 	constructor(private readonly _session: IFirmwareSessionService) {}
 
 	refreshAFDatabase(): void {
 		const s = this._session.session;
-		if (!s.isActive || !s.registerMaps) {
+		if (!s.isActive) {
 			this._afDatabase = [];
 			return;
 		}
-		const gpioMaps = s.registerMaps.filter(m => m.name.startsWith('GPIO') || m.groupName === 'GPIO');
-		this._afDatabase = this._extractAFData(gpioMaps);
+
+		// Primary: static reference database for the active MCU family
+		const family = s.mcuConfig?.family ?? '';
+		const staticEntries = getAFDatabaseForFamily(family);
+
+		// Supplement: any AF data encoded in SVD GPIO AFR enumeratedValues
+		const svdEntries: IAFEntry[] = [];
+		if (s.registerMaps?.length) {
+			const gpioMaps = s.registerMaps.filter(m => m.name.startsWith('GPIO') || m.groupName === 'GPIO');
+			svdEntries.push(...this._extractAFData(gpioMaps));
+		}
+
+		// Merge: static entries first, then SVD entries that add genuinely new signals
+		const seen = new Set(staticEntries.map(e => `${e.port}${e.pin}_${e.af}_${e.signal}`));
+		const merged = [...staticEntries];
+		for (const svd of svdEntries) {
+			const key = `${svd.port}${svd.pin}_${svd.af}_${svd.signal}`;
+			if (!seen.has(key) && !svd.signal.match(/^AF\d+$/)) {
+				seen.add(key);
+				merged.push(svd);
+			}
+		}
+		this._afDatabase = merged;
 	}
 
 	allocatePin(alloc: IPinAllocation): IPinConflict | null {

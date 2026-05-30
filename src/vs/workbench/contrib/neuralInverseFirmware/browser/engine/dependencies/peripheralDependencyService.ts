@@ -154,13 +154,19 @@ export class PeripheralDependencyService {
 
 	private _fallbackRCCEnable(peripheral: string, family: string): IDependencyNode {
 		const bus = this._guessBus(peripheral, family);
+		// F0/F1/F2/F3 use AHBENR, not AHB1ENR
+		const fam = family.toUpperCase();
+		const regName = (bus === 'AHB1' && (fam.startsWith('STM32F0') || fam.startsWith('STM32F1') || fam.startsWith('STM32F2') || fam.startsWith('STM32F3')))
+			? 'AHBENR'
+			: `${bus}ENR`;
+		const macroBase = (bus === 'AHB1' && regName === 'AHBENR') ? 'AHB' : bus;
 		return {
 			kind: 'rcc-clock-enable',
-			register: `RCC.${bus}ENR`,
+			register: `RCC.${regName}`,
 			bitField: `${peripheral}EN`,
 			value: 1,
 			description: `Enable ${peripheral} clock on ${bus} bus`,
-			codeSnippet: `RCC->${bus}ENR |= RCC_${bus}ENR_${peripheral}EN;`,
+			codeSnippet: `RCC->${regName} |= RCC_${macroBase}ENR_${peripheral}EN;`,
 			order: 10,
 			optional: false,
 		};
@@ -175,17 +181,33 @@ export class PeripheralDependencyService {
 
 	private _getGPIODeps(peripheral: string, family: string): IDependencyNode[] {
 		const nodes: IDependencyNode[] = [];
+		const fam = family.toUpperCase();
 
-		// GPIO clock enable
+		// GPIO clock enable — register name varies by family
+		let gpioClkReg: string;
+		let gpioClkSnippet: string;
+		if (fam.startsWith('STM32F0') || fam.startsWith('STM32F1') || fam.startsWith('STM32F2') || fam.startsWith('STM32F3')) {
+			gpioClkReg = 'RCC.AHBENR';
+			gpioClkSnippet = `RCC->AHBENR |= RCC_AHBENR_GPIOxEN; /* Replace x with port letter */`;
+		} else if (fam.startsWith('STM32G0') || fam.startsWith('STM32L0') || fam.startsWith('STM32L1')) {
+			gpioClkReg = 'RCC.IOPENR';
+			gpioClkSnippet = `RCC->IOPENR |= RCC_IOPENR_GPIOxEN; /* Replace x with port letter */`;
+		} else if (fam.startsWith('STM32H7')) {
+			gpioClkReg = 'RCC.AHB4ENR';
+			gpioClkSnippet = `RCC->AHB4ENR |= RCC_AHB4ENR_GPIOxEN; /* Replace x with port letter */`;
+		} else {
+			// F4/F7/G4/L4 and derivatives
+			gpioClkReg = 'RCC.AHB1ENR';
+			gpioClkSnippet = `RCC->AHB1ENR |= RCC_AHB1ENR_GPIOxEN; /* Replace x with port letter */`;
+		}
+
 		nodes.push({
 			kind: 'rcc-clock-enable',
-			register: 'RCC.AHB1ENR',
+			register: gpioClkReg,
 			bitField: 'GPIOxEN',
 			value: 1,
 			description: `Enable GPIO port clock (for ${peripheral} pins)`,
-			codeSnippet: family.startsWith('STM32F0') || family.startsWith('STM32F3')
-				? `RCC->AHBENR |= RCC_AHBENR_GPIOxEN; /* Replace x with port letter */`
-				: `RCC->AHB1ENR |= RCC_AHB1ENR_GPIOxEN; /* Replace x with port letter */`,
+			codeSnippet: gpioClkSnippet,
 			order: 11,
 			optional: false,
 		});
@@ -233,15 +255,28 @@ export class PeripheralDependencyService {
 
 	// ─── DMA Dependencies ────────────────────────────────────────────────
 
-	private _getDMADeps(peripheral: string, _family: string): IDependencyNode[] {
+	private _getDMADeps(peripheral: string, family: string): IDependencyNode[] {
+		const fam = family.toUpperCase();
+		let dmaClkReg: string;
+		let dmaClkSnippet: string;
+		if (fam.startsWith('STM32H7')) {
+			dmaClkReg = 'RCC.AHB1ENR';
+			dmaClkSnippet = `RCC->AHB1ENR |= RCC_AHB1ENR_DMA1EN; /* or DMA2EN */`;
+		} else if (fam.startsWith('STM32F0') || fam.startsWith('STM32G0')) {
+			dmaClkReg = 'RCC.AHBENR';
+			dmaClkSnippet = `RCC->AHBENR |= RCC_AHBENR_DMA1EN;`;
+		} else {
+			dmaClkReg = 'RCC.AHB1ENR';
+			dmaClkSnippet = `RCC->AHB1ENR |= RCC_AHB1ENR_DMA1EN; /* or DMA2EN */`;
+		}
 		return [
 			{
 				kind: 'rcc-clock-enable',
-				register: 'RCC.AHB1ENR',
-				bitField: 'DMAx_EN',
+				register: dmaClkReg,
+				bitField: 'DMA1EN',
 				value: 1,
 				description: `Enable DMA controller clock (use fw_dma_channel_map to find correct controller/stream)`,
-				codeSnippet: `RCC->AHB1ENR |= RCC_AHB1ENR_DMA1EN; /* or DMA2EN */`,
+				codeSnippet: dmaClkSnippet,
 				order: 30,
 				optional: true,
 				condition: 'if using DMA',
@@ -442,12 +477,51 @@ export class PeripheralDependencyService {
 	// ─── Helpers ─────────────────────────────────────────────────────────
 
 	private _guessBus(peripheral: string, family: string): string {
-		const apb2Peripherals = ['USART1', 'USART6', 'SPI1', 'SPI4', 'SPI5', 'TIM1', 'TIM8', 'TIM9', 'TIM10', 'TIM11', 'ADC1', 'ADC2', 'ADC3', 'SYSCFG'];
-		const ahb1Peripherals = ['GPIOA', 'GPIOB', 'GPIOC', 'GPIOD', 'GPIOE', 'GPIOF', 'GPIOG', 'GPIOH', 'DMA1', 'DMA2', 'CRC'];
+		const fam = family.toUpperCase();
 
-		if (apb2Peripherals.includes(peripheral)) { return 'APB2'; }
-		if (ahb1Peripherals.includes(peripheral)) { return 'AHB1'; }
-		return 'APB1';
+		// F0/G0/L0 — no AHB1 GPIO bus; GPIO and DMA on AHB
+		if (fam.startsWith('STM32F0') || fam.startsWith('STM32G0') || fam.startsWith('STM32L0')) {
+			const ahbPeriphs = /^(GPIO|DMA|CRC|RCC|FLASH|TSC)/i;
+			const apb2Perips = /^(USART1|SPI1|TIM1|ADC|SYSCFG|EXTI|DBGMCU)/i;
+			if (ahbPeriphs.test(peripheral)) { return 'AHB'; }
+			if (apb2Perips.test(peripheral)) { return 'APB2'; }
+			return 'APB1';
+		}
+
+		// H7 — D2 APB1/APB2/AHB2, D3 APB4
+		if (fam.startsWith('STM32H7')) {
+			const apb2H7 = /^(USART1|USART6|SPI1|SPI4|SPI5|TIM1|TIM8|TIM15|TIM16|TIM17|ADC1|ADC2|SAI1|SAI2|DFSDM)/i;
+			const apb4H7 = /^(LPUART1|SPI6|I2C4|LPTIM2|LPTIM3|LPTIM4|LPTIM5)/i;
+			const ahb4H7 = /^(GPIO|BDMA|ADC3|DMAMUX2)/i;
+			const ahb2H7 = /^(DMA1|DMA2|DMAMUX1|ADC1|ADC2|HASH|CRYPT|RNG|SDMMC2)/i;
+			const ahb3H7 = /^(MDMA|FMC|QUADSPI|SDMMC1|JPEG)/i;
+			if (apb4H7.test(peripheral)) { return 'APB4'; }
+			if (ahb4H7.test(peripheral)) { return 'AHB4'; }
+			if (ahb3H7.test(peripheral)) { return 'AHB3'; }
+			if (ahb2H7.test(peripheral)) { return 'AHB2'; }
+			if (apb2H7.test(peripheral)) { return 'APB2'; }
+			return 'APB1'; // D2 APB1 default (TIM2-7, USART2-5, SPI2-3, I2C1-3, CAN)
+		}
+
+		// G4 — single AHB with APB1/APB2 derived
+		if (fam.startsWith('STM32G4')) {
+			const apb2G4 = /^(USART1|SPI1|TIM1|TIM8|TIM15|TIM16|TIM17|TIM20|ADC1|ADC2|SAI1|SYSCFG)/i;
+			const ahbG4  = /^(GPIO|DMA1|DMA2|DMAMUX|CRC|FLASH|RCC|FMAC|CORDIC|ADC3|ADC4|ADC5)/i;
+			if (ahbG4.test(peripheral)) { return 'AHB1'; }
+			if (apb2G4.test(peripheral)) { return 'APB2'; }
+			return 'APB1';
+		}
+
+		// F4/F7/L4 — classic AHB1/APB1/APB2 split
+		const apb2 = /^(USART1|USART6|SPI1|SPI4|SPI5|SPI6|TIM1|TIM8|TIM9|TIM10|TIM11|ADC1|ADC2|ADC3|SDIO|SDMMC1|SAI1|SAI2|SYSCFG|EXTI|DFSDM)/i;
+		const ahb1 = /^(GPIO|DMA1|DMA2|DMAMUX|DMA2D|ETH|OTG_HS|CRC|RCC|FLASH|CAN3|BKPSRAM|CCM)/i;
+		const ahb2 = /^(OTG_FS|DCMI|CRYP|HASH|RNG|AES)/i;
+		const ahb3 = /^(FMC|FSMC|QUADSPI|SDMMC2)/i;
+		if (ahb3.test(peripheral)) { return 'AHB3'; }
+		if (ahb2.test(peripheral)) { return 'AHB2'; }
+		if (ahb1.test(peripheral)) { return 'AHB1'; }
+		if (apb2.test(peripheral)) { return 'APB2'; }
+		return 'APB1'; // Default: most timers, USARTs, SPI2/3, I2C, CAN, DAC, PWR
 	}
 
 	private _shouldIncludeOptional(node: IDependencyNode, options?: Partial<IInitSequenceOptions>): boolean {
