@@ -153,9 +153,57 @@ export class PeripheralDependencyService {
 	}
 
 	private _fallbackRCCEnable(peripheral: string, family: string): IDependencyNode {
-		const bus = this._guessBus(peripheral, family);
-		// F0/F1/F2/F3 use AHBENR, not AHB1ENR
 		const fam = family.toUpperCase();
+		const bus = this._guessBus(peripheral, family);
+
+		// Non-STM32: emit family-specific clock enable hint instead of wrong RCC-> syntax
+		if (fam.startsWith('NRF')) {
+			return { kind: 'rcc-clock-enable', register: 'NRF_CLOCK', bitField: `${peripheral}`, value: 1,
+				description: `Enable ${peripheral} via nRF power management`, order: 10, optional: false,
+				codeSnippet: `/* nRF: No explicit clock gate for ${peripheral}. Power on via NRF_${peripheral.toUpperCase()}->ENABLE = 1; */` };
+		}
+		if (fam.startsWith('RP20')) {
+			return { kind: 'rcc-clock-enable', register: 'RESETS', bitField: `${peripheral}`, value: 1,
+				description: `Unreset ${peripheral} peripheral via RESETS hardware`, order: 10, optional: false,
+				codeSnippet: `/* RP2040: clear reset bit for ${peripheral} */\nresets_hw->reset &= ~RESETS_RESET_${peripheral.toUpperCase()}_BITS;\nwhile (~resets_hw->reset_done & RESETS_RESET_${peripheral.toUpperCase()}_BITS) {}` };
+		}
+		if (fam.startsWith('ESP')) {
+			return { kind: 'rcc-clock-enable', register: 'periph_module', bitField: `${peripheral}`, value: 1,
+				description: `Enable ${peripheral} via ESP-IDF peripheral module API`, order: 10, optional: false,
+				codeSnippet: `/* ESP-IDF: enable peripheral module */\nperiph_module_enable(PERIPH_${peripheral.toUpperCase()}_MODULE);` };
+		}
+		if (fam.startsWith('MK') || fam.startsWith('KINETIS')) {
+			return { kind: 'rcc-clock-enable', register: 'SIM.SCGC', bitField: `${peripheral}`, value: 1,
+				description: `Enable ${peripheral} clock gate in SIM_SCGCx`, order: 10, optional: false,
+				codeSnippet: `/* Kinetis: enable clock gate */\nSIM->SCGCx |= SIM_SCGCx_${peripheral.toUpperCase()}_MASK; /* replace SCGCx with correct register */` };
+		}
+		if (fam.startsWith('SAM') || fam.startsWith('ATSAM')) {
+			return { kind: 'rcc-clock-enable', register: 'MCLK', bitField: `${peripheral}`, value: 1,
+				description: `Enable ${peripheral} clock in MCLK.APBxMASK`, order: 10, optional: false,
+				codeSnippet: `/* SAM: enable peripheral in MCLK */\nMCLK->APBCMASK.bit.${peripheral.toUpperCase()}_ = 1; /* use fw_check_peripheral_deps for correct mask */` };
+		}
+		if (fam.startsWith('EFR32') || fam.startsWith('EFM32')) {
+			return { kind: 'rcc-clock-enable', register: 'CMU', bitField: `${peripheral}`, value: 1,
+				description: `Enable ${peripheral} clock via CMU`, order: 10, optional: false,
+				codeSnippet: `CMU_ClockEnable(cmuClock_${peripheral.toUpperCase()}, true);` };
+		}
+		if (fam.startsWith('RA') || fam.startsWith('R7FA')) {
+			return { kind: 'rcc-clock-enable', register: 'MSTP', bitField: `${peripheral}`, value: 1,
+				description: `Enable ${peripheral} via MSTP register (clear MSTPB bit)`, order: 10, optional: false,
+				codeSnippet: `/* Renesas RA: clear MSTP bit to enable module clock */\nR_BSP_MODULE_START(FSP_IP_${peripheral.toUpperCase()}, channel);` };
+		}
+		if (fam.startsWith('MIMXRT')) {
+			return { kind: 'rcc-clock-enable', register: 'CCM', bitField: `${peripheral}`, value: 1,
+				description: `Enable ${peripheral} clock root via CCM`, order: 10, optional: false,
+				codeSnippet: `/* i.MX RT: set clock root via CLOCK_SetRootMux / CLOCK_EnableClock */\nCLOCK_EnableClock(kCLOCK_${peripheral}); /* use generated clock_config.c */` };
+		}
+		if (fam.startsWith('LPC')) {
+			return { kind: 'rcc-clock-enable', register: 'AHBCLKCTRL', bitField: `${peripheral}`, value: 1,
+				description: `Enable ${peripheral} AHB clock gate`, order: 10, optional: false,
+				codeSnippet: `CLOCK_EnableClock(kCLOCK_${peripheral.toUpperCase()}); /* LPC55S SDK */` };
+		}
+
+		// STM32: F0/F1/F2/F3 use AHBENR, not AHB1ENR
 		const regName = (bus === 'AHB1' && (fam.startsWith('STM32F0') || fam.startsWith('STM32F1') || fam.startsWith('STM32F2') || fam.startsWith('STM32F3')))
 			? 'AHBENR'
 			: `${bus}ENR`;
@@ -175,7 +223,8 @@ export class PeripheralDependencyService {
 	// ─── GPIO AF Dependencies ────────────────────────────────────────────
 
 	private _needsGPIO(peripheral: string): boolean {
-		const noGPIO = ['DMA1', 'DMA2', 'RCC', 'PWR', 'FLASH', 'IWDG', 'WWDG', 'RTC', 'DBGMCU', 'SYSCFG'];
+		const noGPIO = ['DMA', 'RCC', 'PWR', 'FLASH', 'IWDG', 'WWDG', 'RTC', 'DBGMCU', 'SYSCFG',
+			'CLOCK', 'NVMC', 'LDMA', 'CMU', 'SIM', 'MCM', 'SCB', 'NVIC'];
 		return !noGPIO.some(p => peripheral.startsWith(p));
 	}
 
@@ -183,10 +232,124 @@ export class PeripheralDependencyService {
 		const nodes: IDependencyNode[] = [];
 		const fam = family.toUpperCase();
 
-		// GPIO clock enable — register name varies by family
+		// Non-STM32 GPIO clock enable patterns
+		if (fam.startsWith('NRF')) {
+			nodes.push({
+				kind: 'rcc-clock-enable',
+				register: 'NRF_CLOCK',
+				bitField: 'GPIO',
+				description: `nRF GPIO requires no explicit clock enable — always powered. Configure NRF_P0 or NRF_P1 DIR/PINCNF registers.`,
+				codeSnippet: `/* nRF: GPIO is always clocked. Configure pin direction:\n * NRF_P0->DIRSET = (1u << PIN_NUM); // output\n * NRF_P0->PIN_CNF[PIN_NUM] = (GPIO_PIN_CNF_DIR_Input << GPIO_PIN_CNF_DIR_Pos)\n *     | (GPIO_PIN_CNF_INPUT_Connect << GPIO_PIN_CNF_INPUT_Pos)\n *     | (GPIO_PIN_CNF_PULL_Pullup << GPIO_PIN_CNF_PULL_Pos); */`,
+				order: 11,
+				optional: false,
+			});
+			return nodes;
+		}
+		if (fam.startsWith('RP20')) {
+			nodes.push({
+				kind: 'rcc-clock-enable',
+				register: 'clocks_hw',
+				bitField: 'GPIO',
+				description: `RP2040 GPIO: reset/unreset IO_BANK0 and PADS_BANK0 via RESETS registers`,
+				codeSnippet: `/* RP2040: unreset GPIO and pad banks */\nresets_hw->reset &= ~(RESETS_RESET_IO_BANK0_BITS | RESETS_RESET_PADS_BANK0_BITS);\nwhile (~resets_hw->reset_done & (RESETS_RESET_IO_BANK0_BITS | RESETS_RESET_PADS_BANK0_BITS)) {}\n/* Set GPIO function: gpio_set_function(PIN, GPIO_FUNC_x); */`,
+				order: 11,
+				optional: false,
+			});
+			return nodes;
+		}
+		if (fam.startsWith('MK') || fam.startsWith('KINETIS')) {
+			nodes.push({
+				kind: 'rcc-clock-enable',
+				register: 'SIM.SCGC5',
+				bitField: 'PORTx',
+				description: `Kinetis: Enable PORTx clock gate in SIM_SCGC5 before configuring GPIO`,
+				codeSnippet: `/* Enable PORT clock gate (e.g. PORTA): */\nSIM->SCGC5 |= SIM_SCGC5_PORTA_MASK;\n/* Set pin MUX to GPIO (MUX=1): */\nPORTA->PCR[PIN_NUM] = PORT_PCR_MUX(1);\n/* Set direction: PTx->PDDR |= (1u << PIN_NUM); */`,
+				order: 11,
+				optional: false,
+			});
+			return nodes;
+		}
+		if (fam.startsWith('RA') || fam.startsWith('R7FA')) {
+			nodes.push({
+				kind: 'rcc-clock-enable',
+				register: 'MSTP',
+				bitField: 'GPIOx',
+				description: `Renesas RA: GPIO always on. Configure PMNPFS (pin function) register for AF.`,
+				codeSnippet: `/* Renesas RA: write PmnPFS register (P###PFS) to select peripheral function.\n * e.g. R_PFS->PORT[port].PIN[pin].PmnPFS_b.PMR = 1; // peripheral mode\n *      R_PFS->PORT[port].PIN[pin].PmnPFS_b.PSEL = AF_NUM; */`,
+				order: 11,
+				optional: false,
+			});
+			return nodes;
+		}
+		if (fam.startsWith('SAM') || fam.startsWith('ATSAM')) {
+			nodes.push({
+				kind: 'rcc-clock-enable',
+				register: 'MCLK.APBBMASK',
+				bitField: 'PORT',
+				description: `SAM: Enable PORT peripheral clock in MCLK.APBBMASK`,
+				codeSnippet: `/* SAM: PORT is on APBB — enable clock */\nMCLK->APBBMASK.bit.PORT_ = 1;\n/* Configure pin for peripheral: */\nPORT->Group[PORT_x].PINCFG[PIN_NUM].bit.PMUXEN = 1;\nPORT->Group[PORT_x].PMUX[PIN_NUM>>1].bit.PMUXx = MUX_FUNCTION;`,
+				order: 11,
+				optional: false,
+			});
+			return nodes;
+		}
+		if (fam.startsWith('EFR32') || fam.startsWith('EFM32')) {
+			nodes.push({
+				kind: 'rcc-clock-enable',
+				register: 'CMU.HFBUSCLKEN0',
+				bitField: 'GPIO',
+				description: `EFR32: Enable GPIO clock via CMU`,
+				codeSnippet: `CMU_ClockEnable(cmuClock_GPIO, true);\n/* Route peripheral to pin: GPIO_PinModeSet(gpioPortX, PIN_NUM, gpioModePushPull, 0); */`,
+				order: 11,
+				optional: false,
+			});
+			return nodes;
+		}
+		if (fam.startsWith('TMS320') || fam.startsWith('C2000')) {
+			nodes.push({
+				kind: 'rcc-clock-enable',
+				register: 'GPACTRL',
+				bitField: 'GPIO',
+				description: `C2000: Configure GPIO via GPAMUX/GPBMUX registers for peripheral function`,
+				codeSnippet: `/* C2000 GPIO mux: */\nGpioCtrlRegs.GPAMUX1.bit.GPIOx = MUX_FUNC; /* 0=GPIO, 1=periph1, 2=periph2, 3=periph3 */\nGpioCtrlRegs.GPADIR.bit.GPIOx = 0; /* 0=input, 1=output */`,
+				order: 11,
+				optional: false,
+			});
+			return nodes;
+		}
+		if (fam.startsWith('MIMXRT')) {
+			nodes.push({
+				kind: 'rcc-clock-enable',
+				register: 'IOMUXC',
+				bitField: 'SW_MUX_CTL',
+				description: `i.MX RT: Configure IOMUXC SW_MUX_CTL_PAD_xxx register for peripheral AF`,
+				codeSnippet: `/* i.MX RT: IOMUXC pin mux + pad config */\nIOMUXC_SetPinMux(IOMUXC_GPIOxx_AF, 0U); /* alt function */\nIOMUXC_SetPinConfig(IOMUXC_GPIOxx_AF,\n    IOMUXC_SW_PAD_CTL_PAD_SPEED(2) | IOMUXC_SW_PAD_CTL_PAD_DSE(6) |\n    IOMUXC_SW_PAD_CTL_PAD_SRE(0) | IOMUXC_SW_PAD_CTL_PAD_PKE(1));`,
+				order: 11,
+				optional: false,
+			});
+			return nodes;
+		}
+		if (fam.startsWith('LPC')) {
+			nodes.push({
+				kind: 'rcc-clock-enable',
+				register: 'IOCON',
+				bitField: 'PIOx',
+				description: `LPC: Configure IOCON_PIOx_y register for pin function selection`,
+				codeSnippet: `/* LPC55: IOCON pin function */\nIOMUXC->PIO[PORT_NUM][PIN_NUM] =\n    IOCON_PIO_FUNC(AF_NUM) | IOCON_PIO_DIGIMODE(1) | IOCON_PIO_MODE(0);`,
+				order: 11,
+				optional: false,
+			});
+			return nodes;
+		}
+
+		// ── STM32 family-specific GPIO clock enables ─────────────────────
 		let gpioClkReg: string;
 		let gpioClkSnippet: string;
-		if (fam.startsWith('STM32F0') || fam.startsWith('STM32F1') || fam.startsWith('STM32F2') || fam.startsWith('STM32F3')) {
+		if (fam.startsWith('STM32F1') || fam.startsWith('STM32F2') || fam.startsWith('STM32F3')) {
+			// F1: GPIO on APB2 (not AHB)
+			gpioClkReg = 'RCC.APB2ENR';
+			gpioClkSnippet = `RCC->APB2ENR |= RCC_APB2ENR_IOPxEN; /* Replace x with port letter: A=IOPA, B=IOPB... */`;
+		} else if (fam.startsWith('STM32F0')) {
 			gpioClkReg = 'RCC.AHBENR';
 			gpioClkSnippet = `RCC->AHBENR |= RCC_AHBENR_GPIOxEN; /* Replace x with port letter */`;
 		} else if (fam.startsWith('STM32G0') || fam.startsWith('STM32L0') || fam.startsWith('STM32L1')) {
@@ -195,8 +358,11 @@ export class PeripheralDependencyService {
 		} else if (fam.startsWith('STM32H7')) {
 			gpioClkReg = 'RCC.AHB4ENR';
 			gpioClkSnippet = `RCC->AHB4ENR |= RCC_AHB4ENR_GPIOxEN; /* Replace x with port letter */`;
+		} else if (fam.startsWith('STM32L4') || fam.startsWith('STM32L5') || fam.startsWith('STM32G4')) {
+			gpioClkReg = 'RCC.AHB2ENR';
+			gpioClkSnippet = `RCC->AHB2ENR |= RCC_AHB2ENR_GPIOxEN; /* L4/G4: GPIO on AHB2, not AHB1 */`;
 		} else {
-			// F4/F7/G4/L4 and derivatives
+			// F4/F7
 			gpioClkReg = 'RCC.AHB1ENR';
 			gpioClkSnippet = `RCC->AHB1ENR |= RCC_AHB1ENR_GPIOxEN; /* Replace x with port letter */`;
 		}
@@ -296,17 +462,60 @@ export class PeripheralDependencyService {
 	// ─── NVIC Enable ─────────────────────────────────────────────────────
 
 	private _getNVICDep(peripheral: string, family: string, registerMaps: IPeripheralRegisterMap[]): IDependencyNode | null {
+		const fam = family.toUpperCase();
 		const regMap = registerMaps.find(m => m.name.toUpperCase() === peripheral);
 		const interrupts = regMap?.interrupts ?? [];
 		const irqName = interrupts.length > 0 ? interrupts[0].name : `${peripheral}_IRQn`;
 
+		// C2000: uses PIE (Peripheral Interrupt Expansion) — not NVIC
+		if (fam.startsWith('TMS320') || fam.startsWith('C2000')) {
+			return {
+				kind: 'nvic-enable', register: 'PIE', bitField: peripheral,
+				description: `Enable ${peripheral} interrupt in C2000 PIE controller`,
+				codeSnippet: [
+					`/* C2000 PIE — find group/bit in TMS320F28xxx peripheral reference */`,
+					`PieVectTable.${peripheral.toUpperCase()}_INT = &${peripheral.toLowerCase()}_isr;`,
+					`PieCtrlRegs.PIEIERx.bit.INTxy = 1; /* adjust group x, bit y */`,
+					`IER |= M_INTx;  /* enable CPU interrupt group */`,
+					`EINT; /* enable global interrupts */`,
+				].join('\n'),
+				order: 40, optional: true, condition: 'if interrupt-driven',
+			};
+		}
+		// AURIX: uses SRC (Service Request Control) registers — not NVIC
+		if (fam.startsWith('TC2') || fam.startsWith('TC3') || fam.startsWith('AURIX')) {
+			return {
+				kind: 'nvic-enable', register: `SRC_${peripheral}`, bitField: peripheral,
+				description: `Configure ${peripheral} SRC register for interrupt routing (AURIX TriCore)`,
+				codeSnippet: [
+					`/* AURIX: assign SRC to CPU0, set priority */`,
+					`IfxSrc_init(&SRC_${peripheral.toUpperCase()}, IfxSrc_Tos_cpu0, ISR_PRIORITY_${peripheral.toUpperCase()});`,
+					`IfxSrc_enable(&SRC_${peripheral.toUpperCase()});`,
+				].join('\n'),
+				order: 40, optional: true, condition: 'if interrupt-driven',
+			};
+		}
+		// nRF: uses NVIC but priority range is 0-7 (3-bit), not ARM 0-255
+		if (fam.startsWith('NRF')) {
+			return {
+				kind: 'nvic-enable', register: 'NVIC', bitField: irqName,
+				description: `Enable ${peripheral} interrupt (nRF: priority 0-7, lower value = higher priority)`,
+				codeSnippet: [
+					`NVIC_SetPriority(${irqName}, 6); /* nRF: 0-7, FreeRTOS ISR-safe: >= configKERNEL_INTERRUPT_PRIORITY */`,
+					`NVIC_EnableIRQ(${irqName});`,
+				].join('\n'),
+				order: 40, optional: true, condition: 'if interrupt-driven',
+			};
+		}
+
+		// Cortex-M (STM32, SAM, Kinetis, LPC, RA, EFR32, i.MX RT, RP2040, etc.)
 		return {
 			kind: 'nvic-enable',
 			register: 'NVIC',
 			bitField: irqName,
 			description: `Enable ${peripheral} interrupt in NVIC and set priority`,
 			codeSnippet: [
-				`NVIC_SetPriority(${irqName}, 5); /* Priority 5 — FreeRTOS ISR-safe if configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY <= 5 */`,
+				`NVIC_SetPriority(${irqName}, 5); /* 0=highest. FreeRTOS ISR-safe if >= configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY */`,
 				`NVIC_EnableIRQ(${irqName});`,
 			].join('\n'),
 			order: 40,
@@ -479,6 +688,62 @@ export class PeripheralDependencyService {
 	private _guessBus(peripheral: string, family: string): string {
 		const fam = family.toUpperCase();
 
+		// Non-STM32 families: no AHB/APB concept, return a generic bus label
+		if (fam.startsWith('NRF')) {
+			// nRF peripherals on AHB-Lite; all peripherals are peers
+			return 'AHB';
+		}
+		if (fam.startsWith('RP20')) {
+			// RP2040/RP2350: APB and AHB buses, clocks via clocks_hw
+			const apbPeriph = /^(UART|SPI|I2C|PWM|ADC|RTC|WATCHDOG|TIMER|SSI)/i;
+			return apbPeriph.test(peripheral) ? 'APB' : 'AHB';
+		}
+		if (fam.startsWith('ESP')) {
+			// ESP32: all peripheral clocks via periph_module_enable()
+			return 'APB';
+		}
+		if (fam.startsWith('MK') || fam.startsWith('KINETIS')) {
+			// Kinetis: SIM_SCGCX gates
+			const apb1K = /^(UART|SPI|I2C|RTC|CMP|DAC|VREF|PIT|FTM|TPM|ADC)/i;
+			const ahbK  = /^(GPIO|DMA|USB|CRC|DMAMUX|FLEXBUS|FMC|SDHC)/i;
+			if (ahbK.test(peripheral)) { return 'AHB'; }
+			if (apb1K.test(peripheral)) { return 'APB1'; }
+			return 'APB2';
+		}
+		if (fam.startsWith('RA') || fam.startsWith('R7FA')) {
+			// Renesas RA: MSTP registers gate individual peripherals, no bus concept
+			return 'AHB';
+		}
+		if (fam.startsWith('MIMXRT') || fam.startsWith('LPC')) {
+			// NXP: CCM (iMXRT) or AHBCLKCTRL (LPC55) — return generic
+			return 'AHB';
+		}
+		if (fam.startsWith('SAM') || fam.startsWith('ATSAM')) {
+			// SAM: MCLK/GCLK tree — no direct bus concept
+			const apbaBus = /^(PORT|PM|MCLK|SUPC|RSTC|OSCCTRL|OSC32KCTRL|GCLK|WDT|RTC|EIC|FREQM)/i;
+			const apbbBus = /^(USB|DSU|NVMCTRL|PORT|DMAC|MTB)/i;
+			const apbcBus = /^(TCC|TC|ADC|AC|DAC|PTC|I2S|CAN|CCL)/i;
+			const apbdBus = /^(SERCOM|SPI|I2C|UART)/i;
+			if (apbaBus.test(peripheral)) { return 'APBA'; }
+			if (apbbBus.test(peripheral)) { return 'APBB'; }
+			if (apbcBus.test(peripheral)) { return 'APBC'; }
+			if (apbdBus.test(peripheral)) { return 'APBD'; }
+			return 'APBD';
+		}
+		if (fam.startsWith('TMS320') || fam.startsWith('C2000')) {
+			// C2000 PIE clock gating — no bus abstraction
+			return 'PCLK';
+		}
+		if (fam.startsWith('TC') || fam.startsWith('AURIX')) {
+			// AURIX SPB bus for most peripherals
+			return 'SPB';
+		}
+		if (fam.startsWith('EFR32') || fam.startsWith('EFM32')) {
+			// EFR32: CMU (Clock Management Unit) gates each peripheral
+			const hfbusPeriphs = /^(GPIO|PRS|LDMA|CRYPTO|USB|EBI)/i;
+			return hfbusPeriphs.test(peripheral) ? 'HFBUS' : 'HFPER';
+		}
+
 		// F0/G0/L0 — no AHB1 GPIO bus; GPIO and DMA on AHB
 		if (fam.startsWith('STM32F0') || fam.startsWith('STM32G0') || fam.startsWith('STM32L0')) {
 			const ahbPeriphs = /^(GPIO|DMA|CRC|RCC|FLASH|TSC)/i;
@@ -503,16 +768,31 @@ export class PeripheralDependencyService {
 			return 'APB1'; // D2 APB1 default (TIM2-7, USART2-5, SPI2-3, I2C1-3, CAN)
 		}
 
-		// G4 — single AHB with APB1/APB2 derived
+		// G4 — GPIO on AHB2, compute peripherals on APB1/2
 		if (fam.startsWith('STM32G4')) {
 			const apb2G4 = /^(USART1|SPI1|TIM1|TIM8|TIM15|TIM16|TIM17|TIM20|ADC1|ADC2|SAI1|SYSCFG)/i;
-			const ahbG4  = /^(GPIO|DMA1|DMA2|DMAMUX|CRC|FLASH|RCC|FMAC|CORDIC|ADC3|ADC4|ADC5)/i;
-			if (ahbG4.test(peripheral)) { return 'AHB1'; }
+			const ahb2G4 = /^(GPIO|ADC3|ADC4|ADC5)/i;
+			const ahb1G4 = /^(DMA1|DMA2|DMAMUX|CRC|FLASH|RCC|FMAC|CORDIC)/i;
+			if (ahb2G4.test(peripheral)) { return 'AHB2'; }
+			if (ahb1G4.test(peripheral)) { return 'AHB1'; }
 			if (apb2G4.test(peripheral)) { return 'APB2'; }
 			return 'APB1';
 		}
 
-		// F4/F7/L4 — classic AHB1/APB1/APB2 split
+		// L4 / L5 — GPIO on AHB2, DMA on AHB1
+		if (fam.startsWith('STM32L4') || fam.startsWith('STM32L5')) {
+			const apb2L4 = /^(USART1|SPI1|TIM1|TIM8|TIM15|TIM16|TIM17|ADC|DFSDM|SAI1|SAI2|SYSCFG)/i;
+			const ahb2L4 = /^(GPIO|ADC|AES|RNG|PKA|DCMI|OTG_FS)/i;
+			const ahb1L4 = /^(DMA1|DMA2|DMAMUX|CRC|FLASH|RCC|TSC)/i;
+			const ahb3L4 = /^(FMC|QUADSPI|OCTOSPI)/i;
+			if (ahb3L4.test(peripheral)) { return 'AHB3'; }
+			if (ahb2L4.test(peripheral)) { return 'AHB2'; }
+			if (ahb1L4.test(peripheral)) { return 'AHB1'; }
+			if (apb2L4.test(peripheral)) { return 'APB2'; }
+			return 'APB1'; // USART2-5, SPI2-3, I2C1-4, CAN, DAC, PWR
+		}
+
+		// F4/F7 — classic AHB1/APB1/APB2 split
 		const apb2 = /^(USART1|USART6|SPI1|SPI4|SPI5|SPI6|TIM1|TIM8|TIM9|TIM10|TIM11|ADC1|ADC2|ADC3|SDIO|SDMMC1|SAI1|SAI2|SYSCFG|EXTI|DFSDM)/i;
 		const ahb1 = /^(GPIO|DMA1|DMA2|DMAMUX|DMA2D|ETH|OTG_HS|CRC|RCC|FLASH|CAN3|BKPSRAM|CCM)/i;
 		const ahb2 = /^(OTG_FS|DCMI|CRYP|HASH|RNG|AES)/i;

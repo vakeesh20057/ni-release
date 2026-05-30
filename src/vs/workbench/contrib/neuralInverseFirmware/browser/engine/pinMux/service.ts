@@ -29,12 +29,27 @@ class PinMuxServiceImpl extends Disposable implements IPinMuxService {
 	declare readonly _serviceBrand: undefined;
 
 	private readonly _inner: PinMuxConflictService;
+	private _lastSessionId: string | undefined;
 
 	constructor(
 		@IFirmwareSessionService private readonly _firmwareSessionService: IFirmwareSessionService,
 	) {
 		super();
 		this._inner = new PinMuxConflictService(this._firmwareSessionService);
+		// Refresh AF database whenever the session changes (MCU may have changed)
+		this._register(this._firmwareSessionService.onDidChangeSession(() => {
+			this._inner.refreshAFDatabase();
+			this._lastSessionId = this._firmwareSessionService.session.sessionId;
+		}));
+	}
+
+	/** Ensure AF database is loaded for the current session before any query. */
+	private _ensureDatabase(): void {
+		const sid = this._firmwareSessionService.session.sessionId;
+		if (sid !== this._lastSessionId) {
+			this._inner.refreshAFDatabase();
+			this._lastSessionId = sid;
+		}
 	}
 
 	allocatePin(alloc: IPinAllocation): IPinConflict | null {
@@ -50,14 +65,17 @@ class PinMuxServiceImpl extends Disposable implements IPinMuxService {
 	}
 
 	validateAF(pin: IPinIdentifier, peripheral: string, requestedAF: number): { valid: boolean; correctAF?: number; message: string } {
+		this._ensureDatabase();
 		return this._inner.validateAF(pin, peripheral, requestedAF);
 	}
 
 	suggestPin(peripheral: string, signal?: string): IPinSuggestion[] {
+		this._ensureDatabase();
 		return this._inner.suggestPin(peripheral, signal);
 	}
 
 	getAvailablePins(port?: string): IPinAvailability[] {
+		this._ensureDatabase();
 		return this._inner.getAvailablePins(port);
 	}
 

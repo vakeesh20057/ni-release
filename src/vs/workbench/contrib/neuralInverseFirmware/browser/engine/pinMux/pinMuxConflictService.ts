@@ -17,7 +17,7 @@
 
 import { IFirmwareSessionService } from '../../firmwareSessionService.js';
 import { IPeripheralRegisterMap } from '../../../common/firmwareTypes.js';
-import { getAFDatabaseForFamily, IAFEntry } from './stm32AfDatabase.js';
+import { getAFDatabaseForFamily, filterAFDatabaseForVariant, IAFEntry } from './stm32AfDatabase.js';
 import {
 	IPinAllocation, IPinConflict, IPinSuggestion, IPinAvailability,
 	IPinIdentifier,
@@ -37,9 +37,11 @@ export class PinMuxConflictService {
 			return;
 		}
 
-		// Primary: static reference database for the active MCU family
+		// Primary: static reference database filtered to physically present pins
 		const family = s.mcuConfig?.family ?? '';
-		const staticEntries = getAFDatabaseForFamily(family);
+		const variant = s.mcuConfig?.variant ?? '';
+		const familyEntries = getAFDatabaseForFamily(family);
+		const staticEntries = filterAFDatabaseForVariant(familyEntries, variant);
 
 		// Supplement: any AF data encoded in SVD GPIO AFR enumeratedValues
 		const svdEntries: IAFEntry[] = [];
@@ -293,8 +295,8 @@ export class PinMuxConflictService {
 		return allocations;
 	}
 
-	private _extractAFData(gpioMaps: IPeripheralRegisterMap[]): AFEntry[] {
-		const entries: AFEntry[] = [];
+	private _extractAFData(gpioMaps: IPeripheralRegisterMap[]): IAFEntry[] {
+		const entries: IAFEntry[] = [];
 
 		for (const gmap of gpioMaps) {
 			const portMatch = gmap.name.match(/GPIO([A-K])/);

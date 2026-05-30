@@ -1401,38 +1401,6 @@ export class FirmwarePart extends Part {
 		el.style.color = ok ? 'var(--vscode-terminal-ansiGreen,#4caf50)' : 'var(--vscode-errorForeground,#f48771)';
 	}
 
-	// Keep for compatibility with other callers
-	private _hwToolsHeader(title: string, subtitle: string): HTMLElement {
-		const hdr = $e('div', 'margin-bottom:16px;padding-bottom:12px;border-bottom:1px solid var(--vscode-widget-border);');
-		hdr.appendChild($t('h3', title, 'margin:0 0 4px;font-size:15px;font-weight:700;'));
-		hdr.appendChild($t('div', subtitle, 'font-size:12px;color:var(--vscode-descriptionForeground);line-height:1.5;'));
-		return hdr;
-	}
-
-	private _hwSectionDivider(label: string): HTMLElement {
-		const wrap = $e('div', 'display:flex;align-items:center;gap:8px;margin:14px 0 8px;');
-		wrap.appendChild($t('span', label, 'font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.07em;color:var(--vscode-descriptionForeground);white-space:nowrap;'));
-		const line = $e('div', 'flex:1;height:1px;background:var(--vscode-widget-border);');
-		wrap.appendChild(line);
-		return wrap;
-	}
-
-	private _hwInput(placeholder: string, defaultVal: string, width: string): HTMLInputElement {
-		const el = $e('input', [
-			`width:${width}`, 'padding:4px 8px',
-			'border:1px solid var(--vscode-input-border,var(--vscode-widget-border))',
-			'border-radius:4px', 'background:var(--vscode-input-background)',
-			'color:var(--vscode-input-foreground)', 'font-size:11px',
-			'font-family:var(--vscode-editor-font-family,monospace)', 'outline:none',
-		].join(';')) as HTMLInputElement;
-		el.placeholder = placeholder;
-		el.value = defaultVal;
-		el.title = placeholder;
-		el.addEventListener('focus', () => { el.style.borderColor = 'var(--vscode-focusBorder)'; });
-		el.addEventListener('blur', () => { el.style.borderColor = 'var(--vscode-input-border,var(--vscode-widget-border))'; });
-		return el;
-	}
-
 	// ─── Upload datasheet ─────────────────────────────────────────────────────
 
 	private async _uploadDatasheet(): Promise<void> {

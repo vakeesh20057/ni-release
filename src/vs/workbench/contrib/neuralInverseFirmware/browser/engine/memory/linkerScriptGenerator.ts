@@ -68,6 +68,19 @@ export class LinkerScriptGenerator {
 		lines.push('SECTIONS');
 		lines.push('{');
 
+		// RP2040: .boot2 must be first section at flash base
+		if (family.startsWith('RP20') || family.startsWith('NRF52') || family.startsWith('NRF53')) {
+			if (family.startsWith('RP20')) {
+				lines.push('  .boot2 :');
+				lines.push('  {');
+				lines.push('    . = ALIGN(256);');
+				lines.push('    KEEP(*(.boot2))');
+				lines.push('    . = ALIGN(256);');
+				lines.push('  } >BOOT2');
+				lines.push('');
+			}
+		}
+
 		// .isr_vector
 		lines.push('  .isr_vector :');
 		lines.push('  {');
@@ -180,20 +193,42 @@ export class LinkerScriptGenerator {
 		lines.push('  } >RAM');
 		lines.push('');
 
+		// .ramfunc: functions that must execute from RAM (e.g. flash erase/write routines)
+		lines.push('  .ramfunc :');
+		lines.push('  {');
+		lines.push('    . = ALIGN(4);');
+		lines.push('    _sramfunc = .;');
+		lines.push('    *(.ramfunc)');
+		lines.push('    *(.ramfunc.*)');
+		lines.push('    . = ALIGN(4);');
+		lines.push('    _eramfunc = .;');
+		lines.push('  } >RAM AT> FLASH');
+		lines.push('');
+
+		// .noinit: variables that must NOT be zeroed at startup (e.g. boot flags, watchdog counters)
+		lines.push('  .noinit (NOLOAD) :');
+		lines.push('  {');
+		lines.push('    . = ALIGN(4);');
+		lines.push('    *(.noinit)');
+		lines.push('    *(.noinit.*)');
+		lines.push('    . = ALIGN(4);');
+		lines.push('  } >RAM');
+		lines.push('');
+
 		// CCM/DTCM sections if applicable
-		const ccm = fullConfig.additionalRegions.find(r => r.name === 'CCMRAM' || r.name === 'DTCM');
-		if (ccm) {
-			lines.push(`  /* ${ccm.name}: ${ccm.description} */`);
-			if (!ccm.isDMAAccessible) {
-				lines.push(`  /* WARNING: ${ccm.name} is NOT DMA-accessible. Do NOT place DMA buffers here. */`);
+		for (const region of fullConfig.additionalRegions) {
+			const sectionName = region.name.toLowerCase();
+			lines.push(`  /* ${region.name}: ${region.description ?? ''} */`);
+			if (!region.isDMAAccessible) {
+				lines.push(`  /* WARNING: ${region.name} is NOT DMA-accessible. Never place DMA buffers here. */`);
 			}
-			lines.push(`  .${ccm.name.toLowerCase()} (NOLOAD) :`);
+			lines.push(`  .${sectionName} (NOLOAD) :`);
 			lines.push('  {');
 			lines.push('    . = ALIGN(4);');
-			lines.push(`    *(.${ccm.name.toLowerCase()})`);
-			lines.push(`    *(.${ccm.name.toLowerCase()}*)`);
+			lines.push(`    *(.${sectionName})`);
+			lines.push(`    *(.${sectionName}.*)`);
 			lines.push('    . = ALIGN(4);');
-			lines.push(`  } >${ccm.name}`);
+			lines.push(`  } >${region.name}`);
 			lines.push('');
 		}
 
@@ -205,8 +240,17 @@ export class LinkerScriptGenerator {
 		lines.push('  }');
 		lines.push('');
 
-		// Stack pointer init
-		lines.push(`  _estack = ORIGIN(RAM) + LENGTH(RAM);`);
+		// Stack pointer init — Harvard architectures (AVR, C2000) have different stack placement
+		const fam = family.toUpperCase();
+		if (fam.startsWith('ATMEGA') || fam.startsWith('ATTINY') || fam.startsWith('AVR')) {
+			lines.push(`  /* AVR: stack grows down from SRAM end. RAMEND is defined in device headers. */`);
+			lines.push(`  _estack = ORIGIN(RAM) + LENGTH(RAM) - 1;  /* AVR SP = RAMEND at reset */`);
+		} else if (fam.startsWith('TMS320') || fam.startsWith('C2000')) {
+			lines.push(`  /* C2000: stack in SARAM (data space), not at flash end */`);
+			lines.push(`  _estack = ORIGIN(RAM) + LENGTH(RAM);  /* SARAM end */`);
+		} else {
+			lines.push(`  _estack = ORIGIN(RAM) + LENGTH(RAM);`);
+		}
 
 		lines.push('}');
 
@@ -218,38 +262,143 @@ export class LinkerScriptGenerator {
 		mcu: { flashSize: number; ramSize: number; memoryMap?: Array<{ name: string; baseAddress: number; size: number }> },
 		family: string,
 	): ILinkerScriptConfig {
-		const flashOrigin = override?.flashOrigin ?? 0x08000000;
+		const fam = family.toUpperCase();
+		const defaults = this._getMemoryOrigins(fam, mcu.memoryMap);
+		const flashOrigin = override?.flashOrigin ?? defaults.flashOrigin;
 		const flashSize = override?.flashSize ?? mcu.flashSize;
-		const ramOrigin = override?.ramOrigin ?? 0x20000000;
+		const ramOrigin = override?.ramOrigin ?? defaults.ramOrigin;
 		const ramSize = override?.ramSize ?? mcu.ramSize;
 
 		const additionalRegions: IMemoryRegionConfig[] = override?.additionalRegions ?? [];
 
-		// Detect CCM RAM from MCU memory map or family
+		// Detect special memory regions from MCU memory map or family
 		if (additionalRegions.length === 0) {
-			if (family.startsWith('STM32F4') && ramSize > 128 * 1024) {
+			// STM32F4 CCM RAM: only on devices with >= 192 KB RAM (F405/F407/F415/F417/F427/F429/F437/F439/F446/F469/F479)
+			if (family.startsWith('STM32F4') && ramSize >= 192 * 1024) {
 				additionalRegions.push({
 					name: 'CCMRAM',
 					origin: 0x10000000,
 					size: 64 * 1024,
 					attributes: 'rw',
 					isDMAAccessible: false,
-					description: 'Core-Coupled Memory (64KB, CPU-only, no DMA)',
+					description: 'Core-Coupled Memory — 64 KB, CPU-only (no DMA). Use for: stack, algorithm buffers, critical data.',
 				});
 			}
-			if (family.startsWith('STM32F7') || family.startsWith('STM32H7')) {
+			// STM32F7 DTCM
+			if (family.startsWith('STM32F7')) {
+				additionalRegions.push({
+					name: 'DTCM',
+					origin: 0x20000000,
+					size: 64 * 1024,
+					attributes: 'rw',
+					isDMAAccessible: false,
+					description: 'Data TCM — 64 KB, zero-wait-state access, no DMA. Use for: ISR data, FreeRTOS heap, stack.',
+				});
+				additionalRegions.push({
+					name: 'ITCM',
+					origin: 0x00000000,
+					size: 16 * 1024,
+					attributes: 'rwx',
+					isDMAAccessible: false,
+					description: 'Instruction TCM — 16 KB, zero-wait-state, no DMA. Use for: latency-critical ISRs, DSP routines.',
+				});
+			}
+			// STM32H7 DTCM + ITCM + AXI SRAM
+			if (family.startsWith('STM32H7')) {
 				additionalRegions.push({
 					name: 'DTCM',
 					origin: 0x20000000,
 					size: 128 * 1024,
 					attributes: 'rw',
 					isDMAAccessible: false,
-					description: 'Data Tightly-Coupled Memory (CPU-only, no DMA)',
+					description: 'Data TCM — 128 KB, CPU-only, no DMA. Ideal for: ISR stack, FreeRTOS heap.',
 				});
+				additionalRegions.push({
+					name: 'ITCM',
+					origin: 0x00000000,
+					size: 64 * 1024,
+					attributes: 'rwx',
+					isDMAAccessible: false,
+					description: 'Instruction TCM — 64 KB, CPU-only. Use __attribute__((section(".itcm"))) for critical ISRs.',
+				});
+				additionalRegions.push({
+					name: 'AXI_SRAM',
+					origin: 0x24000000,
+					size: 512 * 1024,
+					attributes: 'xrw',
+					isDMAAccessible: true,
+					description: 'AXI SRAM — 512 KB, DMA-accessible. Use for DMA buffers, framebuffers, Ethernet descriptors.',
+				});
+			}
+			// STM32F4/F7/H7 Backup SRAM
+			if (family.startsWith('STM32F4') || family.startsWith('STM32F7') || family.startsWith('STM32H7')) {
+				additionalRegions.push({
+					name: 'BKPSRAM',
+					origin: 0x40024000,
+					size: 4 * 1024,
+					attributes: 'rw',
+					isDMAAccessible: false,
+					description: 'Backup SRAM — 4 KB, retained on VBAT. Requires RCC->AHB1ENR BKPSRAMEN + PWR->CR DBP. Use for: crash logs, boot counters.',
+				});
+			}
+			// nRF52/53: UICR (user config) and FICR (factory config) are at fixed addresses
+			if (family.startsWith('NRF52') || family.startsWith('NRF53') || family.startsWith('NRF91')) {
+				additionalRegions.push({
+					name: 'FICR',
+					origin: 0x10000000,
+					size: 4 * 1024,
+					attributes: 'r',
+					isDMAAccessible: false,
+					description: 'Factory Information Configuration Registers (read-only, programmed at factory)',
+				});
+				additionalRegions.push({
+					name: 'UICR',
+					origin: 0x10001000,
+					size: 4 * 1024,
+					attributes: 'rw',
+					isDMAAccessible: false,
+					description: 'User Information Configuration Registers (bootloader config, APPROTECT, REGOUT)',
+				});
+			}
+			// RP2040/RP2350: needs .boot2 section (256-byte second-stage bootloader at flash start)
+			if (family.startsWith('RP20')) {
+				additionalRegions.push({
+					name: 'BOOT2',
+					origin: 0x10000000,
+					size: 256,
+					attributes: 'rx',
+					isDMAAccessible: false,
+					description: 'Second-stage bootloader (256 bytes at XIP flash base, required by RP2040 boot ROM)',
+				});
+				additionalRegions.push({
+					name: 'XIP_SRAM',
+					origin: 0x15000000,
+					size: 16 * 1024,
+					attributes: 'xrw',
+					isDMAAccessible: true,
+					description: 'XIP SRAM — 16 KB, usable for time-critical code after copying from flash',
+				});
+			}
+			// From MCU memory map if available
+			if (mcu.memoryMap) {
+				for (const region of mcu.memoryMap) {
+					const nameUpper = region.name.toUpperCase();
+					if (nameUpper === 'FLASH' || nameUpper === 'RAM' || nameUpper === 'SRAM') { continue; }
+					if (additionalRegions.some(r => r.origin === region.baseAddress)) { continue; }
+					additionalRegions.push({
+						name: region.name,
+						origin: region.baseAddress,
+						size: region.size,
+						attributes: nameUpper.includes('FLASH') || nameUpper.includes('ROM') ? 'rx' : 'rw',
+						isDMAAccessible: !nameUpper.includes('TCM') && !nameUpper.includes('CCM'),
+						description: `From MCU memory map`,
+					});
+				}
 			}
 		}
 
-		const rtos = override?.rtos ?? (this._session.session.rtos as any) ?? 'none';
+		const rtosRaw = override?.rtos ?? (this._session.session.rtos as unknown as string) ?? 'none';
+		const rtos: 'freertos' | 'zephyr' | 'none' = (rtosRaw === 'freertos' || rtosRaw === 'zephyr') ? rtosRaw : 'none';
 		const stackSize = override?.stackSize ?? (rtos === 'freertos' ? 0x800 : 0x400);
 		const heapSize = override?.heapSize ?? (rtos === 'freertos' ? 0x4000 : 0x200);
 
@@ -266,5 +415,109 @@ export class LinkerScriptGenerator {
 			rtosHeapSize: override?.rtosHeapSize ?? (rtos === 'freertos' ? heapSize : undefined),
 			dmaBufferRegion: override?.dmaBufferRegion ?? 'RAM',
 		};
+	}
+
+	private _getMemoryOrigins(
+		fam: string,
+		memoryMap?: Array<{ name: string; baseAddress: number; size: number }>,
+	): { flashOrigin: number; ramOrigin: number } {
+		// If the session MCU database has a memory map, prefer it
+		if (memoryMap) {
+			const flash = memoryMap.find(r => r.name.toUpperCase().includes('FLASH') || r.name.toUpperCase() === 'ROM');
+			const ram = memoryMap.find(r => r.name.toUpperCase() === 'SRAM' || r.name.toUpperCase() === 'RAM');
+			if (flash && ram) { return { flashOrigin: flash.baseAddress, ramOrigin: ram.baseAddress }; }
+		}
+
+		// ── STM32 ──────────────────────────────────────────────────────────
+		if (fam.startsWith('STM32')) { return { flashOrigin: 0x08000000, ramOrigin: 0x20000000 }; }
+
+		// ── Nordic nRF52/53/91 ────────────────────────────────────────────
+		if (fam.startsWith('NRF52') || fam.startsWith('NRF51')) {
+			return { flashOrigin: 0x00000000, ramOrigin: 0x20000000 };
+		}
+		if (fam.startsWith('NRF53')) {
+			// nRF5340 App core
+			return { flashOrigin: 0x00000000, ramOrigin: 0x20000000 };
+		}
+		if (fam.startsWith('NRF91')) {
+			return { flashOrigin: 0x00000000, ramOrigin: 0x20000000 };
+		}
+		if (fam.startsWith('NRF')) { return { flashOrigin: 0x00000000, ramOrigin: 0x20000000 }; }
+
+		// ── RP2040 / RP2350 ───────────────────────────────────────────────
+		if (fam.startsWith('RP20')) {
+			// RP2040: XIP flash at 0x10000000, SRAM at 0x20000000
+			return { flashOrigin: 0x10000000, ramOrigin: 0x20000000 };
+		}
+
+		// ── ESP32 (raw GCC toolchain — IDF manages its own LD) ─────────────
+		if (fam.startsWith('ESP32') || fam.startsWith('ESP8266')) {
+			// IRAM: 0x40080000, DRAM: 0x3FFC0000, Flash mapped via DROM
+			return { flashOrigin: 0x400D0000, ramOrigin: 0x3FFC0000 };
+		}
+
+		// ── NXP Kinetis K/L/V ─────────────────────────────────────────────
+		if (fam.startsWith('MK') || fam.startsWith('KINETIS')) {
+			return { flashOrigin: 0x00000000, ramOrigin: 0x1FFF0000 };
+		}
+
+		// ── NXP i.MX RT ───────────────────────────────────────────────────
+		if (fam.startsWith('MIMXRT')) {
+			// FlexSPI (QSPI flash) at 0x60000000, OCRAM at 0x20200000
+			return { flashOrigin: 0x60000000, ramOrigin: 0x20200000 };
+		}
+
+		// ── NXP LPC ───────────────────────────────────────────────────────
+		if (fam.startsWith('LPC')) {
+			return { flashOrigin: 0x00000000, ramOrigin: 0x20000000 };
+		}
+
+		// ── Microchip SAM D/E/C/L ─────────────────────────────────────────
+		if (fam.startsWith('SAM') || fam.startsWith('ATSAM')) {
+			return { flashOrigin: 0x00000000, ramOrigin: 0x20000000 };
+		}
+
+		// ── Microchip AVR (ATmega / ATtiny) ───────────────────────────────
+		if (fam.startsWith('ATMEGA') || fam.startsWith('ATTINY') || fam.startsWith('AVR')) {
+			// Harvard: flash at 0x00000000 (PROGMEM), SRAM at 0x00800000 (mapped)
+			return { flashOrigin: 0x00000000, ramOrigin: 0x00800060 };
+		}
+
+		// ── Renesas RA ────────────────────────────────────────────────────
+		if (fam.startsWith('RA') || fam.startsWith('R7FA') || fam.startsWith('R5F')) {
+			return { flashOrigin: 0x00000000, ramOrigin: 0x20000000 };
+		}
+
+		// ── Renesas RX ────────────────────────────────────────────────────
+		if (fam.startsWith('RX')) {
+			return { flashOrigin: 0xFFE00000, ramOrigin: 0x00000000 };
+		}
+
+		// ── TI C2000 (C28x Harvard) ───────────────────────────────────────
+		if (fam.startsWith('TMS320') || fam.startsWith('C2000')) {
+			return { flashOrigin: 0x080000, ramOrigin: 0x000000 };
+		}
+
+		// ── AURIX TC2xx/TC3xx (TriCore) ───────────────────────────────────
+		if (fam.startsWith('TC2') || fam.startsWith('TC3') || fam.startsWith('AURIX')) {
+			// PMU flash at 0x80000000, LMU RAM at 0x70000000
+			return { flashOrigin: 0x80000000, ramOrigin: 0x70000000 };
+		}
+
+		// ── Silicon Labs EFR32 / EFM32 ────────────────────────────────────
+		if (fam.startsWith('EFR32') || fam.startsWith('EFM32')) {
+			return { flashOrigin: 0x00000000, ramOrigin: 0x20000000 };
+		}
+
+		// ── PSoC 6 ────────────────────────────────────────────────────────
+		if (fam.startsWith('PSOC') || fam.startsWith('CY8C')) {
+			return { flashOrigin: 0x10000000, ramOrigin: 0x08000000 };
+		}
+
+		// ── GD32 (STM32-compatible) ───────────────────────────────────────
+		if (fam.startsWith('GD32')) { return { flashOrigin: 0x08000000, ramOrigin: 0x20000000 }; }
+
+		// Default: STM32-style
+		return { flashOrigin: 0x08000000, ramOrigin: 0x20000000 };
 	}
 }
