@@ -49,6 +49,10 @@ import { IRTTService } from '../serial/rttService.js';
 import { IITMService } from '../serial/itmService.js';
 import { IPeripheralCatalogService } from '../peripheralCatalog/peripheralCatalogService.js';
 import { ISchematicService } from '../schematic/schematicService.js';
+import { INIMdService } from '../projectConfig/niMdService.js';
+import { INIIgnoreService } from '../projectConfig/niIgnoreService.js';
+import { ICheckpointService } from '../projectConfig/checkpointService.js';
+import { IGitHubDaemonService } from '../../voidGitHubDaemon/gitHubDaemonService.js';
 
 
 // ─── Service interface ────────────────────────────────────────────────────────
@@ -60,6 +64,13 @@ export interface IFirmwareAgentToolService {
 
 	/** Get all firmware tools as IVoidInternalTool[] for registration. */
 	getTools(): IVoidInternalTool[];
+
+	/**
+	 * Check whether a file path is allowed to be edited by the agent.
+	 * Returns false if the path matches a .niignore rule.
+	 * Called by the agent framework before any file write operation.
+	 */
+	isWriteAllowed(filePath: string): boolean;
 }
 
 
@@ -81,8 +92,16 @@ class FirmwareAgentToolService extends Disposable implements IFirmwareAgentToolS
 		@IITMService private readonly _itm: IITMService,
 		@IPeripheralCatalogService private readonly _catalog: IPeripheralCatalogService,
 		@ISchematicService private readonly _schematic: ISchematicService,
+		@INIMdService private readonly _niMd: INIMdService,
+		@INIIgnoreService private readonly _niIgnore: INIIgnoreService,
+		@ICheckpointService private readonly _checkpoint: ICheckpointService,
+		@IGitHubDaemonService private readonly _daemon: IGitHubDaemonService,
 	) {
 		super();
+	}
+
+	isWriteAllowed(filePath: string): boolean {
+		return !this._niIgnore.isEditBlocked(filePath);
 	}
 
 	getTools(): IVoidInternalTool[] {
@@ -120,6 +139,17 @@ class FirmwareAgentToolService extends Disposable implements IFirmwareAgentToolS
 			...buildPeripheralCatalogTools(this._session, this._catalog),
 			// ── Phase 15: Schematic / Pinout ─────────────────────────────
 			...buildSchematicTools(this._session, this._schematic),
+			// ── Phase 16: Project config (NI.md, .niignore, checkpoint) ──
+			this._fwInit(),
+			this._fwNiIgnoreCheck(),
+			this._fwCheckpointCreate(),
+			this._fwCheckpointList(),
+			this._fwCheckpointRewind(),
+			this._fwCheckpointFork(),
+			// ── Phase 17: GitHub Daemon ───────────────────────────────────
+			this._fwDaemonStart(),
+			this._fwDaemonStop(),
+			this._fwDaemonStatus(),
 			// ── Core hardware tools ─────────────────────────────────────────
 			this._fwGetMcuInfo(),
 			this._fwListPeripherals(),
@@ -704,6 +734,313 @@ class FirmwareAgentToolService extends Disposable implements IFirmwareAgentToolS
 			execute: async () => {
 				const s = this._session.session;
 				return `MCU database contains pre-indexed specifications. Use the Firmware Environment UI to search and select an MCU. The database has entries covering STM32, Nordic nRF, ESP32, RP2040/RP2350, NXP, Microchip SAM/AVR, TI MSP430, RISC-V, and more.\n\nSession MCU: ${s.mcuConfig ? `${s.mcuConfig.family} ${s.mcuConfig.variant}` : 'none selected'}`;
+			},
+		};
+	}
+
+	// ─── Phase 16: Project config tools ──────────────────────────────────────
+
+	private _fwInit(): IVoidInternalTool {
+		return {
+			name: 'fw_init',
+			description: 'Generate a NI.md project configuration file for the current workspace. NI.md is auto-loaded at every session start and injects project-specific rules, build commands, debug config, and constraints into the AI context. Run once per project, then edit to customize.',
+			params: {},
+			execute: async () => {
+				const s = this._session.session;
+				if (!s.isActive) { return 'No active firmware session. Start a session first.'; }
+
+				const content = await this._niMd.generateDefault();
+				const config = this._niMd.getConfig();
+
+				return [
+					`NI.md generated in workspace root.`,
+					``,
+					`Sections configured:`,
+					config.buildCommand ? `  Build:  ${config.buildCommand}` : '',
+					config.flashCommand ? `  Flash:  ${config.flashCommand}` : '',
+					config.debugInterface ? `  Debug:  ${config.debugInterface}` : '',
+					config.targetMCU ? `  MCU:    ${config.targetMCU}` : '',
+					`  Rules:  ${config.rules.length} project-specific rules`,
+					`  IMPORTANT: ${config.importantRules.length} critical rules`,
+					``,
+					`NI.md is now active — its contents are injected into every AI session automatically.`,
+					`Edit NI.md to add your own rules, build commands, and constraints.`,
+					``,
+					`Preview (first 10 lines):`,
+					content.split('\n').slice(0, 10).join('\n'),
+				].filter(Boolean).join('\n');
+			},
+		};
+	}
+
+	private _fwNiIgnoreCheck(): IVoidInternalTool {
+		return {
+			name: 'fw_niignore_check',
+			description: 'List files in the workspace that are blocked from editing by .niignore rules. Neural Inverse will never modify these files — they can still be read for context. Returns the active .niignore rules and which files currently match them.',
+			params: {
+				path: { description: 'Directory to check for blocked files. Default: workspace root.' },
+			},
+			execute: async (args: Record<string, unknown>) => {
+				const status = this._niIgnore.getStatus();
+				const dirPath = String(args.path ?? '.');
+				const blocked = this._niIgnore.listBlocked(dirPath);
+				const rules = this._niIgnore.getRules();
+
+				if (rules.length === 0) {
+					return [
+						`No .niignore file found in workspace.`,
+						``,
+						`Create .niignore in the project root to restrict which files Neural Inverse can edit.`,
+						`Pattern syntax (gitignore-compatible):`,
+						`  vendor/          — block everything in vendor/`,
+						`  *.bin            — block all .bin files`,
+						`  **/generated/**  — block any path with 'generated'`,
+						`  !src/gen/config.h — re-include one file`,
+					].join('\n');
+				}
+
+				return [
+					`.niignore active: ${rules.length} rules from ${status.sourceFiles.length} file(s)`,
+					`Last loaded: ${new Date(status.lastLoaded).toISOString()}`,
+					``,
+					`Rules:`,
+					...rules.slice(0, 20).map(r => `  ${r.negated ? '!' : ' '}${r.pattern}  (${r.sourcePath.split('/').pop()})`),
+					rules.length > 20 ? `  ... ${rules.length - 20} more` : '',
+					``,
+					`Files blocked in ${dirPath}: ${blocked.length}`,
+					...blocked.slice(0, 20).map(f => `  ${f}`),
+					blocked.length > 20 ? `  ... ${blocked.length - 20} more` : '',
+				].filter(l => l !== '').join('\n');
+			},
+		};
+	}
+
+	private _fwCheckpointCreate(): IVoidInternalTool {
+		return {
+			name: 'fw_checkpoint_create',
+			description: 'Create a checkpoint of the current workspace file state. Checkpoints let you rewind to any previous state or fork a new git branch from a past point. Neural Inverse creates checkpoints automatically before large code changes.',
+			params: {
+				label: { description: 'Descriptive label for this checkpoint, e.g. "before uart driver refactor". Default: timestamp.' },
+			},
+			execute: async (args: Record<string, unknown>) => {
+				const label = String(args.label ?? `checkpoint ${new Date().toISOString().slice(0, 16)}`);
+				const id = await this._checkpoint.createCheckpoint(label);
+				const detail = this._checkpoint.getCheckpointDiff(id);
+				const status = this._checkpoint.getStatus();
+
+				return [
+					`Checkpoint created: ${id}`,
+					`Label: ${label}`,
+					`Files captured: ${detail?.filesChanged.length ?? 0}`,
+					...(detail?.filesChanged.slice(0, 10).map(f => `  ${f}`) ?? []),
+					detail && detail.filesChanged.length > 10 ? `  ... ${detail.filesChanged.length - 10} more` : '',
+					``,
+					`Total checkpoints: ${status.count}/${status.maxCheckpoints}`,
+					``,
+					`Rewind to this point: fw_checkpoint_rewind({ checkpointId: "${id}" })`,
+					`Fork branch from here: fw_checkpoint_fork({ checkpointId: "${id}" })`,
+				].filter(l => l !== '').join('\n');
+			},
+		};
+	}
+
+	private _fwCheckpointList(): IVoidInternalTool {
+		return {
+			name: 'fw_checkpoint_list',
+			description: 'List all available checkpoints in the current workspace, newest first. Shows checkpoint ID, label, timestamp, files changed, and branch name if forked.',
+			params: {},
+			execute: async () => {
+				const checkpoints = this._checkpoint.listCheckpoints();
+				const status = this._checkpoint.getStatus();
+
+				if (checkpoints.length === 0) {
+					return [
+						`No checkpoints found.`,
+						`Create one: fw_checkpoint_create({ label: "before my change" })`,
+					].join('\n');
+				}
+
+				const lines = [
+					`Checkpoints: ${checkpoints.length}/${status.maxCheckpoints}`,
+					`${'─'.repeat(60)}`,
+				];
+
+				for (const cp of checkpoints) {
+					const ts = new Date(cp.timestamp).toISOString().slice(0, 16).replace('T', ' ');
+					const branch = cp.branchName ? ` [branch: ${cp.branchName}]` : '';
+					lines.push(`${cp.id}`);
+					lines.push(`  Label: ${cp.label}${branch}`);
+					lines.push(`  Time:  ${ts}`);
+					lines.push(`  Files: ${cp.filesChanged.length} changed`);
+					lines.push('');
+				}
+
+				lines.push(`Rewind: fw_checkpoint_rewind({ checkpointId: "<id>" })`);
+				lines.push(`Fork:   fw_checkpoint_fork({ checkpointId: "<id>" })`);
+				return lines.join('\n');
+			},
+		};
+	}
+
+	private _fwCheckpointRewind(): IVoidInternalTool {
+		return {
+			name: 'fw_checkpoint_rewind',
+			description: 'Rewind all workspace files to the state captured in a checkpoint. This OVERWRITES current files — make sure you either have a newer checkpoint or your changes are committed to git first.',
+			params: {
+				checkpointId: { description: 'Checkpoint ID from fw_checkpoint_list.' },
+			},
+			execute: async (args: Record<string, unknown>) => {
+				const id = String(args.checkpointId ?? '');
+				if (!id) { return 'Provide checkpointId from fw_checkpoint_list.'; }
+
+				const detail = this._checkpoint.getCheckpointDiff(id);
+				if (!detail) { return `Checkpoint ${id} not found. Run fw_checkpoint_list.`; }
+
+				await this._checkpoint.rewindTo(id);
+
+				return [
+					`Rewound to checkpoint: ${detail.label}`,
+					`Timestamp: ${new Date(detail.timestamp).toISOString().slice(0, 16).replace('T', ' ')}`,
+					`Files restored: ${detail.filesChanged.length}`,
+					...detail.filesChanged.slice(0, 10).map(f => `  ${f}`),
+					detail.filesChanged.length > 10 ? `  ... ${detail.filesChanged.length - 10} more` : '',
+					``,
+					`Files have been restored to checkpoint state. Run your build to verify.`,
+				].filter(l => l !== '').join('\n');
+			},
+		};
+	}
+
+	private _fwCheckpointFork(): IVoidInternalTool {
+		return {
+			name: 'fw_checkpoint_fork',
+			description: 'Create a new git branch from a checkpoint state. The new branch will have the file state from the checkpoint — useful for exploring alternative implementations or bisecting a regression.',
+			params: {
+				checkpointId: { description: 'Checkpoint ID from fw_checkpoint_list.' },
+				branchName: { description: 'Name for the new git branch. Auto-generated if omitted.' },
+			},
+			execute: async (args: Record<string, unknown>) => {
+				const id = String(args.checkpointId ?? '');
+				if (!id) { return 'Provide checkpointId from fw_checkpoint_list.'; }
+
+				const branchName = typeof args.branchName === 'string' ? args.branchName : undefined;
+				const branch = await this._checkpoint.forkFrom(id, branchName);
+				const detail = this._checkpoint.getCheckpointDiff(id);
+
+				return [
+					`Branch created: ${branch}`,
+					`From checkpoint: ${detail?.label ?? id}`,
+					``,
+					`The branch has the file state from the checkpoint.`,
+					`Switch to it: git checkout ${branch}`,
+					`Return to original: git checkout -`,
+				].join('\n');
+			},
+		};
+	}
+
+	// ─── Phase 17: GitHub Daemon tools ────────────────────────────────────────
+
+	private _fwDaemonStart(): IVoidInternalTool {
+		return {
+			name: 'fw_daemon_start',
+			description: 'Start the Neural Inverse GitHub daemon. The daemon polls your GitHub repository for issue/PR comments mentioning @ni or @neuralInverse and processes them automatically — analyzing firmware, generating code, and posting results as comments.',
+			params: {
+				owner: { description: 'GitHub repository owner (username or org).' },
+				repo: { description: 'GitHub repository name.' },
+				token: { description: 'GitHub personal access token with repo scope.' },
+				pollIntervalSec: { description: 'How often to poll for new mentions (seconds). Default: 30.' },
+			},
+			execute: async (args: Record<string, unknown>) => {
+				const owner = String(args.owner ?? '');
+				const repo = String(args.repo ?? '');
+				const token = String(args.token ?? '');
+
+				if (!owner || !repo) { return 'Provide owner and repo, e.g. owner: "myorg", repo: "firmware".'; }
+				if (!token) { return 'Provide a GitHub personal access token with repo scope.'; }
+
+				const pollIntervalMs = typeof args.pollIntervalSec === 'number'
+					? args.pollIntervalSec * 1000
+					: 30000;
+
+				await this._daemon.startDaemon({ owner, repo, token, pollIntervalMs });
+
+				return [
+					`GitHub daemon started`,
+					`Repository: ${owner}/${repo}`,
+					`Polling every: ${pollIntervalMs / 1000}s`,
+					``,
+					`Trigger with: Comment @ni or @neuralInverse on any issue or PR.`,
+					`Example comment: "@ni analyze the UART driver for potential race conditions"`,
+					``,
+					`Status: fw_daemon_status`,
+					`Stop:   fw_daemon_stop`,
+				].join('\n');
+			},
+		};
+	}
+
+	private _fwDaemonStop(): IVoidInternalTool {
+		return {
+			name: 'fw_daemon_stop',
+			description: 'Stop the Neural Inverse GitHub daemon.',
+			params: {},
+			execute: async () => {
+				const status = this._daemon.getStatus();
+				if (!status.running) { return 'GitHub daemon is not running.'; }
+
+				this._daemon.stopDaemon();
+				return [
+					`GitHub daemon stopped.`,
+					`Repo: ${status.repoName ?? 'unknown'}`,
+					`Completed: ${status.completedCount} claim(s) processed`,
+				].join('\n');
+			},
+		};
+	}
+
+	private _fwDaemonStatus(): IVoidInternalTool {
+		return {
+			name: 'fw_daemon_status',
+			description: 'Show the current status of the Neural Inverse GitHub daemon: running state, repository, pending claims, and recently completed work.',
+			params: {},
+			execute: async () => {
+				const status = this._daemon.getStatus();
+				const claims = this._daemon.getClaims();
+
+				if (!status.running) {
+					return [
+						`GitHub daemon: STOPPED`,
+						``,
+						`Start with: fw_daemon_start({ owner: "org", repo: "firmware", token: "ghp_..." })`,
+					].join('\n');
+				}
+
+				const lines = [
+					`GitHub daemon: RUNNING`,
+					`Repository: ${status.repoName ?? 'unknown'}`,
+					`Last poll: ${status.lastPollAt ? new Date(status.lastPollAt).toISOString().slice(11, 19) : 'never'}`,
+					`Pending: ${status.pendingCount} | Completed: ${status.completedCount}`,
+				];
+
+				if (status.currentClaim) {
+					lines.push('');
+					lines.push(`Currently processing: ${status.currentClaim.type} #${status.currentClaim.number}`);
+					lines.push(`  "${status.currentClaim.title}"`);
+				}
+
+				const recent = claims.filter(c => c.status === 'complete' || c.status === 'failed').slice(0, 5);
+				if (recent.length > 0) {
+					lines.push('');
+					lines.push('Recent claims:');
+					for (const claim of recent) {
+						const ts = new Date(claim.claimedAt).toISOString().slice(11, 16);
+						const icon = claim.status === 'complete' ? 'ok' : 'fail';
+						lines.push(`  [${icon}] ${ts}  ${claim.type} #${claim.number}: ${claim.title.substring(0, 50)}`);
+					}
+				}
+
+				return lines.join('\n');
 			},
 		};
 	}

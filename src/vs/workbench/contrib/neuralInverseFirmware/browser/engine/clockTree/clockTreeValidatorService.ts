@@ -156,7 +156,72 @@ export class ClockTreeValidatorService {
 		if (fam.startsWith('GD32F4') || fam.startsWith('GD32E5')) { return STM32F4_CONSTRAINTS; }
 		if (fam.startsWith('GD32')) { return STM32F1_CONSTRAINTS; }
 
-		// Default to F4 constraints
+		// STM32 variants not yet covered
+		if (fam.startsWith('STM32C0')) { return STM32G0_CONSTRAINTS; }       // C0 = G0 derivative
+		if (fam.startsWith('STM32H5')) { return STM32H7_CONSTRAINTS; }        // H5 similar to H7
+		if (fam.startsWith('STM32MP1') || fam.startsWith('STM32MP2')) {
+			// MP1/MP2 are Linux SoC (Arm A7 + M4 coprocessor) — return permissive
+			return { family: fam, hseRange: [8, 50], pllInputRange: [8, 50], vcoRange: [400, 1500], sysclkMax: 800, apb1Max: 400, apb2Max: 400, mRange: [1, 63], nRange: [4, 512], pValues: [2, 4, 8, 16], qRange: [1, 128], flashWaitStates: [{ maxHCLK: 800, waitStates: 0 }], peripheralClockRequirements: [] };
+		}
+		if (fam.startsWith('STM32U')) { return STM32L4_CONSTRAINTS; }         // U5/U0 similar to L4
+		if (fam.startsWith('STM32WB') || fam.startsWith('STM32WL') || fam.startsWith('STM32WBA')) { return STM32L4_CONSTRAINTS; } // WB/WL use 64 MHz PLL similar to L4
+
+		// Microchip PIC8/16/24/32 families
+		if (fam.startsWith('PIC32')) { return { family: 'PIC32', hseRange: [4, 25], pllInputRange: [4, 25], vcoRange: [96, 200], sysclkMax: 252, apb1Max: 126, apb2Max: 126, mRange: [1, 8], nRange: [12, 100], pValues: [2, 4, 8], qRange: [1, 1], flashWaitStates: [{ maxHCLK: 80, waitStates: 0 }, { maxHCLK: 252, waitStates: 2 }], peripheralClockRequirements: [] }; }
+		if (fam.startsWith('PIC24') || fam.startsWith('DSPIC') || fam.startsWith('PIC18') || fam.startsWith('PIC16')) {
+			return { family: 'PIC', hseRange: [0.032, 32], pllInputRange: [0.032, 32], vcoRange: [8, 128], sysclkMax: 32, apb1Max: 32, apb2Max: 32, mRange: [1, 8], nRange: [1, 64], pValues: [1, 2, 4], qRange: [1, 1], flashWaitStates: [{ maxHCLK: 32, waitStates: 0 }], peripheralClockRequirements: [] };
+		}
+
+		// Lattice MachXO3 / PolarFire (FPGA + soft-CPU) — not a standard MCU clock
+		if (fam.startsWith('MACHXO') || fam.startsWith('POLARFIRE')) {
+			return { family: fam, hseRange: [1, 400], pllInputRange: [1, 400], vcoRange: [5, 1066], sysclkMax: 1066, apb1Max: 533, apb2Max: 533, mRange: [1, 128], nRange: [1, 4096], pValues: [1, 2, 4, 8], qRange: [1, 256], flashWaitStates: [{ maxHCLK: 1066, waitStates: 0 }], peripheralClockRequirements: [] };
+		}
+
+		// Virtual (simulation targets)
+		if (fam === 'VIRTUAL') { return STM32F4_CONSTRAINTS; }
+
+		// All LPC variants use LPC55 constraints (150 MHz PLL range is a good bound)
+		if (fam.startsWith('LPC')) { return LPC55_CONSTRAINTS; }
+
+		// NXP MCX families — up to 150/180 MHz (based on Arm M33/M7 core)
+		if (fam.startsWith('MCX')) { return LPC55_CONSTRAINTS; }
+
+		// Cypress/Infineon FM4 — up to 200 MHz
+		if (fam.startsWith('FM4')) { return RENESAS_RA_CONSTRAINTS; } // Similar PLL structure
+
+		// SiFive / RISC-V FE310 / FU740 — 64/1000 MHz
+		if (fam.startsWith('FE310')) {
+			return { family: 'FE310', hseRange: [16, 16], pllInputRange: [16, 16], vcoRange: [48, 384], sysclkMax: 320, apb1Max: 320, apb2Max: 320, mRange: [1, 4], nRange: [2, 128], pValues: [2, 4, 8], qRange: [1, 8], flashWaitStates: [{ maxHCLK: 320, waitStates: 0 }], peripheralClockRequirements: [] };
+		}
+		if (fam.startsWith('FU740') || fam.startsWith('K210')) {
+			return { family: fam, hseRange: [24, 33], pllInputRange: [24, 33], vcoRange: [400, 1000], sysclkMax: 1500, apb1Max: 500, apb2Max: 500, mRange: [1, 63], nRange: [4, 512], pValues: [2, 4, 8], qRange: [1, 16], flashWaitStates: [{ maxHCLK: 1500, waitStates: 0 }], peripheralClockRequirements: [] };
+		}
+
+		// Arm Cortex-M55 (Corstone-300/310 subsystems) — up to 400 MHz
+		if (fam.startsWith('M55') || fam.startsWith('CORSTONE')) {
+			return { family: 'M55', hseRange: [4, 48], pllInputRange: [1, 50], vcoRange: [200, 800], sysclkMax: 400, apb1Max: 200, apb2Max: 200, mRange: [1, 16], nRange: [8, 200], pValues: [2, 4, 8], qRange: [1, 8], flashWaitStates: [{ maxHCLK: 400, waitStates: 3 }], peripheralClockRequirements: [] };
+		}
+
+		// TI AM33x / AM57x / AM64x / AM243x — Linux SoC, not bare-metal MCU
+		// Clock managed by U-Boot / Linux kernel — return permissive constraints
+		if (fam.startsWith('AM') || fam.startsWith('BCM') || fam.startsWith('SAMA') || fam.startsWith('SAMA7') || fam.startsWith('ALLWINNER')) {
+			return { family: fam, hseRange: [24, 50], pllInputRange: [24, 50], vcoRange: [200, 2000], sysclkMax: 2000, apb1Max: 1000, apb2Max: 1000, mRange: [1, 64], nRange: [4, 512], pValues: [2, 4, 8, 16], qRange: [1, 16], flashWaitStates: [{ maxHCLK: 2000, waitStates: 0 }], peripheralClockRequirements: [] };
+		}
+
+		// Additional families with correct constraints
+		if (fam.startsWith('TM4C') || fam.startsWith('HERCULES') || fam.startsWith('TMS570')) { return TM4C_CONSTRAINTS; }
+		if (fam.startsWith('MSP430') || fam.startsWith('MSP432')) { return MSP430_CONSTRAINTS; }
+		if (fam.startsWith('XMC4')) { return XMC4_CONSTRAINTS; }
+		if (fam.startsWith('XMC1')) { return XMC1_CONSTRAINTS; }
+		if (fam.startsWith('S32K') || fam.startsWith('S32G')) { return S32K_CONSTRAINTS; }
+		if (fam.startsWith('APOLLO') || fam.startsWith('AM')) { return APOLLO_CONSTRAINTS; }
+		if (fam.startsWith('MAX32')) { return MAX32_CONSTRAINTS; }
+		if (fam.startsWith('CH32') || fam.startsWith('PY32')) { return STM32F1_CONSTRAINTS; } // compatible clones
+		if (fam.startsWith('CC26') || fam.startsWith('CC13') || fam.startsWith('CC23') || fam.startsWith('CC32')) { return CC26XX_CONSTRAINTS; }
+		if (fam.startsWith('BL6') || fam.startsWith('BL60') || fam.startsWith('BL61')) { return BL60X_CONSTRAINTS; }
+		if (fam.startsWith('M480') || fam.startsWith('M2354') || fam.startsWith('NUC')) { return NUVOTON_CONSTRAINTS; }
+
+		// Default to F4 constraints (covers any unrecognised Cortex-M device)
 		return STM32F4_CONSTRAINTS;
 	}
 
@@ -636,5 +701,95 @@ const PSOC6_CONSTRAINTS: IClockConstraints = {
 		{ maxHCLK: 100, waitStates: 3 },
 		{ maxHCLK: 150, waitStates: 4 },
 	],
+	peripheralClockRequirements: [],
+};
+
+// TI TM4C / Hercules — up to 120 MHz via PLL (SYSDIV2)
+const TM4C_CONSTRAINTS: IClockConstraints = {
+	family: 'TM4C', hseRange: [3, 25], pllInputRange: [3, 25], vcoRange: [400, 400],
+	sysclkMax: 120, apb1Max: 120, apb2Max: 120,
+	mRange: [1, 1], nRange: [3, 128], pValues: [2, 4, 6, 8, 10], qRange: [1, 1],
+	flashWaitStates: [{ maxHCLK: 16, waitStates: 0 }, { maxHCLK: 40, waitStates: 1 }, { maxHCLK: 60, waitStates: 2 }, { maxHCLK: 80, waitStates: 3 }, { maxHCLK: 120, waitStates: 4 }],
+	peripheralClockRequirements: [],
+};
+
+// TI MSP430 — max 25 MHz via DCO, no VCO/PLL in classic sense
+const MSP430_CONSTRAINTS: IClockConstraints = {
+	family: 'MSP430', hseRange: [32768 / 1e6, 25], pllInputRange: [1, 25], vcoRange: [1, 25],
+	sysclkMax: 25, apb1Max: 25, apb2Max: 25,
+	mRange: [1, 1], nRange: [1, 32], pValues: [1, 2, 4, 8, 16, 32], qRange: [1, 1],
+	flashWaitStates: [{ maxHCLK: 8, waitStates: 0 }, { maxHCLK: 16, waitStates: 1 }, { maxHCLK: 25, waitStates: 2 }],
+	peripheralClockRequirements: [],
+};
+
+// Infineon XMC4xxx — 144/196 MHz PLL
+const XMC4_CONSTRAINTS: IClockConstraints = {
+	family: 'XMC4', hseRange: [4, 25], pllInputRange: [0.2, 5], vcoRange: [260, 520],
+	sysclkMax: 196, apb1Max: 128, apb2Max: 128,
+	mRange: [1, 256], nRange: [1, 128], pValues: [2, 4, 8, 16, 32, 64], qRange: [1, 1],
+	flashWaitStates: [{ maxHCLK: 60, waitStates: 0 }, { maxHCLK: 125, waitStates: 1 }, { maxHCLK: 144, waitStates: 2 }, { maxHCLK: 196, waitStates: 3 }],
+	peripheralClockRequirements: [],
+};
+
+// Infineon XMC1xxx — 48/32 MHz from internal oscillator (no external PLL)
+const XMC1_CONSTRAINTS: IClockConstraints = {
+	family: 'XMC1', hseRange: [0, 0], pllInputRange: [32, 32], vcoRange: [32, 48],
+	sysclkMax: 48, apb1Max: 48, apb2Max: 48,
+	mRange: [1, 1], nRange: [1, 2], pValues: [1], qRange: [1, 1],
+	flashWaitStates: [{ maxHCLK: 48, waitStates: 0 }],
+	peripheralClockRequirements: [],
+};
+
+// NXP S32K3 — 160 MHz PLL
+const S32K_CONSTRAINTS: IClockConstraints = {
+	family: 'S32K', hseRange: [8, 16], pllInputRange: [8, 16], vcoRange: [128, 384],
+	sysclkMax: 160, apb1Max: 80, apb2Max: 80,
+	mRange: [1, 8], nRange: [16, 48], pValues: [2, 4, 8], qRange: [1, 8],
+	flashWaitStates: [{ maxHCLK: 40, waitStates: 0 }, { maxHCLK: 80, waitStates: 1 }, { maxHCLK: 120, waitStates: 2 }, { maxHCLK: 160, waitStates: 3 }],
+	peripheralClockRequirements: [],
+};
+
+// Ambiq Apollo 3/4 — 96 MHz HFRC
+const APOLLO_CONSTRAINTS: IClockConstraints = {
+	family: 'Apollo', hseRange: [0, 0], pllInputRange: [96, 96], vcoRange: [96, 96],
+	sysclkMax: 96, apb1Max: 96, apb2Max: 96,
+	mRange: [1, 1], nRange: [1, 1], pValues: [1], qRange: [1, 1],
+	flashWaitStates: [{ maxHCLK: 96, waitStates: 0 }],
+	peripheralClockRequirements: [],
+};
+
+// Maxim MAX32 — 120 MHz PLL
+const MAX32_CONSTRAINTS: IClockConstraints = {
+	family: 'MAX32', hseRange: [4, 32], pllInputRange: [4, 32], vcoRange: [48, 192],
+	sysclkMax: 120, apb1Max: 120, apb2Max: 120,
+	mRange: [1, 8], nRange: [6, 48], pValues: [2, 4, 8], qRange: [1, 8],
+	flashWaitStates: [{ maxHCLK: 24, waitStates: 0 }, { maxHCLK: 72, waitStates: 1 }, { maxHCLK: 120, waitStates: 2 }],
+	peripheralClockRequirements: [],
+};
+
+// TI CC26xx / CC13xx / SimpleLink — 48 MHz HF oscillator
+const CC26XX_CONSTRAINTS: IClockConstraints = {
+	family: 'CC26xx', hseRange: [24, 48], pllInputRange: [24, 48], vcoRange: [48, 96],
+	sysclkMax: 48, apb1Max: 48, apb2Max: 48,
+	mRange: [1, 2], nRange: [1, 4], pValues: [1, 2], qRange: [1, 1],
+	flashWaitStates: [{ maxHCLK: 48, waitStates: 0 }],
+	peripheralClockRequirements: [],
+};
+
+// Bouffalo Lab BL602 / BL616 — 160/240 MHz DPLL
+const BL60X_CONSTRAINTS: IClockConstraints = {
+	family: 'BL60x', hseRange: [40, 40], pllInputRange: [40, 40], vcoRange: [160, 480],
+	sysclkMax: 240, apb1Max: 160, apb2Max: 160,
+	mRange: [1, 1], nRange: [4, 12], pValues: [1, 2, 4], qRange: [1, 4],
+	flashWaitStates: [{ maxHCLK: 80, waitStates: 0 }, { maxHCLK: 160, waitStates: 1 }, { maxHCLK: 240, waitStates: 2 }],
+	peripheralClockRequirements: [],
+};
+
+// Nuvoton M480 / M2354 — 192/64 MHz PLL
+const NUVOTON_CONSTRAINTS: IClockConstraints = {
+	family: 'Nuvoton', hseRange: [4, 24], pllInputRange: [2, 8], vcoRange: [96, 200],
+	sysclkMax: 192, apb1Max: 96, apb2Max: 96,
+	mRange: [1, 16], nRange: [12, 100], pValues: [2, 4], qRange: [1, 1],
+	flashWaitStates: [{ maxHCLK: 32, waitStates: 0 }, { maxHCLK: 64, waitStates: 1 }, { maxHCLK: 128, waitStates: 2 }, { maxHCLK: 192, waitStates: 3 }],
 	peripheralClockRequirements: [],
 };

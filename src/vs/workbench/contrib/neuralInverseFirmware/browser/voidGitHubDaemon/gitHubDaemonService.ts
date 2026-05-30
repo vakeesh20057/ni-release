@@ -23,6 +23,7 @@ import { Emitter, Event } from '../../../../../../base/common/event.js';
 import { Disposable } from '../../../../../../base/common/lifecycle.js';
 import { createDecorator } from '../../../../../../platform/instantiation/common/instantiation.js';
 import { registerSingleton, InstantiationType } from '../../../../../../platform/instantiation/common/extensions.js';
+import { IWorkspaceContextService } from '../../../../../../platform/workspace/common/workspace.js';
 
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -115,6 +116,17 @@ class GitHubDaemonServiceImpl extends Disposable implements IGitHubDaemonService
 	private _pollTimer: ReturnType<typeof setInterval> | null = null;
 	private _processedComments: Set<number> = new Set();
 
+	constructor(
+		@IWorkspaceContextService private readonly _workspaceCtx: IWorkspaceContextService,
+	) {
+		super();
+	}
+
+	private _getWorkspaceRoot(): string {
+		const folders = this._workspaceCtx.getWorkspace().folders;
+		return folders.length > 0 ? folders[0]!.uri.fsPath : (process?.cwd?.() ?? '.');
+	}
+
 	async startDaemon(config: IDaemonConfig): Promise<void> {
 		if (this._status.running) {
 			this.stopDaemon();
@@ -136,7 +148,7 @@ class GitHubDaemonServiceImpl extends Disposable implements IGitHubDaemonService
 		this._status = {
 			running: true,
 			repoName: `${config.owner}/${config.repo}`,
-			workspace: config.workspacePath ?? process?.cwd?.(),
+			workspace: config.workspacePath ?? this._getWorkspaceRoot(),
 			pendingCount: 0,
 			completedCount: 0,
 		};
@@ -321,23 +333,31 @@ class GitHubDaemonServiceImpl extends Disposable implements IGitHubDaemonService
 			return this._analyzePromptFromGitHub(prompt, claim);
 		}
 
-		// Clone/update the repo in a dedicated worktree for this claim
-		const cwd = process?.cwd?.() ?? '.';
-		const worktreeDir = `${cwd}/.inverse/daemon-worktrees/${claim.id}`;
+		// Clone/update the repo in a dedicated worktree for this claim.
+		// Include timestamp in path to prevent race conditions when multiple claims process concurrently.
+		const cwd = this._getWorkspaceRoot();
+		const worktreeDir = `${cwd}/.inverse/daemon-worktrees/${claim.id}_${Date.now()}`;
 
 		const fs = (globalThis as Record<string, unknown>)['require']
 			? ((globalThis as Record<string, unknown>)['require']('fs') as typeof import('fs'))
 			: null;
 
-		if (fs && !fs.existsSync(worktreeDir)) {
+		if (fs) {
 			fs.mkdirSync(worktreeDir, { recursive: true });
 		}
 
-		// Ensure repo is checked out in worktree
+		// Create isolated worktree with --detach to avoid branch name conflicts
 		try {
-			await this._runGitCmd(['worktree', 'add', worktreeDir, 'HEAD'], cwd);
+			await this._runGitCmd(['worktree', 'add', '--detach', worktreeDir, 'HEAD'], cwd);
 		} catch {
-			// Worktree may already exist — use it
+			// worktree add failed (bare repo, shallow clone, etc.) — work in a copy instead
+			try {
+				if (fs) {
+					await this._runGitCmd(['clone', '--local', '--depth', '1', cwd, worktreeDir], cwd);
+				}
+			} catch {
+				// If clone also fails, continue with workspace root — best effort
+			}
 		}
 
 		// Detect project type and MCU in the worktree

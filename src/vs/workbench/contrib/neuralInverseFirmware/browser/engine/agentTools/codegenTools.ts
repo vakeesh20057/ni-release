@@ -978,6 +978,48 @@ function _generateClockConfig(
 		return _generateClockConfigG4L4(targetMHz, source, inputMHz, family, variant, rccSource, isL4);
 	}
 
+	// ── Unknown / unhandled non-STM32 family ─────────────────────────────────
+	// Emit a clearly-labelled skeleton rather than STM32 RCC code that will never compile.
+	if (!fam.startsWith('STM32') && !fam.startsWith('GD32')) {
+		return [
+			`/* Clock configuration for ${family} ${variant} */`,
+			`/* Neural Inverse does not yet have a native clock codegen template for this family. */`,
+			`/* Please consult the ${family} reference manual for PLL/clock configuration. */`,
+			`/* Common patterns for this architecture: */`,
+			fam.startsWith('MSP') || fam.startsWith('TM4C') || fam.startsWith('CC') ?
+				[`/* TI families: use TivaWare / DriverLib SysCtlClockSet() or SysCtlClockFreqSet() */`,
+				 `/* TM4C: SysCtlClockSet(SYSCTL_SYSDIV_1 | SYSCTL_USE_OSC | SYSCTL_OSC_MAIN | SYSCTL_XTAL_16MHZ); */`,
+				 `/* MSP430: configure DCOCTL + BCSCTL1/2 or CS module (MSP430FR: CS->CLKEN |= CS_CLKEN_HFXT_EN) */`,
+				].join('\n') :
+			fam.startsWith('PIC') ?
+				`/* PIC: configure OSCCONbits.NOSC and PLLFBDbits.PLLDIV in XC32 */` :
+			fam.startsWith('NUVOTON') || fam.startsWith('M480') || fam.startsWith('M2354') ?
+				`/* Nuvoton: CLK_SetCoreClock(${Math.min(targetMHz, 192)}000000); in NuMicro BSP */` :
+			fam.startsWith('XMC') ?
+				`/* Infineon XMC: XMC_SCU_CLOCK_Init() with XMC_SCU_CLOCK_CONFIG_t */` :
+			fam.startsWith('S32K') || fam.startsWith('S32G') ?
+				`/* NXP S32: CLOCK_DRV_Init() with generated clock configuration from S32 Design Studio */` :
+			fam.startsWith('APOLLO') ?
+				`/* Ambiq Apollo: am_hal_clkgen_control(AM_HAL_CLKGEN_CONTROL_SYSCLK_MAX, 0); */` :
+			fam.startsWith('MAX32') ?
+				`/* Maxim MAX32: MXC_SYS_Clock_Select(MXC_SYS_CLOCK_IPO); SystemCoreClockUpdate(); */` :
+			fam.startsWith('BL6') || fam.startsWith('BL60') ?
+				`/* Bouffalo Lab: bl_sys_init() handles clock setup */` :
+			fam.startsWith('CH32') ?
+				`/* WCH CH32: SystemInit() in system_ch32v30x.c configures PLL */` :
+			fam.startsWith('RL78') ?
+				`/* Renesas RL78: set CMC (Clock Mode Control) and OSTC oscillation stabilization */` :
+			fam.startsWith('PY32') ?
+				`/* Puya PY32: RCC_OscConfig + RCC_ClockConfig as in ST HAL pattern */` :
+				`/* Refer to the ${family} SDK or BSP for clock initialization. */`,
+			`void clock_init(void)`,
+			`{`,
+			`    /* TODO: add ${family}-specific clock initialization here */`,
+			`    /* Target: ${Math.min(targetMHz, 1000)} MHz */`,
+			`}`,
+		].filter(Boolean).join('\n');
+	}
+
 	// F4 / F7: classic PLLN/PLLM/PLLP/PLLQ structure
 	const maxMHz = fam.startsWith('STM32F7') ? 216 : 168;
 	const clampedMHz = Math.min(targetMHz, maxMHz);
@@ -1469,6 +1511,36 @@ function _generateGPIOConfig(
 	// STM32F1 uses completely different GPIO register layout (CRL/CRH, no MODER/AFR)
 	if (fam.startsWith('STM32F1')) {
 		return _generateGPIOConfigF1(port, pinNum, mode, speed, pull, af, outputType, baseAddr, rccMap);
+	}
+
+	// ── Unknown non-STM32/GD32 family ─────────────────────────────────────────
+	// Rather than emitting STM32 MODER/AFR code that won't compile, emit a clearly
+	// documented skeleton so the developer knows what to fill in.
+	if (!fam.startsWith('STM32') && !fam.startsWith('GD32')) {
+		const pinLabel = `P${port}${pinNum}`;
+		const sdkNote =
+			fam.startsWith('MSP') ? `/* MSP430: P${port}DIR, P${port}SEL0/SEL1, P${port}OUT registers */` :
+			fam.startsWith('TM4C') || fam.startsWith('CC') ? `/* TI Tiva/CC: GPIOPinTypeGPIOOutput(GPIO_PORT${port}_BASE, GPIO_PIN_${pinNum}); */` :
+			fam.startsWith('PIC') ? `/* PIC: TRISxbits.TRISx${pinNum} = 0; (output), LATxbits.LATx${pinNum} = 0; */` :
+			fam.startsWith('AVR') || fam.startsWith('ATMEGA') ? `/* AVR: DDR${port} |= (1 << ${pinNum}); // output\n * PORT${port} |= (1 << ${pinNum}); // high */` :
+			fam.startsWith('XMC') ? `/* Infineon XMC: XMC_GPIO_Init(XMC_GPIO_PORT${port}, ${pinNum}, &config); */` :
+			fam.startsWith('APOLLO') ? `/* Ambiq Apollo: am_hal_gpio_pinconfig(AM_BSP_GPIO_${pinLabel}, g_AM_HAL_GPIO_OUTPUT); */` :
+			fam.startsWith('MAX32') ? `/* Maxim MAX32: MXC_GPIO_Config(&gpio_cfg); */` :
+			fam.startsWith('RL78') ? `/* Renesas RL78: PM${port} &= ~(1 << ${pinNum}); P${port} |= (1 << ${pinNum}); */` :
+			fam.startsWith('CH32') ? `/* WCH CH32: GPIO_Init(GPIO${port}, &GPIO_InitStructure); */` :
+			fam.startsWith('S32K') ? `/* NXP S32K: PINS_DRV_SetPins(PTx, (1 << ${pinNum})); */` :
+			fam.startsWith('NUVOTON') || fam.startsWith('M480') ? `/* Nuvoton: GPIO_SetMode(P${port}, BIT${pinNum}, GPIO_MODE_OUTPUT); */` :
+			`/* Consult ${family} GPIO peripheral guide for pin ${port}${pinNum} configuration */`;
+
+		return [
+			`/* GPIO config: ${pinLabel} as ${mode}${af !== undefined ? `, AF${af}` : ''} — ${family} */`,
+			`/* NOTE: Neural Inverse does not yet have native GPIO codegen for ${family}. */`,
+			sdkNote,
+			`void gpio_config_${pinLabel.toLowerCase()}(void)`,
+			`{`,
+			`    /* TODO: configure ${pinLabel} as ${mode} using ${family} SDK/registers */`,
+			`}`,
+		].join('\n');
 	}
 
 	// Clock enable register differs by family

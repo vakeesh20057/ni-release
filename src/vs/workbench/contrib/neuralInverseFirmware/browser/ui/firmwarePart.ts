@@ -43,6 +43,12 @@ import { IClockTreeService } from '../engine/clockTree/service.js';
 import { IMemoryLayoutService } from '../engine/memory/service.js';
 import { IPeripheralDependencyService } from '../engine/dependencies/service.js';
 import { IRegisterCompositorService } from '../engine/registerCompositor/service.js';
+import { ILogicAnalyzerService } from '../engine/instruments/logicAnalyzer/logicAnalyzerService.js';
+import { IPowerAnalyzerService } from '../engine/instruments/powerAnalyzer/powerAnalyzerService.js';
+import { IOscilloscopeService } from '../engine/instruments/oscilloscope/oscilloscopeService.js';
+import { ISchematicService } from '../engine/schematic/schematicService.js';
+import { ICheckpointService } from '../engine/projectConfig/checkpointService.js';
+import { INIMdService } from '../engine/projectConfig/niMdService.js';
 
 
 // ─── DOM helpers (no innerHTML — Trusted Types compliant) ─────────────────────
@@ -66,18 +72,19 @@ function $t<K extends SafeHTMLTag>(tag: K, text: string, css?: string): HTMLElem
 
 const FIRMWARE_PART_ID = 'workbench.parts.neuralInverseFirmware';
 
-type TabId = 'dashboard' | 'pinout' | 'architecture' | 'datasheets' | 'registers' | 'serial' | 'compliance' | 'build' | 'hw-tools';
+type TabId = 'dashboard' | 'pinout' | 'architecture' | 'datasheets' | 'registers' | 'serial' | 'compliance' | 'build' | 'hw-tools' | 'instruments';
 
 const TABS: Array<{ id: TabId; label: string }> = [
-	{ id: 'dashboard', label: 'Dashboard' },
-	{ id: 'pinout', label: 'Pinout' },
-	{ id: 'architecture', label: 'Architecture' },
-	{ id: 'hw-tools', label: 'HW Tools' },
-	{ id: 'datasheets', label: 'Datasheets' },
-	{ id: 'registers', label: 'Registers' },
-	{ id: 'serial', label: 'Serial' },
-	{ id: 'compliance', label: 'Compliance' },
-	{ id: 'build', label: 'Build' },
+	{ id: 'dashboard',   label: 'Dashboard' },
+	{ id: 'pinout',      label: 'Pinout' },
+	{ id: 'architecture',label: 'Architecture' },
+	{ id: 'hw-tools',    label: 'HW Tools' },
+	{ id: 'instruments', label: 'Instruments' },
+	{ id: 'datasheets',  label: 'Datasheets' },
+	{ id: 'registers',   label: 'Registers' },
+	{ id: 'serial',      label: 'Serial' },
+	{ id: 'compliance',  label: 'Compliance' },
+	{ id: 'build',       label: 'Build' },
 ];
 
 // ─── Part ─────────────────────────────────────────────────────────────────────
@@ -129,6 +136,12 @@ export class FirmwarePart extends Part {
 		@IMemoryLayoutService private readonly _memoryLayoutSvc: IMemoryLayoutService,
 		@IPeripheralDependencyService private readonly _depSvc: IPeripheralDependencyService,
 		@IRegisterCompositorService private readonly _regCompositorSvc: IRegisterCompositorService,
+		@ILogicAnalyzerService private readonly _laSvc: ILogicAnalyzerService,
+		@IPowerAnalyzerService private readonly _paSvc: IPowerAnalyzerService,
+		@IOscilloscopeService private readonly _scopeSvc: IOscilloscopeService,
+		@ISchematicService private readonly _schematicSvc: ISchematicService,
+		@ICheckpointService private readonly _checkpointSvc: ICheckpointService,
+		@INIMdService private readonly _niMdSvc: INIMdService,
 	) {
 		super(FIRMWARE_PART_ID, { hasTitle: false }, themeService, storageService, layoutService);
 	}
@@ -473,15 +486,16 @@ export class FirmwarePart extends Part {
 
 	private _renderActiveTab(root: HTMLElement): void {
 		switch (this._activeTab) {
-			case 'dashboard': this._renderDashboard(root); break;
-			case 'pinout': this._renderPinout(root); break;
+			case 'dashboard':    this._renderDashboard(root); break;
+			case 'pinout':       this._renderPinout(root); break;
 			case 'architecture': this._renderArchitecture(root); break;
-			case 'hw-tools': this._renderHWTools(root); break;
-			case 'datasheets': this._renderDatasheets(root); break;
-			case 'registers': this._renderRegisters(root); break;
-			case 'serial': this._renderSerial(root); break;
-			case 'compliance': this._renderCompliance(root); break;
-			case 'build': this._renderBuild(root); break;
+			case 'hw-tools':     this._renderHWTools(root); break;
+			case 'instruments':  this._renderInstruments(root); break;
+			case 'datasheets':   this._renderDatasheets(root); break;
+			case 'registers':    this._renderRegisters(root); break;
+			case 'serial':       this._renderSerial(root); break;
+			case 'compliance':   this._renderCompliance(root); break;
+			case 'build':        this._renderBuild(root); break;
 		}
 	}
 
@@ -602,6 +616,47 @@ export class FirmwarePart extends Part {
 		}
 
 		scroll.appendChild(grid);
+
+		// ── Checkpoint Timeline ──────────────────────────────────────────────
+		const checkpoints = this._checkpointSvc.listCheckpoints();
+		if (checkpoints.length > 0) {
+			const cpSection = $e('div', 'margin-top:20px;');
+			cpSection.appendChild($t('div', 'Checkpoints', [
+				'font-size:10px', 'font-weight:700', 'text-transform:uppercase',
+				'letter-spacing:0.07em', 'color:var(--vscode-descriptionForeground)', 'margin-bottom:8px',
+			].join(';')));
+
+			for (const cp of checkpoints.slice(0, 8)) {
+				const row = $e('div', 'display:flex;align-items:center;gap:8px;padding:6px 8px;margin-bottom:4px;border-radius:4px;background:var(--vscode-sideBar-background);border:1px solid var(--vscode-widget-border);');
+				const ts = new Date(cp.timestamp).toISOString().slice(0, 16).replace('T', ' ');
+				row.appendChild($t('span', ts, 'font-size:10px;color:var(--vscode-descriptionForeground);font-family:monospace;flex-shrink:0;'));
+				row.appendChild($t('span', cp.label, 'font-size:11px;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;'));
+				row.appendChild($t('span', `${cp.filesChanged.length} files`, 'font-size:10px;color:var(--vscode-descriptionForeground);flex-shrink:0;'));
+
+				const rewindBtn = $e('button', 'padding:2px 8px;font-size:10px;background:transparent;border:1px solid var(--vscode-widget-border);border-radius:3px;cursor:pointer;color:var(--vscode-foreground);flex-shrink:0;') as HTMLButtonElement;
+				rewindBtn.textContent = 'Rewind';
+				rewindBtn.title = `Rewind to: ${cp.label}`;
+				rewindBtn.addEventListener('click', async () => {
+					rewindBtn.textContent = '...';
+					rewindBtn.disabled = true;
+					try {
+						await this._checkpointSvc.rewindTo(cp.id);
+						rewindBtn.textContent = 'Done';
+						this._render();
+					} catch (e) {
+						rewindBtn.textContent = 'Err';
+						rewindBtn.title = (e as Error).message;
+					}
+				});
+				row.appendChild(rewindBtn);
+				cpSection.appendChild(row);
+			}
+
+			if (checkpoints.length > 8) {
+				cpSection.appendChild($t('div', `+ ${checkpoints.length - 8} more checkpoints — use fw_checkpoint_list`, 'font-size:10px;color:var(--vscode-descriptionForeground);padding:4px 0;'));
+			}
+			scroll.appendChild(cpSection);
+		}
 	}
 
 	private _dashCard(title: string, rows: Array<[string, string]>): HTMLElement {
@@ -1600,6 +1655,261 @@ export class FirmwarePart extends Part {
 			notification.close?.();
 			this._notify.notify({ severity: Severity.Error, message: `Failed to parse ${fileName}: ${err}` });
 		}
+	}
+
+
+	// ─── Instruments ─────────────────────────────────────────────────────────
+
+	private _renderInstruments(root: HTMLElement): void {
+		const wrap = $e('div', 'flex:1;display:flex;flex-direction:column;overflow:hidden;');
+		root.appendChild(wrap);
+
+		// Sub-nav: Logic / Power / Scope / Combined
+		type InstrTab = 'logic' | 'power' | 'scope' | 'combined';
+		let activeInstr: InstrTab = 'logic';
+		const subTabBar = $e('div', 'display:flex;gap:2px;padding:6px 12px;background:var(--vscode-sideBar-background);border-bottom:1px solid var(--vscode-widget-border);flex-shrink:0;');
+		const content = $e('div', 'flex:1;overflow-y:auto;padding:16px;');
+		wrap.appendChild(subTabBar);
+		wrap.appendChild(content);
+
+		const subTabs: Array<{ id: InstrTab; label: string }> = [
+			{ id: 'logic',    label: 'Logic Analyzer' },
+			{ id: 'power',    label: 'Power Analyzer' },
+			{ id: 'scope',    label: 'Oscilloscope' },
+			{ id: 'combined', label: 'Combined' },
+		];
+
+		const renderContent = (tab: InstrTab): void => {
+			content.textContent = '';
+			switch (tab) {
+				case 'logic':    this._renderLogicPanel(content); break;
+				case 'power':    this._renderPowerPanel(content); break;
+				case 'scope':    this._renderScopePanel(content); break;
+				case 'combined': this._renderCombinedPanel(content); break;
+			}
+		};
+
+		const subBtns = new Map<InstrTab, HTMLButtonElement>();
+		for (const st of subTabs) {
+			const btn = $e('button', [
+				'padding:4px 12px', 'border:1px solid var(--vscode-widget-border)',
+				'border-radius:4px', 'cursor:pointer', 'font-size:11px',
+				'background:transparent', 'color:var(--vscode-foreground)',
+			].join(';')) as HTMLButtonElement;
+			btn.textContent = st.label;
+			btn.addEventListener('click', () => {
+				activeInstr = st.id;
+				subBtns.forEach((b, id) => {
+					b.style.background = id === activeInstr ? 'var(--vscode-button-background)' : 'transparent';
+					b.style.color = id === activeInstr ? 'var(--vscode-button-foreground)' : 'var(--vscode-foreground)';
+				});
+				renderContent(st.id);
+			});
+			subBtns.set(st.id, btn);
+			subTabBar.appendChild(btn);
+		}
+
+		// Activate logic by default
+		const logicBtn = subBtns.get('logic')!;
+		logicBtn.style.background = 'var(--vscode-button-background)';
+		logicBtn.style.color = 'var(--vscode-button-foreground)';
+		renderContent('logic');
+	}
+
+	private _renderLogicPanel(root: HTMLElement): void {
+		this._instrSection(root, 'Logic Analyzer', 'Capture and decode digital signals (UART, SPI, I2C, CAN, ...) using Saleae Logic 2 or Digilent WaveForms.');
+
+		// Status card
+		const statusCard = this._instrCard(root, 'Status');
+		const statusText = $t('div', 'Click Detect to check for connected analyzer.', 'font-size:11px;color:var(--vscode-descriptionForeground);');
+		statusCard.appendChild(statusText);
+		const detectBtn = this._instrBtn('Detect Analyzer');
+		detectBtn.addEventListener('click', async () => {
+			statusText.textContent = 'Detecting...';
+			try {
+				const status = await this._laSvc.detect();
+				statusText.textContent = status.connected
+					? `Connected: ${status.backend.toUpperCase()} — ${status.availableChannels} channels, max ${status.maxSampleRateMHz} MHz`
+					: `Not detected. Start Logic 2 with automation on port 10430, or connect Digilent device.`;
+			} catch (e) { statusText.textContent = `Error: ${(e as Error).message}`; }
+		});
+		statusCard.appendChild(detectBtn);
+
+		// Channel config
+		const chanCard = this._instrCard(root, 'Capture');
+		const row = $e('div', 'display:flex;gap:8px;align-items:center;flex-wrap:wrap;');
+		const durInput = this._instrInput('Duration (s)', '2', '80px');
+		const rateInput = this._instrInput('Sample rate (MHz)', '12', '100px');
+		const protoSel = $e('select', 'padding:4px 6px;font-size:11px;background:var(--vscode-input-background);color:var(--vscode-input-foreground);border:1px solid var(--vscode-input-border);border-radius:4px;') as HTMLSelectElement;
+		for (const p of ['uart', 'spi', 'i2c', 'can', 'lin']) {
+			const opt = $e('option') as HTMLOptionElement; opt.value = p; opt.textContent = p.toUpperCase(); protoSel.appendChild(opt);
+		}
+		const captureBtn = this._instrBtn('Capture + Decode');
+		const outEl = $t('pre', '', 'margin-top:8px;font-size:10px;font-family:monospace;white-space:pre-wrap;max-height:300px;overflow-y:auto;background:var(--vscode-terminal-background);padding:6px;border-radius:4px;');
+		row.appendChild($t('span', 'Duration:', 'font-size:11px;')); row.appendChild(durInput);
+		row.appendChild($t('span', 'Rate:', 'font-size:11px;')); row.appendChild(rateInput);
+		row.appendChild($t('span', 'Protocol:', 'font-size:11px;')); row.appendChild(protoSel);
+		row.appendChild(captureBtn);
+		chanCard.appendChild(row);
+		chanCard.appendChild(outEl);
+
+		captureBtn.addEventListener('click', async () => {
+			outEl.textContent = 'Capturing...';
+			try {
+				const dur = parseFloat(durInput.value) || 2;
+				const rate = (parseFloat(rateInput.value) || 12) * 1e6;
+				const capture = await this._laSvc.captureChannels(
+					[{ id: 0, label: 'CH0', threshold: 1.65, pullup: false }, { id: 1, label: 'CH1', threshold: 1.65, pullup: true }],
+					dur, rate,
+				);
+				outEl.textContent = `Captured: ${capture.captureId}\n`;
+				const frames = await this._laSvc.decodeProtocol(capture.captureId, { protocol: protoSel.value as Parameters<typeof this._laSvc.decodeProtocol>[1]['protocol'] });
+				if (frames.length === 0) {
+					outEl.textContent += 'No frames decoded.';
+				} else {
+					outEl.textContent += frames.slice(0, 30).map(f =>
+						`${f.timestamp.toFixed(6)}s  ${f.dataHex}  "${f.dataAscii}"${f.error ? '  [ERR: ' + f.error + ']' : ''}`,
+					).join('\n');
+					if (frames.length > 30) { outEl.textContent += `\n... ${frames.length - 30} more`; }
+				}
+			} catch (e) { outEl.textContent = `Error: ${(e as Error).message}`; }
+		});
+	}
+
+	private _renderPowerPanel(root: HTMLElement): void {
+		this._instrSection(root, 'Power Analyzer', 'Measure DUT current, voltage, and energy using Nordic PPK2 or Joulescope JS110/JS220.');
+
+		const statusCard = this._instrCard(root, 'Status');
+		const statusText = $t('div', 'Click Detect to find connected analyzer.', 'font-size:11px;color:var(--vscode-descriptionForeground);');
+		statusCard.appendChild(statusText);
+		const detectBtn = this._instrBtn('Detect Device');
+		detectBtn.addEventListener('click', async () => {
+			statusText.textContent = 'Detecting...';
+			const st = await this._paSvc.detect();
+			statusText.textContent = st.connected ? `Connected: ${st.device.toUpperCase()}${st.firmwareVersion ? ' v' + st.firmwareVersion : ''}` : `Not detected. Connect Nordic PPK2 or Joulescope JS110/JS220.`;
+		});
+		statusCard.appendChild(detectBtn);
+
+		const measureCard = this._instrCard(root, 'Measure');
+		const row = $e('div', 'display:flex;gap:8px;align-items:center;flex-wrap:wrap;');
+		const durInput = this._instrInput('Duration (s)', '5', '80px');
+		const voltInput = this._instrInput('Voltage (V)', '3.3', '70px');
+		const measureBtn = this._instrBtn('Measure Current');
+		const resultEl = $t('div', '', 'margin-top:8px;font-size:12px;');
+		row.appendChild($t('span', 'Duration:', 'font-size:11px;')); row.appendChild(durInput);
+		row.appendChild($t('span', 'Supply:', 'font-size:11px;')); row.appendChild(voltInput);
+		row.appendChild(measureBtn);
+		measureCard.appendChild(row);
+		measureCard.appendChild(resultEl);
+
+		measureBtn.addEventListener('click', async () => {
+			resultEl.textContent = 'Measuring...';
+			try {
+				const st = this._paSvc.getStatus();
+				const r = await this._paSvc.measure({ device: st.device, mode: 'ampere', voltageV: parseFloat(voltInput.value) || 3.3 }, parseFloat(durInput.value) || 5);
+				const fmtUa = (ua: number) => ua >= 1000 ? `${(ua/1000).toFixed(2)} mA` : `${ua.toFixed(1)} µA`;
+				resultEl.textContent = `avg: ${fmtUa(r.avgUa)}  min: ${fmtUa(r.minUa)}  max: ${fmtUa(r.maxUa)}  peak: ${fmtUa(r.peakUa)}\nenergy: ${r.energyUJ.toFixed(1)} µJ  charge: ${r.chargeUC.toFixed(1)} µC`;
+			} catch (e) { resultEl.textContent = `Error: ${(e as Error).message}`; }
+		});
+	}
+
+	private _renderScopePanel(root: HTMLElement): void {
+		this._instrSection(root, 'Oscilloscope', 'Control Siglent SDS800X HD or any LXI/SCPI scope over LAN. Discover via mDNS or set VOID_SCOPE_HOST env var.');
+
+		const statusCard = this._instrCard(root, 'Connection');
+		const statusText = $t('div', 'Click Discover to find scopes on LAN.', 'font-size:11px;color:var(--vscode-descriptionForeground);');
+		statusCard.appendChild(statusText);
+		const discoverBtn = this._instrBtn('Discover Scopes');
+		discoverBtn.addEventListener('click', async () => {
+			statusText.textContent = 'Scanning LAN for LXI scopes...';
+			const scopes = await this._scopeSvc.discover();
+			statusText.textContent = scopes.length > 0
+				? scopes.map(s => `${s.model} @ ${s.host} (${s.manufacturer})`).join('\n')
+				: 'No scopes found. Check LAN connection or set VOID_SCOPE_HOST=<ip> env var.';
+		});
+		statusCard.appendChild(discoverBtn);
+
+		const captureCard = this._instrCard(root, 'Capture');
+		const row = $e('div', 'display:flex;gap:8px;align-items:center;flex-wrap:wrap;');
+		const chInput = this._instrInput('Channel', '1', '50px');
+		const vdivInput = this._instrInput('V/div', '1.0', '70px');
+		const trigInput = this._instrInput('Trigger V', '0', '70px');
+		const captureBtn = this._instrBtn('Capture Waveform');
+		const resultEl = $t('pre', '', 'margin-top:8px;font-size:10px;font-family:monospace;white-space:pre-wrap;max-height:200px;overflow-y:auto;');
+		row.appendChild($t('span', 'CH:', 'font-size:11px;')); row.appendChild(chInput);
+		row.appendChild($t('span', 'V/div:', 'font-size:11px;')); row.appendChild(vdivInput);
+		row.appendChild($t('span', 'Trig:', 'font-size:11px;')); row.appendChild(trigInput);
+		row.appendChild(captureBtn);
+		captureCard.appendChild(row);
+		captureCard.appendChild(resultEl);
+
+		captureBtn.addEventListener('click', async () => {
+			resultEl.textContent = 'Arming trigger...';
+			try {
+				const ch = (parseInt(chInput.value) || 1) as 1|2|3|4;
+				await this._scopeSvc.configureChannel({ channel: ch, vDiv: parseFloat(vdivInput.value) || 1.0, coupling: 'DC', probe: 1, enabled: true });
+				await this._scopeSvc.configureTrigger({ source: `C${ch}`, edge: 'POS', level: parseFloat(trigInput.value) || 0, mode: 'SING' });
+				const capture = await this._scopeSvc.capture(5);
+				const wf = capture.channels[0];
+				if (!wf) { resultEl.textContent = 'No waveform data.'; return; }
+				const vMin = Math.min(...wf.voltages), vMax = Math.max(...wf.voltages);
+				const vMean = wf.voltages.reduce((a, b) => a + b, 0) / wf.voltages.length;
+				resultEl.textContent = `Capture: ${capture.captureId}\nCH${wf.channel}: ${wf.voltages.length} samples @ ${(wf.sampleRate/1e6).toFixed(1)} MHz\nPk-Pk: ${(vMax-vMin).toFixed(3)} V  Max: ${vMax.toFixed(3)} V  Min: ${vMin.toFixed(3)} V  Mean: ${vMean.toFixed(3)} V`;
+			} catch (e) { resultEl.textContent = `Error: ${(e as Error).message}`; }
+		});
+	}
+
+	private _renderCombinedPanel(root: HTMLElement): void {
+		this._instrSection(root, 'Combined Workflows', 'Multi-instrument debug scenarios that orchestrate GDB + Logic Analyzer + Power Analyzer + Oscilloscope in a single session.');
+
+		const scenarios = [
+			{ id: 'sleep-regression', label: 'Sleep Current Regression', desc: 'Power measurement + GDB non-intrusive register read + UART decode. Diagnose why sleep current increased.' },
+			{ id: 'i2c-nack',         label: 'I2C NACK Hunt',            desc: 'GDB breakpoint on error callback + triggered I2C bus capture. Find exactly which transaction NACKs.' },
+			{ id: 'brownout',         label: 'Brown-out Diagnosis',       desc: 'Oscilloscope rail check + logic analyzer on PWM/load + GDB CFSR register read without halting MCU.' },
+		];
+
+		for (const scenario of scenarios) {
+			const card = this._instrCard(root, scenario.label);
+			card.appendChild($t('div', scenario.desc, 'font-size:11px;color:var(--vscode-descriptionForeground);margin-bottom:8px;line-height:1.5;'));
+			const runBtn = this._instrBtn(`Run: ${scenario.label}`);
+			const outEl = $t('pre', '', 'margin-top:8px;font-size:10px;font-family:monospace;white-space:pre-wrap;max-height:200px;overflow-y:auto;background:var(--vscode-terminal-background);padding:6px;border-radius:4px;display:none;');
+			runBtn.addEventListener('click', async () => {
+				outEl.style.display = 'block';
+				outEl.textContent = `Running ${scenario.label}...\n`;
+				// The agent tools handle the actual multi-instrument orchestration.
+				// The UI shows the user how to invoke via the agent chat instead.
+				outEl.textContent += `\nTo run this workflow, send to the Neural Inverse agent:\n\n  fw_debug_combined({ scenario: "${scenario.id}" })\n\nThe agent will orchestrate all instruments and return a complete diagnostic report.`;
+			});
+			card.appendChild(runBtn);
+			card.appendChild(outEl);
+		}
+	}
+
+	// ─── Instrument UI helpers ────────────────────────────────────────────────
+
+	private _instrSection(root: HTMLElement, title: string, desc: string): void {
+		root.appendChild($t('h3', title, 'margin:0 0 4px;font-size:14px;font-weight:700;'));
+		root.appendChild($t('div', desc, 'font-size:11px;color:var(--vscode-descriptionForeground);margin-bottom:16px;line-height:1.5;'));
+	}
+
+	private _instrCard(root: HTMLElement, title: string): HTMLElement {
+		const card = $e('div', 'margin-bottom:16px;padding:12px;border:1px solid var(--vscode-widget-border);border-radius:6px;background:var(--vscode-sideBar-background);');
+		card.appendChild($t('div', title, 'font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;color:var(--vscode-descriptionForeground);margin-bottom:8px;'));
+		root.appendChild(card);
+		return card;
+	}
+
+	private _instrBtn(label: string): HTMLButtonElement {
+		const btn = $e('button', 'padding:5px 12px;background:var(--vscode-button-background);color:var(--vscode-button-foreground);border:none;border-radius:4px;cursor:pointer;font-size:11px;font-weight:600;') as HTMLButtonElement;
+		btn.textContent = label;
+		return btn;
+	}
+
+	private _instrInput(placeholder: string, defaultVal: string, width: string): HTMLInputElement {
+		const el = $e('input', `width:${width};padding:4px 6px;font-size:11px;background:var(--vscode-input-background);color:var(--vscode-input-foreground);border:1px solid var(--vscode-input-border,var(--vscode-widget-border));border-radius:4px;`) as HTMLInputElement;
+		el.placeholder = placeholder;
+		el.value = defaultVal;
+		return el;
 	}
 
 

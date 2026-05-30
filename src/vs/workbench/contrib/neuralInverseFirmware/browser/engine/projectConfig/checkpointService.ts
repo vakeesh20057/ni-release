@@ -26,6 +26,7 @@ import { Emitter, Event } from '../../../../../../../base/common/event.js';
 import { Disposable } from '../../../../../../../base/common/lifecycle.js';
 import { createDecorator } from '../../../../../../../platform/instantiation/common/instantiation.js';
 import { registerSingleton, InstantiationType } from '../../../../../../../platform/instantiation/common/extensions.js';
+import { IWorkspaceContextService } from '../../../../../../../platform/workspace/common/workspace.js';
 
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -101,7 +102,9 @@ class CheckpointServiceImpl extends Disposable implements ICheckpointService {
 
 	private _checkpoints: Map<string, ICheckpointDetail> = new Map();
 
-	constructor() {
+	constructor(
+		@IWorkspaceContextService private readonly _workspaceCtx: IWorkspaceContextService,
+	) {
 		super();
 		this._loadFromDisk();
 	}
@@ -109,7 +112,8 @@ class CheckpointServiceImpl extends Disposable implements ICheckpointService {
 	async createCheckpoint(label: string, filesChanged?: string[]): Promise<string> {
 		const id = `cp_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 		const fs = this._requireFS();
-		const cwd = process?.cwd?.() ?? '.';
+		const _folders = this._workspaceCtx.getWorkspace().folders;
+		const cwd = _folders.length > 0 ? _folders[0]!.uri.fsPath : (process?.cwd?.() ?? '.');
 
 		// Get changed files from git if not provided
 		let changed = filesChanged ?? [];
@@ -165,7 +169,8 @@ class CheckpointServiceImpl extends Disposable implements ICheckpointService {
 		}
 
 		const fs = this._requireFS();
-		const cwd = process?.cwd?.() ?? '.';
+		const _folders = this._workspaceCtx.getWorkspace().folders;
+		const cwd = _folders.length > 0 ? _folders[0]!.uri.fsPath : (process?.cwd?.() ?? '.');
 
 		// Restore file snapshots
 		for (const [filePath, content] of Object.entries(detail.fileSnapshots)) {
@@ -195,7 +200,8 @@ class CheckpointServiceImpl extends Disposable implements ICheckpointService {
 		}
 
 		const branch = branchName ?? `ni-fork-${checkpointId.replace('cp_', '').substring(0, 8)}`;
-		const cwd = process?.cwd?.() ?? '.';
+		const _folders = this._workspaceCtx.getWorkspace().folders;
+		const cwd = _folders.length > 0 ? _folders[0]!.uri.fsPath : (process?.cwd?.() ?? '.');
 		const fs = this._requireFS();
 
 		// Create new git branch from current HEAD
@@ -269,7 +275,8 @@ class CheckpointServiceImpl extends Disposable implements ICheckpointService {
 		const fs = this._requireFSSafe();
 		if (!fs) { return; }
 
-		const cwd = process?.cwd?.() ?? '.';
+		const _folders = this._workspaceCtx.getWorkspace().folders;
+		const cwd = _folders.length > 0 ? _folders[0]!.uri.fsPath : (process?.cwd?.() ?? '.');
 		const dir = `${cwd}/${CHECKPOINT_DIR}`;
 
 		if (!fs.existsSync(dir)) { return; }
@@ -290,7 +297,8 @@ class CheckpointServiceImpl extends Disposable implements ICheckpointService {
 		const fs = this._requireFSSafe();
 		if (!fs) { return; }
 
-		const cwd = process?.cwd?.() ?? '.';
+		const _folders = this._workspaceCtx.getWorkspace().folders;
+		const cwd = _folders.length > 0 ? _folders[0]!.uri.fsPath : (process?.cwd?.() ?? '.');
 		const dir = `${cwd}/${CHECKPOINT_DIR}`;
 
 		try {

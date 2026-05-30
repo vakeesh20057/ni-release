@@ -36,6 +36,7 @@ import { Disposable } from '../../../../../../../base/common/lifecycle.js';
 import { createDecorator } from '../../../../../../../platform/instantiation/common/instantiation.js';
 import { registerSingleton, InstantiationType } from '../../../../../../../platform/instantiation/common/extensions.js';
 import { IFirmwareSessionService } from '../../firmwareSessionService.js';
+import { IWorkspaceContextService } from '../../../../../../../platform/workspace/common/workspace.js';
 
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -99,6 +100,7 @@ class NIMdServiceImpl extends Disposable implements INIMdService {
 
 	constructor(
 		@IFirmwareSessionService private readonly _session: IFirmwareSessionService,
+		@IWorkspaceContextService private readonly _workspaceCtx: IWorkspaceContextService,
 	) {
 		super();
 		// Synchronous load attempt first (returns immediately if file exists)
@@ -362,7 +364,16 @@ class NIMdServiceImpl extends Disposable implements INIMdService {
 	}
 
 	private _getPath(): string {
-		// Use current working directory as workspace root
+		// Use VS Code workspace root (correct in extension host — not process.cwd() which is the extension dir)
+		const folders = this._workspaceCtx.getWorkspace().folders;
+		if (folders.length > 0) {
+			const root = folders[0]!.uri.fsPath;
+			const path = (globalThis as Record<string, unknown>)['require']
+				? ((globalThis as Record<string, unknown>)['require']('path') as typeof import('path'))
+				: null;
+			return path ? path.join(root, 'NI.md') : `${root}/NI.md`;
+		}
+		// Fallback: use process.cwd() only if no workspace is open
 		const cwd = process?.cwd?.() ?? '.';
 		return `${cwd}/NI.md`;
 	}

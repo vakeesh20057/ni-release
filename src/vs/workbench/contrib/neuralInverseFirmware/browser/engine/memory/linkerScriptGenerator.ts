@@ -499,9 +499,11 @@ export class LinkerScriptGenerator {
 		}
 
 		// ── AURIX TC2xx/TC3xx (TriCore) ───────────────────────────────────
-		if (fam.startsWith('TC2') || fam.startsWith('TC3') || fam.startsWith('AURIX')) {
-			// PMU flash at 0x80000000, LMU RAM at 0x70000000
-			return { flashOrigin: 0x80000000, ramOrigin: 0x70000000 };
+		// TriCore uses segmented addressing. PFlash segment A is cached at 0xA0000000.
+		// The non-cached alias is 0x80000000 (used for DMA/write). Linkers use 0xA0000000.
+		// LMU (Local Memory Unit) RAM at 0x900XXXXX; CPU0 DSPR at 0x70000000.
+		if (fam.startsWith('TC2') || fam.startsWith('TC3') || fam.startsWith('TC4') || fam.startsWith('AURIX')) {
+			return { flashOrigin: 0xA0000000, ramOrigin: 0x70000000 };
 		}
 
 		// ── Silicon Labs EFR32 / EFM32 ────────────────────────────────────
@@ -509,15 +511,159 @@ export class LinkerScriptGenerator {
 			return { flashOrigin: 0x00000000, ramOrigin: 0x20000000 };
 		}
 
-		// ── PSoC 6 ────────────────────────────────────────────────────────
-		if (fam.startsWith('PSOC') || fam.startsWith('CY8C')) {
+		// ── PSoC 4 / PSoC 6 ───────────────────────────────────────────────
+		if (fam.startsWith('PSOC 6') || fam.startsWith('CY8C6')) {
 			return { flashOrigin: 0x10000000, ramOrigin: 0x08000000 };
+		}
+		if (fam.startsWith('PSOC 4') || fam.startsWith('CY8C4')) {
+			return { flashOrigin: 0x00000000, ramOrigin: 0x20000000 };
+		}
+
+		// ── TM4C / Hercules (TI Arm-M) ────────────────────────────────────
+		if (fam.startsWith('TM4C') || fam.startsWith('HERCULES') || fam.startsWith('TMS570')) {
+			return { flashOrigin: 0x00000000, ramOrigin: 0x20000000 };
+		}
+
+		// ── MSP430 (16-bit Harvard) ───────────────────────────────────────
+		// Flash: 0xFFFF - size + 1 (top of address space), RAM: 0x0200
+		if (fam.startsWith('MSP430')) {
+			return { flashOrigin: 0xC000, ramOrigin: 0x0200 };
+		}
+
+		// ── MSP432 (Arm M4F) ─────────────────────────────────────────────
+		if (fam.startsWith('MSP432')) {
+			return { flashOrigin: 0x00000000, ramOrigin: 0x20000000 };
+		}
+
+		// ── Infineon XMC1xxx / XMC4xxx ───────────────────────────────────
+		if (fam.startsWith('XMC1')) {
+			return { flashOrigin: 0x10001000, ramOrigin: 0x20000000 }; // XMC1: ROM at 0x10001000
+		}
+		if (fam.startsWith('XMC4')) {
+			return { flashOrigin: 0x0C000000, ramOrigin: 0x20000000 }; // XMC4: Flash at 0x0C000000
+		}
+
+		// ── Ambiq Apollo ─────────────────────────────────────────────────
+		if (fam.startsWith('APOLLO') || fam.startsWith('AM')) {
+			return { flashOrigin: 0x00000000, ramOrigin: 0x10000000 };
+		}
+
+		// ── Maxim MAX32 ───────────────────────────────────────────────────
+		if (fam.startsWith('MAX32')) {
+			return { flashOrigin: 0x10000000, ramOrigin: 0x20000000 };
+		}
+
+		// ── NXP S32K / S32G ───────────────────────────────────────────────
+		if (fam.startsWith('S32K') || fam.startsWith('S32G')) {
+			return { flashOrigin: 0x00000000, ramOrigin: 0x20240000 };
+		}
+
+		// ── Nuvoton M480 / M2354 ─────────────────────────────────────────
+		if (fam.startsWith('M480') || fam.startsWith('M2354') || fam.startsWith('NUVOTON') || fam.startsWith('NUC')) {
+			return { flashOrigin: 0x00000000, ramOrigin: 0x20000000 };
+		}
+
+		// ── Renesas RL78 (16-bit Harvard) ────────────────────────────────
+		if (fam.startsWith('RL78')) {
+			return { flashOrigin: 0x00000000, ramOrigin: 0xFFE20 }; // RL78 data RAM
+		}
+
+		// ── Renesas RX ───────────────────────────────────────────────────
+		if (fam.startsWith('RX')) {
+			return { flashOrigin: 0xFFE00000, ramOrigin: 0x00000000 };
+		}
+
+		// ── WCH CH32V ─────────────────────────────────────────────────────
+		if (fam.startsWith('CH32')) {
+			return { flashOrigin: 0x08000000, ramOrigin: 0x20000000 };
+		}
+
+		// ── Puya PY32 (STM32-compatible) ─────────────────────────────────
+		if (fam.startsWith('PY32')) {
+			return { flashOrigin: 0x08000000, ramOrigin: 0x20000000 };
+		}
+
+		// ── Microchip PIC32 (MIPS32) ──────────────────────────────────────
+		if (fam.startsWith('PIC32')) {
+			return { flashOrigin: 0x9D000000, ramOrigin: 0xA0000000 }; // MIPS virtual addresses
+		}
+
+		// ── Microchip PIC18/16/24 (8/16-bit Harvard) ─────────────────────
+		if (fam.startsWith('PIC18') || fam.startsWith('PIC16') || fam.startsWith('PIC24') || fam.startsWith('DSPIC')) {
+			return { flashOrigin: 0x000000, ramOrigin: 0x000000 }; // PIC uses program memory addressing
+		}
+
+		// ── SiFive / RISC-V SoC ───────────────────────────────────────────
+		if (fam.startsWith('FE310') || fam.startsWith('FU740') || fam.startsWith('K210') || fam.startsWith('BL6')) {
+			return { flashOrigin: 0x20000000, ramOrigin: 0x80000000 };
+		}
+
+		// ── AllWinner D1 / T-Head ─────────────────────────────────────────
+		if (fam === 'D1' || fam.startsWith('ALLWINNER')) {
+			return { flashOrigin: 0x40200000, ramOrigin: 0x40000000 };
+		}
+
+		// ── TI AM33xx / AM57x / AM64x (Linux SoC) ────────────────────────
+		if (fam.startsWith('AM3') || fam.startsWith('AM5') || fam.startsWith('AM6')) {
+			// These run Linux — not bare-metal linker scripts
+			return { flashOrigin: 0x80000000, ramOrigin: 0x80000000 };
 		}
 
 		// ── GD32 (STM32-compatible) ───────────────────────────────────────
 		if (fam.startsWith('GD32')) { return { flashOrigin: 0x08000000, ramOrigin: 0x20000000 }; }
 
-		// Default: STM32-style
+		// ── NXP LPC8/17/40/43/55 + MCX ───────────────────────────────────
+		if (fam.startsWith('LPC') || fam.startsWith('MCX')) {
+			return { flashOrigin: 0x00000000, ramOrigin: 0x20000000 };
+		}
+
+		// ── Cypress FM4 (Arm M4) ──────────────────────────────────────────
+		if (fam.startsWith('FM4') || fam.startsWith('S6E')) {
+			return { flashOrigin: 0x00000000, ramOrigin: 0x1FFE0000 };
+		}
+
+		// ── SiFive FE310 / FU740 / K210 (RISC-V) ─────────────────────────
+		if (fam.startsWith('FE310')) {
+			return { flashOrigin: 0x20010000, ramOrigin: 0x80000000 }; // FE310: QSPI XIP, DTIM
+		}
+		if (fam.startsWith('FU740') || fam.startsWith('K210')) {
+			return { flashOrigin: 0x20000000, ramOrigin: 0x80000000 };
+		}
+
+		// ── Arm Cortex-M55 reference design ──────────────────────────────
+		if (fam.startsWith('M55') || fam.startsWith('CORSTONE')) {
+			return { flashOrigin: 0x10000000, ramOrigin: 0x21000000 };
+		}
+
+		// ── BL602 / BL60x / BL61x (Bouffalo Lab) ─────────────────────────
+		if (fam.startsWith('BL60') || fam.startsWith('BL61') || fam.startsWith('BL602')) {
+			return { flashOrigin: 0x23000000, ramOrigin: 0x22020000 };
+		}
+
+		// ── TI CC13xx / CC23xx / CC26xx / CC32xx (SimpleLink) ─────────────
+		if (fam.startsWith('CC13') || fam.startsWith('CC23') || fam.startsWith('CC26') || fam.startsWith('CC32')) {
+			return { flashOrigin: 0x00000000, ramOrigin: 0x20000000 };
+		}
+
+		// ── AM335x / AM57x / AM62x / AM64x / AM243x (Linux SoC) ──────────
+		// These run Linux from DDR; bare-metal startup at 0x80000000 (DDR)
+		if (fam.startsWith('AM') || fam.startsWith('BCM') || fam.startsWith('SAMA7')) {
+			return { flashOrigin: 0x80000000, ramOrigin: 0x80000000 };
+		}
+
+		// ── RP2350 (same as RP2040 XIP flash) ────────────────────────────
+		if (fam.startsWith('RP2350')) { return { flashOrigin: 0x10000000, ramOrigin: 0x20000000 }; }
+
+		// ── NXP i.MX RT (FlexSPI XIP flash) ─────────────────────────────
+		if (fam.startsWith('I.MX') || fam.startsWith('IMXRT')) { return { flashOrigin: 0x60000000, ramOrigin: 0x20200000 }; }
+
+		// ── Lattice FPGA / PolarFire (soft CPU) ──────────────────────────
+		if (fam.startsWith('MACHXO') || fam.startsWith('POLARFIRE')) { return { flashOrigin: 0x60000000, ramOrigin: 0x80000000 }; }
+
+		// ── Virtual (simulation) ─────────────────────────────────────────
+		if (fam === 'VIRTUAL') { return { flashOrigin: 0x08000000, ramOrigin: 0x20000000 }; }
+
+		// Default: STM32-style (also covers any remaining Cortex-M without explicit entry)
 		return { flashOrigin: 0x08000000, ramOrigin: 0x20000000 };
 	}
 }

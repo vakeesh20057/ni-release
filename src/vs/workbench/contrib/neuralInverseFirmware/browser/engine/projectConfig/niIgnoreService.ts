@@ -26,6 +26,7 @@ import { Emitter, Event } from '../../../../../../../base/common/event.js';
 import { Disposable } from '../../../../../../../base/common/lifecycle.js';
 import { createDecorator } from '../../../../../../../platform/instantiation/common/instantiation.js';
 import { registerSingleton, InstantiationType } from '../../../../../../../platform/instantiation/common/extensions.js';
+import { IWorkspaceContextService } from '../../../../../../../platform/workspace/common/workspace.js';
 
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -85,7 +86,9 @@ class NIIgnoreServiceImpl extends Disposable implements INIIgnoreService {
 	private _lastLoaded = 0;
 	private _watchers: Array<ReturnType<typeof import('fs').watch>> = [];
 
-	constructor() {
+	constructor(
+		@IWorkspaceContextService private readonly _workspaceCtx: IWorkspaceContextService,
+	) {
 		super();
 		this._initAsync();
 	}
@@ -141,7 +144,9 @@ class NIIgnoreServiceImpl extends Disposable implements INIIgnoreService {
 		}
 		this._watchers = [];
 
-		const cwd = process?.cwd?.() ?? '.';
+		// Use VS Code workspace root, not process.cwd() (which is the extension directory)
+		const folders = this._workspaceCtx.getWorkspace().folders;
+		const cwd = folders.length > 0 ? folders[0]!.uri.fsPath : (process?.cwd?.() ?? '.');
 		const niIgnoreFiles = this._findNIIgnoreFiles(cwd, fs, path);
 
 		for (const filePath of niIgnoreFiles) {

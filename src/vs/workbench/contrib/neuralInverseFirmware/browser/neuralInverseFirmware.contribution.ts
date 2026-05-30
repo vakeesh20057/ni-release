@@ -106,6 +106,9 @@ import './engine/peripheralCatalog/peripheralCatalogService.js';
 // Phase 8: Schematic / Pinout Visualizer
 import './engine/schematic/schematicService.js';
 
+// Phase 9: GitHub Daemon
+import './voidGitHubDaemon/gitHubDaemonService.js';
+
 // Infrastructure
 import './voidFirmwareToolsContrib.js';
 import './statusbar/firmwareStatus.contribution.js';
