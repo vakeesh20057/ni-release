@@ -47,6 +47,7 @@ import { ILogicAnalyzerService } from '../engine/instruments/logicAnalyzer/logic
 import { IPowerAnalyzerService } from '../engine/instruments/powerAnalyzer/powerAnalyzerService.js';
 import { IOscilloscopeService } from '../engine/instruments/oscilloscope/oscilloscopeService.js';
 import { ISchematicService } from '../engine/schematic/schematicService.js';
+type ISchematicPin = NonNullable<ReturnType<ISchematicService['getPinoutMap']>>['pins'][number];
 import { ICheckpointService } from '../engine/projectConfig/checkpointService.js';
 import { INIMdService } from '../engine/projectConfig/niMdService.js';
 
@@ -808,113 +809,314 @@ export class FirmwarePart extends Part {
 
 	// ─── Pin Mux Panel ────────────────────────────────────────────────────────
 
-	private _renderPinMuxPanel(root: HTMLElement, _s: IFirmwareSessionData): void {
-		const conflicts = this._pinMuxSvc.getConflicts();
+	private _renderPinMuxPanel(root: HTMLElement, s: IFirmwareSessionData): void {
+		const map = this._schematicSvc.getPinoutMap();
 
-		// Page header
-		const hdr = $e('div', 'display:flex;align-items:center;gap:10px;margin-bottom:12px;');
-		hdr.appendChild($t('span', 'Pin Mux', 'font-size:14px;font-weight:700;'));
-		hdr.appendChild($t('div', 'Detects GPIO alternate function conflicts from live source analysis. All data from loaded SVD register maps — no LLM calls.', 'font-size:12px;color:var(--vscode-descriptionForeground);line-height:1.5;'));
+		// ── Header ────────────────────────────────────────────────────────────
+		const hdr = $e('div', 'display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;flex-shrink:0;');
+		const hdrLeft = $e('div','display:flex;align-items:center;gap:8px;');
+		hdrLeft.appendChild($t('span','Pin Mux','font-size:13px;font-weight:700;'));
+		if(map){
+			hdrLeft.appendChild($t('span',`— ${map.variant} ${map.packageType} ${map.pinCount}-pin`,'font-size:11px;color:var(--vscode-descriptionForeground);'));
+		}
+		// Filter bar
+		const filterWrap = $e('div','display:flex;gap:4px;');
+		const filters = ['All','Allocated','Available','Conflicts'] as const;
+		type FilterT = typeof filters[number];
+		let activeFilter: FilterT = 'All';
+		const filterBtns: HTMLElement[] = [];
+		for(const f of filters){
+			const b = $e('div',`padding:3px 8px;font-size:10px;border-radius:3px;cursor:pointer;border:1px solid var(--vscode-widget-border);background:${f==='All'?'var(--vscode-button-background)':'transparent'};color:${f==='All'?'var(--vscode-button-foreground)':'var(--vscode-descriptionForeground)'};`);
+			b.textContent=f;
+			b.addEventListener('click',()=>{
+				activeFilter=f;
+				filterBtns.forEach((fb,i)=>{
+					fb.style.background=filters[i]===f?'var(--vscode-button-background)':'transparent';
+					fb.style.color=filters[i]===f?'var(--vscode-button-foreground)':'var(--vscode-descriptionForeground)';
+				});
+				renderDiagram();
+			});
+			filterBtns.push(b); filterWrap.appendChild(b);
+		}
+		hdr.appendChild(hdrLeft); hdr.appendChild(filterWrap);
 		root.appendChild(hdr);
 
-		// Status card
-		const statusCard = $e('div', [
-			'display:flex', 'align-items:center', 'gap:14px',
-			'padding:16px 20px', 'border-radius:8px', 'margin-bottom:20px',
-			conflicts.length === 0
-				? 'background:rgba(76,175,80,0.08);border:1px solid rgba(76,175,80,0.25);'
-				: 'background:rgba(244,135,113,0.08);border:1px solid rgba(244,135,113,0.3);',
-		].join(';'));
-		const statusDot = $e('div', `width:10px;height:10px;border-radius:50%;flex-shrink:0;background:${conflicts.length === 0 ? '#4caf50' : 'var(--vscode-errorForeground,#f48771)'};box-shadow:0 0 6px ${conflicts.length === 0 ? 'rgba(76,175,80,0.5)' : 'rgba(244,135,113,0.5)'};`);
-		const statusText = $e('div', 'flex:1;');
-		statusText.appendChild($t('div',
-			conflicts.length === 0 ? 'No pin conflicts detected' : `${conflicts.length} conflict${conflicts.length > 1 ? 's' : ''} detected`,
-			`font-size:14px;font-weight:700;color:${conflicts.length === 0 ? '#4caf50' : 'var(--vscode-errorForeground,#f48771)'};`));
-		statusText.appendChild($t('div',
-			conflicts.length === 0 ? 'All GPIO alternate function assignments are consistent' : 'Multiple peripherals claim the same GPIO pin',
-			'font-size:11px;color:var(--vscode-descriptionForeground);margin-top:2px;'));
-		statusCard.appendChild(statusDot);
-		statusCard.appendChild(statusText);
-		root.appendChild(statusCard);
+		// ── Layout: SVG diagram left, detail panel right ──────────────────────
+		const body = $e('div','display:flex;gap:10px;flex:1;overflow:hidden;min-height:0;');
+		root.appendChild(body);
 
-		if (conflicts.length > 0) {
-			for (const c of conflicts) {
-				const card = $e('div', 'border:1px solid rgba(244,135,113,0.4);border-radius:7px;padding:14px 16px;margin-bottom:10px;background:rgba(244,135,113,0.04);');
-				card.appendChild($t('div', c.message, 'font-size:12px;font-weight:600;color:var(--vscode-errorForeground,#f48771);margin-bottom:8px;'));
-				const allocGrid = $e('div', 'display:flex;flex-direction:column;gap:3px;');
-				for (const alloc of c.allocations) {
-					const row = $e('div', 'display:flex;align-items:center;gap:10px;font-size:11px;font-family:monospace;padding:3px 0;border-top:1px solid rgba(244,135,113,0.15);');
-					row.appendChild($t('span', alloc.signal, 'color:var(--vscode-foreground);min-width:120px;font-weight:600;'));
-					row.appendChild($t('span', `AF${alloc.af}`, 'color:#e0a84e;min-width:36px;'));
-					row.appendChild($t('span', alloc.source, 'color:var(--vscode-descriptionForeground);'));
-					allocGrid.appendChild(row);
+		// SVG container — square-ish, fills height
+		const svgWrap = $e('div','flex-shrink:0;position:relative;overflow:hidden;');
+		body.appendChild(svgWrap);
+
+		// Detail panel right
+		const detail = $e('div','flex:1;overflow-y:auto;font-size:11px;');
+		body.appendChild(detail);
+
+		// Tooltip
+		const tip = $e('div','position:fixed;display:none;pointer-events:none;background:var(--vscode-editorWidget-background,#1e1e1e);border:1px solid var(--vscode-focusBorder);border-radius:4px;padding:5px 9px;font-size:10px;z-index:100;max-width:200px;line-height:1.5;');
+		document.body.appendChild(tip);
+
+		const conflicts = this._pinMuxSvc.getConflicts();
+
+		const renderDiagram = () => {
+			while(svgWrap.firstChild){svgWrap.removeChild(svgWrap.firstChild);}
+			while(detail.firstChild){detail.removeChild(detail.firstChild);}
+
+			if(!map){
+				detail.appendChild($t('div','No pin data available. Load an SVD file or select an MCU with GPIO definitions.','font-size:11px;color:var(--vscode-descriptionForeground);padding:12px 0;'));
+				// Fallback: show validate + suggest forms
+				renderForms(detail);
+				return;
+			}
+
+			const PIN_COLOR: Record<string,string> = {
+				available:'#37474f', allocated:'#1b5e20', conflict:'#7f0000',
+				power:'#263238', unused:'#1a1a1a', debug:'#3e2723',
+			};
+			const PIN_TEXT: Record<string,string> = {
+				available:'rgba(255,255,255,0.30)', allocated:'#81c784',
+				conflict:'#ef9a9a', power:'rgba(255,255,255,0.15)',
+				unused:'rgba(255,255,255,0.10)', debug:'#bcaaa4',
+			};
+
+			// Filter pins
+			let pins = map.pins;
+			if(activeFilter==='Allocated') pins=pins.filter(p=>p.color==='allocated');
+			else if(activeFilter==='Available') pins=pins.filter(p=>p.color==='available');
+			else if(activeFilter==='Conflicts') pins=pins.filter(p=>p.conflict);
+
+			// Package geometry
+			const pinsPerSide = Math.ceil(map.pinCount/4);
+			const PIN_H = 22; const PIN_W = 60; const GAP = 2;
+			const bodySize = pinsPerSide*(PIN_H+GAP)+20;
+			const svgSize = bodySize + PIN_W*2 + 20;
+			svgWrap.style.width = svgSize+'px';
+			svgWrap.style.height = svgSize+'px';
+
+			const NS = 'http://www.w3.org/2000/svg';
+			const svg = document.createElementNS(NS,'svg');
+			svg.setAttribute('width',String(svgSize));
+			svg.setAttribute('height',String(svgSize));
+			svg.style.cssText='display:block;';
+
+			// IC body
+			const bodyX = PIN_W+10, bodyY = PIN_W+10;
+			const body2 = document.createElementNS(NS,'rect');
+			body2.setAttribute('x',String(bodyX)); body2.setAttribute('y',String(bodyY));
+			body2.setAttribute('width',String(bodySize)); body2.setAttribute('height',String(bodySize));
+			body2.setAttribute('rx','6'); body2.setAttribute('fill','#161b22');
+			body2.setAttribute('stroke','rgba(255,255,255,0.12)'); body2.setAttribute('stroke-width','1.5');
+			svg.appendChild(body2);
+
+			// Package label
+			const pkgLbl = document.createElementNS(NS,'text');
+			pkgLbl.setAttribute('x',String(bodyX+bodySize/2)); pkgLbl.setAttribute('y',String(bodyY+bodySize/2-8));
+			pkgLbl.setAttribute('text-anchor','middle'); pkgLbl.setAttribute('font-size','11');
+			pkgLbl.setAttribute('font-family','monospace'); pkgLbl.setAttribute('fill','rgba(255,255,255,0.25)');
+			pkgLbl.textContent = map.variant;
+			svg.appendChild(pkgLbl);
+			const pkgLbl2 = document.createElementNS(NS,'text');
+			pkgLbl2.setAttribute('x',String(bodyX+bodySize/2)); pkgLbl2.setAttribute('y',String(bodyY+bodySize/2+8));
+			pkgLbl2.setAttribute('text-anchor','middle'); pkgLbl2.setAttribute('font-size','9');
+			pkgLbl2.setAttribute('font-family','system-ui'); pkgLbl2.setAttribute('fill','rgba(255,255,255,0.18)');
+			pkgLbl2.textContent = map.packageType;
+			svg.appendChild(pkgLbl2);
+
+			// Pin 1 dot
+			const p1dot = document.createElementNS(NS,'circle');
+			p1dot.setAttribute('cx',String(bodyX+8)); p1dot.setAttribute('cy',String(bodyY+8));
+			p1dot.setAttribute('r','3'); p1dot.setAttribute('fill','rgba(255,255,255,0.25)');
+			svg.appendChild(p1dot);
+
+			const mkPin = (pin: ISchematicPin, x:number, y:number, w:number, h:number, textRight:boolean) => {
+				const inFilter = pins.includes(pin);
+				const col = inFilter ? (PIN_COLOR[pin.color]??'#37474f') : '#1a1a1a';
+				const tcol = inFilter ? (PIN_TEXT[pin.color]??'rgba(255,255,255,0.3)') : 'rgba(255,255,255,0.08)';
+
+				const g = document.createElementNS(NS,'g');
+				g.style.cursor='pointer';
+
+				const rect = document.createElementNS(NS,'rect');
+				rect.setAttribute('x',String(x)); rect.setAttribute('y',String(y));
+				rect.setAttribute('width',String(w)); rect.setAttribute('height',String(h));
+				rect.setAttribute('rx','2'); rect.setAttribute('fill',col);
+				rect.setAttribute('stroke',pin.conflict?'#ef5350':'rgba(255,255,255,0.06)');
+				rect.setAttribute('stroke-width',pin.conflict?'1.5':'0.5');
+				g.appendChild(rect);
+
+				// Pin label
+				const lbl = document.createElementNS(NS,'text');
+				lbl.setAttribute('x',String(textRight ? x+4 : x+w-4));
+				lbl.setAttribute('y',String(y+h/2+4));
+				lbl.setAttribute('text-anchor',textRight?'start':'end');
+				lbl.setAttribute('font-size','8'); lbl.setAttribute('font-family','monospace');
+				lbl.setAttribute('fill',tcol);
+				lbl.textContent = pin.portPin || String(pin.physicalPin);
+				g.appendChild(lbl);
+
+				// Hover + click
+				g.addEventListener('mouseenter',(e)=>{
+					rect.setAttribute('stroke','var(--vscode-focusBorder,#007acc)');
+					rect.setAttribute('stroke-width','1.5');
+					tip.style.display='block';
+					const lines = [`${pin.portPin} — Pin ${pin.physicalPin}`,
+						pin.primaryFunction||'No function',
+						pin.peripheral?`Peripheral: ${pin.peripheral}`:'',
+						pin.conflict?'CONFLICT: multiple peripherals':'',
+					].filter(Boolean);
+					while(tip.firstChild){tip.removeChild(tip.firstChild);}
+					for(const l of lines){tip.appendChild($t('div',l,l.includes('CONFLICT')?'color:#ef9a9a;font-weight:700;':''));}
+					tip.style.left=(e.clientX+12)+'px'; tip.style.top=(e.clientY-10)+'px';
+				});
+				g.addEventListener('mousemove',(e)=>{tip.style.left=(e.clientX+12)+'px'; tip.style.top=(e.clientY-10)+'px';});
+				g.addEventListener('mouseleave',()=>{
+					rect.setAttribute('stroke',pin.conflict?'#ef5350':'rgba(255,255,255,0.06)');
+					rect.setAttribute('stroke-width',pin.conflict?'1.5':'0.5');
+					tip.style.display='none';
+				});
+				g.addEventListener('click',()=>showPinDetail(pin));
+				svg.appendChild(g);
+			};
+
+			// Place pins around package edges
+			// Sorted by physicalPin; distribute around 4 sides
+			const sorted = [...map.pins].sort((a,b)=>a.physicalPin-b.physicalPin);
+			const sides:[number,number,number,number,boolean][] = []; // x,y,w,h,textRight
+			for(let i=0;i<sorted.length;i++){
+				const side = Math.floor(i/pinsPerSide); // 0=bottom 1=left 2=top 3=right
+				const idx = i%pinsPerSide;
+				const off = 10+idx*(PIN_H+GAP);
+				let x=0,y=0,w=PIN_W,h=PIN_H,tr=false;
+				if(side===0){x=bodyX+off;y=bodyY+bodySize;w=PIN_H;h=PIN_W;tr=false;}       // bottom: rotated
+				else if(side===1){x=bodyX-PIN_W;y=bodyY+off;tr=false;}                       // left
+				else if(side===2){x=bodyX+bodySize-off-PIN_H;y=bodyY-PIN_W;w=PIN_H;h=PIN_W;tr=false;} // top
+				else{x=bodyX+bodySize;y=bodyY+bodySize-off-PIN_H;tr=true;}                   // right
+				sides.push([x,y,w,h,tr]);
+				if(i<sorted.length) mkPin(sorted[i],x,y,w,h,tr);
+			}
+			void sides;
+
+			svgWrap.appendChild(svg);
+		};
+
+		// ── Detail pane: show pin info ────────────────────────────────────────
+		const showPinDetail = (pin: ISchematicPin) => {
+			while(detail.firstChild){detail.removeChild(detail.firstChild);}
+
+			const colorNames: Record<string,string> = {available:'Free',allocated:'Allocated',conflict:'CONFLICT',power:'Power',unused:'NC',debug:'Debug'};
+			detail.appendChild($t('div',`${pin.portPin}  —  Pin ${pin.physicalPin}`,'font-size:13px;font-weight:700;margin-bottom:6px;font-family:monospace;'));
+			const rows: [string,string][] = [
+				['Status', colorNames[pin.color]??pin.color],
+				['Primary Function', pin.primaryFunction||'—'],
+				['Peripheral', pin.peripheral||'—'],
+				['Conflict', pin.conflict?'YES — multiple peripherals assigned':'No'],
+			];
+			const grid=$e('div','display:grid;grid-template-columns:110px 1fr;gap:4px 10px;margin-bottom:12px;');
+			for(const [k,v] of rows){
+				grid.appendChild($t('div',k,'font-size:10px;color:var(--vscode-descriptionForeground);text-transform:uppercase;letter-spacing:0.05em;padding-top:1px;'));
+				grid.appendChild($t('div',v,`font-size:11px;font-family:monospace;${v==='CONFLICT'||v.startsWith('YES')?'color:#ef9a9a;font-weight:700;':''}`));
+			}
+			detail.appendChild(grid);
+
+			if(pin.conflict){
+				const confs=conflicts.filter(c=>c.allocations.some(a=>a.signal.startsWith(pin.portPin)));
+				for(const c of confs){
+					const box=$e('div','border:1px solid rgba(239,83,80,0.3);border-radius:5px;padding:8px 10px;margin-bottom:6px;background:rgba(239,83,80,0.05);');
+					box.appendChild($t('div',c.message,'font-size:10px;color:#ef9a9a;font-weight:700;margin-bottom:4px;'));
+					for(const a of c.allocations){
+						const r=$e('div','display:flex;gap:8px;font-size:10px;font-family:monospace;padding:2px 0;border-top:1px solid rgba(239,83,80,0.12);');
+						r.appendChild($t('span',a.signal,'min-width:80px;font-weight:600;'));
+						r.appendChild($t('span',`AF${a.af}`,'color:#e0a84e;min-width:28px;'));
+						r.appendChild($t('span',a.source,'color:var(--vscode-descriptionForeground);'));
+						box.appendChild(r);
+					}
+					detail.appendChild(box);
 				}
-				card.appendChild(allocGrid);
-				root.appendChild(card);
 			}
-		}
 
-		// ── Validate AF ──────────────────────────────────────────────────────
-		root.appendChild(this._hwPanelSection('Validate Alternate Function', 'Check whether a pin and AF number match the SVD assignment for a peripheral.'));
+			// Validate AF inline
+			detail.appendChild($t('div','Validate AF','font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;color:var(--vscode-descriptionForeground);margin-bottom:4px;margin-top:4px;'));
+			const vRow=$e('div','display:flex;gap:6px;align-items:flex-end;flex-wrap:wrap;');
+			const vPeriph=this._hwLabeledInput('Peripheral','e.g. USART1','','' );
+			const vAF=this._hwLabeledInput('AF','0-15','','50px');
+			vPeriph.input.style.width='100px'; vPeriph.input.style.fontSize='10px';
+			vAF.input.style.width='40px'; vAF.input.style.fontSize='10px';
+			const vBtn=this._btn('Check',true,()=>{
+				const pm=pin.portPin.match(/P?([A-K])(\d+)/);
+				if(!pm){return;}
+				const res=this._pinMuxSvc.validateAF({port:pm[1]!,pin:parseInt(pm[2]!)},vPeriph.input.value.trim().toUpperCase(),parseInt(vAF.input.value)||0);
+				while(vOut.firstChild){vOut.removeChild(vOut.firstChild);}
+				vOut.appendChild($t('div',res.message,`font-size:10px;color:${res.valid?'#81c784':'#ef9a9a'};`));
+			},'font-size:10px;padding:3px 8px;align-self:flex-end;');
+			const vOut=$e('div','margin-top:4px;');
+			vRow.appendChild(vPeriph.wrap); vRow.appendChild(vAF.wrap); vRow.appendChild(vBtn);
+			detail.appendChild(vRow); detail.appendChild(vOut);
+		};
 
-		const afRow = $e('div', 'display:flex;flex-wrap:wrap;gap:12px;align-items:flex-end;margin-bottom:12px;');
-		const pinInput = this._hwLabeledInput('Pin', 'e.g. PA9', 'PA9', '90px');
-		const periphInput = this._hwLabeledInput('Peripheral', 'e.g. USART1', 'USART1', '130px');
-		const afInput = this._hwLabeledInput('AF Number', '0–15', '7', '60px');
-		const validateBtn = this._btn('Validate', true, () => {
-			const pinStr = pinInput.input.value.trim().toUpperCase();
-			const pinMatch = pinStr.match(/^P?([A-K])(\d+)$/);
-			const out = root.querySelector<HTMLElement>('[data-af-out]')!;
-			if (!pinMatch) {
-				this._hwSetResult(out, `Invalid pin format. Use PA9, PB10, A9, etc.`, false);
-				return;
+		// Default detail: summary + conflict list
+		const renderForms = (container: HTMLElement) => {
+			if(map){
+				// Summary stats
+				const statRow=$e('div','display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap;');
+				const mkStat=(label:string,val:string,color?:string)=>{
+					const c=$e('div','border:1px solid var(--vscode-widget-border);border-radius:5px;padding:6px 10px;');
+					c.appendChild($t('div',val,`font-size:14px;font-weight:700;font-family:monospace;${color?'color:'+color:''}`));
+					c.appendChild($t('div',label,'font-size:9px;color:var(--vscode-descriptionForeground);margin-top:2px;text-transform:uppercase;letter-spacing:0.05em;'));
+					return c;
+				};
+				statRow.appendChild(mkStat('Total Pins',String(map.pinCount)));
+				statRow.appendChild(mkStat('Allocated',String(map.allocatedCount),'#81c784'));
+				statRow.appendChild(mkStat('Conflicts',String(map.conflictCount),map.conflictCount>0?'#ef9a9a':undefined));
+				container.appendChild(statRow);
 			}
-			const result = this._pinMuxSvc.validateAF(
-				{ port: pinMatch[1], pin: parseInt(pinMatch[2]) },
-				periphInput.input.value.trim().toUpperCase(),
-				parseInt(afInput.input.value),
-			);
-			this._hwSetResult(out, result.message, result.valid);
-		}, 'font-size:11px;padding:5px 14px;align-self:flex-end;');
-		afRow.appendChild(pinInput.wrap); afRow.appendChild(periphInput.wrap); afRow.appendChild(afInput.wrap); afRow.appendChild(validateBtn);
-		root.appendChild(afRow);
-		const afOut = $e('div', 'min-height:22px;font-size:12px;font-family:monospace;padding:4px 0;');
-		afOut.dataset.afOut = '';
-		root.appendChild(afOut);
-
-		// ── Suggest pins ─────────────────────────────────────────────────────
-		root.appendChild(this._hwPanelSection('Find Available Pins', 'Lists all GPIO pins that can carry a signal for a peripheral, sorted by availability.'));
-
-		const suggestRow = $e('div', 'display:flex;gap:12px;align-items:flex-end;margin-bottom:12px;');
-		const suggestPeriphIn = this._hwLabeledInput('Peripheral', 'e.g. SPI1', 'SPI1', '140px');
-		const suggestBtn = this._btn('Find Pins', true, () => {
-			const suggestions = this._pinMuxSvc.suggestPin(suggestPeriphIn.input.value.trim().toUpperCase());
-			const out = root.querySelector<HTMLElement>('[data-suggest-out]')!;
-			while (out.firstChild) { out.removeChild(out.firstChild); }
-			if (suggestions.length === 0) {
-				out.appendChild($t('div', 'No suggestions found. Load an SVD file that includes GPIO AFR register definitions.', 'font-size:12px;color:var(--vscode-descriptionForeground);padding:8px 0;'));
-				return;
+			if(conflicts.length>0){
+				container.appendChild($t('div','Conflicts','font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;color:var(--vscode-descriptionForeground);margin-bottom:4px;'));
+				for(const c of conflicts.slice(0,6)){
+					const box=$e('div','border:1px solid rgba(239,83,80,0.3);border-radius:5px;padding:7px 9px;margin-bottom:5px;background:rgba(239,83,80,0.05);cursor:pointer;');
+					box.appendChild($t('div',c.message,'font-size:10px;color:#ef9a9a;font-weight:700;'));
+					container.appendChild(box);
+				}
+			} else if(map){
+				container.appendChild($t('div','No conflicts — click any pin for details','font-size:11px;color:var(--vscode-descriptionForeground);padding:4px 0;'));
 			}
-			const tableWrap = $e('div', 'border:1px solid var(--vscode-widget-border);border-radius:6px;overflow:hidden;');
-			const tHdr = $e('div', 'display:grid;grid-template-columns:60px 50px 140px 1fr;gap:12px;padding:6px 12px;background:var(--vscode-sideBarSectionHeader-background);font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;color:var(--vscode-descriptionForeground);');
-			['Pin', 'AF', 'Signal', 'Status'].forEach(h => tHdr.appendChild($t('div', h)));
-			tableWrap.appendChild(tHdr);
-			for (const sg of suggestions.slice(0, 16)) {
-				const row = $e('div', 'display:grid;grid-template-columns:60px 50px 140px 1fr;gap:12px;padding:6px 12px;font-size:11px;font-family:monospace;border-top:1px solid var(--vscode-widget-border);');
-				row.appendChild($t('div', `P${sg.pin.port}${sg.pin.pin}`, 'font-weight:700;'));
-				row.appendChild($t('div', `AF${sg.af}`, 'color:var(--vscode-descriptionForeground);'));
-				row.appendChild($t('div', sg.signal, 'color:var(--vscode-foreground);'));
-				const avail = sg.reason === 'available';
-				row.appendChild($t('div', sg.reason, `color:${avail ? '#4caf50' : 'var(--vscode-descriptionForeground)'};font-weight:${avail ? '600' : '400'};`));
-				tableWrap.appendChild(row);
-			}
-			out.appendChild(tableWrap);
-		}, 'font-size:11px;padding:5px 14px;align-self:flex-end;');
-		suggestRow.appendChild(suggestPeriphIn.wrap); suggestRow.appendChild(suggestBtn);
-		root.appendChild(suggestRow);
-		const suggestOut = $e('div');
-		suggestOut.dataset.suggestOut = '';
-		root.appendChild(suggestOut);
+			// Find pins form
+			container.appendChild($t('div','Find Pins for Peripheral','font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;color:var(--vscode-descriptionForeground);margin-top:10px;margin-bottom:4px;'));
+			const sRow=$e('div','display:flex;gap:6px;align-items:flex-end;');
+			const sIn=this._hwLabeledInput('Peripheral','e.g. SPI1','','120px');
+			sIn.input.style.fontSize='10px';
+			const sBtn=this._btn('Find',true,()=>{
+				const sugs=this._pinMuxSvc.suggestPin(sIn.input.value.trim().toUpperCase());
+				while(sOut.firstChild){sOut.removeChild(sOut.firstChild);}
+				if(!sugs.length){sOut.appendChild($t('div','No results','font-size:10px;color:var(--vscode-descriptionForeground);'));return;}
+				const tbl=$e('div','border:1px solid var(--vscode-widget-border);border-radius:4px;overflow:hidden;margin-top:6px;');
+				const th=$e('div','display:grid;grid-template-columns:52px 34px 1fr 60px;gap:6px;padding:4px 8px;background:var(--vscode-sideBarSectionHeader-background);font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;color:var(--vscode-descriptionForeground);');
+				['Pin','AF','Signal','Status'].forEach(h=>th.appendChild($t('div',h)));
+				tbl.appendChild(th);
+				for(const sg of sugs.slice(0,12)){
+					const r=$e('div','display:grid;grid-template-columns:52px 34px 1fr 60px;gap:6px;padding:4px 8px;font-size:10px;font-family:monospace;border-top:1px solid var(--vscode-widget-border);');
+					r.appendChild($t('div',`P${sg.pin.port}${sg.pin.pin}`,'font-weight:700;'));
+					r.appendChild($t('div',`AF${sg.af}`,'color:var(--vscode-descriptionForeground);'));
+					r.appendChild($t('div',sg.signal,''));
+					const av=sg.reason==='available';
+					r.appendChild($t('div',sg.reason,`color:${av?'#81c784':'var(--vscode-descriptionForeground)'};`));
+					tbl.appendChild(r);
+				}
+				sOut.appendChild(tbl);
+			},'font-size:10px;padding:3px 8px;align-self:flex-end;');
+			const sOut=$e('div');
+			sRow.appendChild(sIn.wrap); sRow.appendChild(sBtn);
+			container.appendChild(sRow); container.appendChild(sOut);
+		};
+
+		renderDiagram();
+		renderForms(detail);
+
+		// Cleanup tooltip on destroy
+		const cleanupTip = () => { if(tip.parentNode){tip.parentNode.removeChild(tip);} };
+		root.addEventListener('disconnectedCallback' as never, cleanupTip);
+		// Fallback cleanup after 5 min
+		setTimeout(cleanupTip, 300000);
 	}
 
 	// ─── Clock Tree Panel ─────────────────────────────────────────────────────
@@ -923,218 +1125,399 @@ export class FirmwarePart extends Part {
 		const family = s.mcuConfig?.family ?? 'STM32F4';
 		const constraints = this._clockTreeSvc.getConstraints(family);
 
-		const hdr = $e('div', 'display:flex;align-items:center;gap:10px;margin-bottom:12px;');
-		hdr.appendChild($t('span', 'Clock Tree', 'font-size:14px;font-weight:700;'));
-		hdr.appendChild($t('div', `Constraint solver for ${family} PLL. Validates M/N/P/Q combinations, flash wait states, and USB/SDIO 48 MHz requirements against hardware limits.`, 'font-size:12px;color:var(--vscode-descriptionForeground);line-height:1.5;'));
+		// ── Header ────────────────────────────────────────────────────────────
+		const hdr = $e('div', 'display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;flex-shrink:0;');
+		const hdrLeft = $e('div');
+		hdrLeft.appendChild($t('span', 'Clock Tree', 'font-size:13px;font-weight:700;'));
+		hdrLeft.appendChild($t('span', ` — ${family} PLL validator & SYSCLK constraint solver`, 'font-size:11px;color:var(--vscode-descriptionForeground);margin-left:8px;'));
+		// Source badge — updated once real config is loaded
+		const srcBadge = $e('div','font-size:9px;padding:2px 7px;border-radius:3px;border:1px solid var(--vscode-widget-border);color:var(--vscode-descriptionForeground);');
+		srcBadge.textContent = 'Scanning project...';
+		hdr.appendChild(srcBadge);
 		root.appendChild(hdr);
 
-		// ── Constraint spec cards ─────────────────────────────────────────────
-		root.appendChild(this._hwPanelSection(`${family} Hardware Limits`, 'From the reference manual — these are the absolute constraints the validator enforces.'));
-		const specGrid = $e('div', 'display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:20px;');
-		const specCard = (label: string, value: string, sub?: string) => {
-			const c = $e('div', 'border:1px solid var(--vscode-widget-border);border-radius:7px;padding:12px 14px;background:var(--vscode-sideBar-background);');
-			c.appendChild($t('div', value, 'font-size:18px;font-weight:700;font-family:monospace;color:var(--vscode-editor-foreground);'));
-			c.appendChild($t('div', label, 'font-size:10px;color:var(--vscode-descriptionForeground);margin-top:3px;text-transform:uppercase;letter-spacing:0.05em;'));
-			if (sub) { c.appendChild($t('div', sub, 'font-size:10px;color:var(--vscode-descriptionForeground);margin-top:2px;opacity:0.7;')); }
-			return c;
-		};
-		specGrid.appendChild(specCard('Max SYSCLK', `${constraints.sysclkMax} MHz`));
-		specGrid.appendChild(specCard('Max APB1 / APB2', `${constraints.apb1Max} / ${constraints.apb2Max} MHz`));
-		specGrid.appendChild(specCard('VCO Range', `${constraints.vcoRange[0]}–${constraints.vcoRange[1]} MHz`, 'PLL VCO output'));
-		specGrid.appendChild(specCard('PLL Input', `${constraints.pllInputRange[0]}–${constraints.pllInputRange[1]} MHz`, `M: ${constraints.mRange[0]}–${constraints.mRange[1]}, N: ${constraints.nRange[0]}–${constraints.nRange[1]}`));
-		root.appendChild(specGrid);
-
-		// ── Validator ─────────────────────────────────────────────────────────
-		root.appendChild(this._hwPanelSection('Validate PLL Configuration', 'Enter your PLL settings to check all constraints and compute derived clocks.'));
-
-		// Derive sensible default PLL values from constraints using the solver
+		// ── Canvas block diagram ──────────────────────────────────────────────
+		// Solver fallback defaults — overwritten by real project config below
 		const defaultHse = 8;
-		const defaultSolutions = this._clockTreeSvc.solve(defaultHse, {
+		const fallbackSols = this._clockTreeSvc.solve(defaultHse, {
 			sysclkMHz: constraints.sysclkMax,
 			usb48Required: constraints.peripheralClockRequirements.some(r => r.clockSource === 'PLL48CLK'),
 		}, family, 1);
-		const best = defaultSolutions[0];
-		const defM = String(best?.pll.m ?? constraints.mRange[0]);
-		const defN = String(best?.pll.n ?? Math.round(constraints.sysclkMax * constraints.pValues[0] / defaultHse));
-		const defP = String(best?.pll.p ?? constraints.pValues[0]);
-		const defQ = String(best?.pll.q ?? constraints.qRange[0]);
-		const defApb1 = constraints.sysclkMax > constraints.apb1Max ? String(Math.ceil(constraints.sysclkMax / constraints.apb1Max)) : '1';
-		const defApb2 = constraints.sysclkMax > constraints.apb2Max ? String(Math.ceil(constraints.sysclkMax / constraints.apb2Max)) : '1';
+		const fb = fallbackSols[0];
+		const defM = fb?.pll.m ?? constraints.mRange[0];
+		const defN = fb?.pll.n ?? Math.round(constraints.sysclkMax * constraints.pValues[0] / defaultHse);
+		const defP = fb?.pll.p ?? constraints.pValues[0];
+		const defQ = fb?.pll.q ?? constraints.qRange[0];
+		const defApb1 = constraints.sysclkMax > constraints.apb1Max ? Math.ceil(constraints.sysclkMax / constraints.apb1Max) : 1;
+		const defApb2 = constraints.sysclkMax > constraints.apb2Max ? Math.ceil(constraints.sysclkMax / constraints.apb2Max) : 1;
 
-		const pllGrid = $e('div', 'display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:10px;');
-		const hseIn  = this._hwLabeledInput('HSE (MHz)', 'Crystal freq', String(defaultHse), '100%');
-		const mIn    = this._hwLabeledInput('PLLM', `${constraints.mRange[0]}–${constraints.mRange[1]}`, defM, '100%');
-		const nIn    = this._hwLabeledInput('PLLN', `${constraints.nRange[0]}–${constraints.nRange[1]}`, defN, '100%');
-		const pIn    = this._hwLabeledInput('PLLP', constraints.pValues.slice(0, 4).join('/'), defP, '100%');
-		pllGrid.appendChild(hseIn.wrap); pllGrid.appendChild(mIn.wrap); pllGrid.appendChild(nIn.wrap); pllGrid.appendChild(pIn.wrap);
-		root.appendChild(pllGrid);
+		// State for the diagram
+		type ClkState = { hse:number; m:number; n:number; p:number; q:number; ahb:number; apb1:number; apb2:number; };
+		let st: ClkState = { hse: defaultHse, m: defM, n: defN, p: defP, q: defQ, ahb: 1, apb1: defApb1, apb2: defApb2 };
 
-		const busGrid = $e('div', 'display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:14px;');
-		const qIn    = this._hwLabeledInput('PLLQ', `${constraints.qRange[0]}–${constraints.qRange[1]} (USB)`, defQ, '100%');
-		const ahbIn  = this._hwLabeledInput('AHB Prescaler', '1/2/4/8/16', '1', '100%');
-		const apb1In = this._hwLabeledInput('APB1 Prescaler', `max ${constraints.apb1Max} MHz`, defApb1, '100%');
-		const apb2In = this._hwLabeledInput('APB2 Prescaler', `max ${constraints.apb2Max} MHz`, defApb2, '100%');
-		busGrid.appendChild(qIn.wrap); busGrid.appendChild(ahbIn.wrap); busGrid.appendChild(apb1In.wrap); busGrid.appendChild(apb2In.wrap);
-		root.appendChild(busGrid);
+		const canvasWrap = $e('div', 'position:relative;width:100%;flex:1;min-height:180px;max-height:340px;');
+		const canvas = $e('canvas', 'display:block;width:100%;height:100%;') as HTMLCanvasElement;
+		canvasWrap.appendChild(canvas);
 
-		const clkOut = $e('div');
-		clkOut.dataset.clkOut = '';
+		// Floating editor overlay
+		const editor = $e('div', 'position:absolute;display:none;flex-direction:column;gap:4px;background:var(--vscode-editorWidget-background,#252526);border:1px solid var(--vscode-focusBorder);border-radius:6px;padding:8px 10px;z-index:10;min-width:110px;box-shadow:0 4px 16px rgba(0,0,0,0.4);') as HTMLDivElement;
+		const editorLabel = $t('div', '', 'font-size:9px;font-weight:700;color:var(--vscode-descriptionForeground);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:2px;');
+		const editorInput = $e('input', 'font-size:14px;font-weight:700;font-family:monospace;background:transparent;border:none;outline:none;color:var(--vscode-editor-foreground);width:80px;') as HTMLInputElement;
+		const editorHint = $t('div', '', 'font-size:9px;color:var(--vscode-descriptionForeground);margin-top:2px;');
+		editor.appendChild(editorLabel); editor.appendChild(editorInput); editor.appendChild(editorHint);
+		canvasWrap.appendChild(editor);
+		root.appendChild(canvasWrap);
 
-		const runValidate = () => {
-			const m = +mIn.input.value, n = +nIn.input.value, p = +pIn.input.value, q = +qIn.input.value;
-			const hse = +hseIn.input.value, ahb = Math.max(1, +ahbIn.input.value), apb1 = Math.max(1, +apb1In.input.value), apb2 = Math.max(1, +apb2In.input.value);
-			const out = clkOut;
-			while (out.firstChild) { out.removeChild(out.firstChild); }
-			if (!m || !n || !p || !q || !hse) {
-				out.appendChild($t('div', 'Fill in all PLL fields.', 'font-size:12px;color:var(--vscode-descriptionForeground);padding:8px 0;'));
-				return;
+		// ── Status bar below canvas ───────────────────────────────────────────
+		const statusBar = $e('div', 'display:flex;align-items:center;gap:0;border:1px solid var(--vscode-widget-border);border-radius:5px;overflow:hidden;flex-shrink:0;margin-top:10px;');
+		const statusKeys = ['SYSCLK','HCLK','APB1','APB2','PLL48','VCO','Flash WS'] as const;
+		const statusCells: Record<string, HTMLElement> = {};
+		for (const k of statusKeys) {
+			const cell = $e('div', 'flex:1;padding:8px 6px;text-align:center;border-right:1px solid var(--vscode-widget-border);');
+			const val = $t('div', '--', 'font-size:13px;font-weight:700;font-family:monospace;');
+			const lbl = $t('div', k, 'font-size:9px;color:var(--vscode-descriptionForeground);margin-top:2px;text-transform:uppercase;letter-spacing:0.05em;');
+			cell.appendChild(val); cell.appendChild(lbl);
+			statusCells[k] = val;
+			statusBar.appendChild(cell);
+		}
+		(statusBar.lastElementChild as HTMLElement).style.borderRight = 'none';
+		root.appendChild(statusBar);
+
+		// Error strip
+		const errStrip = $e('div', 'margin-top:8px;font-size:11px;min-height:18px;flex-shrink:0;');
+		root.appendChild(errStrip);
+
+		// ── Solver strip ──────────────────────────────────────────────────────
+		root.appendChild($e('div','height:10px;flex-shrink:0;'));
+		const solveHdr = $e('div','display:flex;align-items:center;gap:8px;padding:6px 0 6px;border-top:1px solid var(--vscode-widget-border);flex-shrink:0;');
+		solveHdr.appendChild($t('span','Find Configuration','font-size:11px;font-weight:600;'));
+		solveHdr.appendChild($t('span','Enter target SYSCLK — solver enumerates all valid M/N/P/Q combinations','font-size:10px;color:var(--vscode-descriptionForeground);'));
+		root.appendChild(solveHdr);
+		const solveRow = $e('div','display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;margin-top:4px;flex-shrink:0;');
+		const solveHseIn = this._hwLabeledInput('HSE (MHz)','Crystal',String(defaultHse),'80px');
+		const solveFreqIn = this._hwLabeledInput('Target SYSCLK',`max ${constraints.sysclkMax}`,String(constraints.sysclkMax),'100px');
+		const usbWrap = $e('div','display:flex;flex-direction:column;gap:3px;');
+		usbWrap.appendChild($t('label','USB 48 MHz','font-size:9px;font-weight:600;color:var(--vscode-descriptionForeground);text-transform:uppercase;letter-spacing:0.06em;'));
+		const usbCb = $e('input','cursor:pointer;') as HTMLInputElement; usbCb.type='checkbox'; usbCb.checked=true;
+		const usbLbl = $e('label','display:flex;align-items:center;gap:5px;font-size:10px;cursor:pointer;padding:4px 0;');
+		usbLbl.appendChild(usbCb); usbLbl.appendChild(document.createTextNode('Required'));
+		usbWrap.appendChild(usbLbl);
+		const findBtn = this._btn('Find Solutions', true, () => {
+			const hv=+solveHseIn.input.value, fv=+solveFreqIn.input.value;
+			while(solveOut.firstChild){solveOut.removeChild(solveOut.firstChild);}
+			if(!hv||!fv){return;}
+			const sols=this._clockTreeSvc.solve(hv,{sysclkMHz:fv,usb48Required:usbCb.checked},family);
+			if(!sols.length){solveOut.appendChild($t('div',`No solution for ${fv} MHz @ HSE=${hv} MHz`,'font-size:11px;color:var(--vscode-descriptionForeground);padding:6px 0;'));return;}
+			solveOut.appendChild($t('div',`${sols.length} solution${sols.length>1?'s':''} — click to apply:`,'font-size:10px;color:var(--vscode-descriptionForeground);margin-bottom:6px;'));
+			for(const [i,sol] of sols.slice(0,5).entries()){
+				const row=$e('div',`display:flex;align-items:center;gap:0;border:1px solid ${i===0?'var(--vscode-focusBorder)':'var(--vscode-widget-border)'};border-radius:5px;overflow:hidden;margin-bottom:5px;cursor:pointer;`);
+				const mkCell=(lbl:string,v:string)=>{const c=$e('div','padding:6px 10px;text-align:center;border-right:1px solid var(--vscode-widget-border);flex:1;');c.appendChild($t('div',v,'font-size:12px;font-weight:700;font-family:monospace;'));c.appendChild($t('div',lbl,'font-size:9px;color:var(--vscode-descriptionForeground);'));return c;};
+				row.appendChild(mkCell('M',String(sol.pll.m)));
+				row.appendChild(mkCell('N',String(sol.pll.n)));
+				row.appendChild(mkCell('P',String(sol.pll.p)));
+				row.appendChild(mkCell('Q',String(sol.pll.q)));
+				const fCell=$e('div','padding:6px 10px;text-align:center;flex:1.5;');
+				fCell.appendChild($t('div',`${sol.sysclkMHz.toFixed(0)} MHz`,'font-size:12px;font-weight:700;font-family:monospace;color:#4caf50;'));
+				fCell.appendChild($t('div','SYSCLK','font-size:9px;color:var(--vscode-descriptionForeground);'));
+				row.appendChild(fCell);
+				if(i===0){const b=$e('div','padding:6px 10px;font-size:9px;font-weight:700;color:var(--vscode-focusBorder);align-self:center;');b.textContent='BEST';row.appendChild(b);}
+				row.addEventListener('click',()=>{
+					st={...st,hse:hv,m:sol.pll.m,n:sol.pll.n,p:sol.pll.p,q:sol.pll.q};
+					drawDiagram(); updateStatus();
+				});
+				solveOut.appendChild(row);
 			}
-			const result = this._clockTreeSvc.validate({ m, n, p, q }, hse, ahb, apb1, apb2, family);
+		},'font-size:10px;padding:4px 12px;align-self:flex-end;');
+		solveRow.appendChild(solveHseIn.wrap); solveRow.appendChild(solveFreqIn.wrap); solveRow.appendChild(usbWrap); solveRow.appendChild(findBtn);
+		root.appendChild(solveRow);
+		const solveOut=$e('div','margin-top:8px;flex-shrink:0;');
+		root.appendChild(solveOut);
 
-			const resultBar = $e('div', [
-				'display:flex', 'align-items:center', 'gap:10px',
-				'padding:10px 14px', 'border-radius:6px', 'margin-bottom:10px',
-				result.valid
-					? 'background:rgba(76,175,80,0.08);border:1px solid rgba(76,175,80,0.25);'
-					: 'background:rgba(244,135,113,0.08);border:1px solid rgba(244,135,113,0.3);',
-			].join(';'));
-			const dot2 = $e('div', `width:8px;height:8px;border-radius:50%;flex-shrink:0;background:${result.valid ? '#4caf50' : 'var(--vscode-errorForeground,#f48771)'};`);
-			resultBar.appendChild(dot2);
-			resultBar.appendChild($t('span', result.valid ? 'Configuration valid' : `${result.errors.length} constraint violation${result.errors.length > 1 ? 's' : ''}`, `font-weight:700;font-size:13px;color:${result.valid ? '#4caf50' : 'var(--vscode-errorForeground,#f48771)'};`));
-			out.appendChild(resultBar);
+		// ── Canvas rendering ──────────────────────────────────────────────────
+		// Block layout (logical columns, drawn left→right):
+		// [HSE] --/M--> [PLL block: M/N/P/Q] --/P--> [SYSCLK] --/AHB--> [HCLK] --/APB1--> [APB1]
+		//                                     --/Q--> [PLL48]                   --/APB2--> [APB2]
 
-			if (result.valid) {
+		type HitBox = { x:number; y:number; w:number; h:number; key:keyof ClkState; label:string; hint:string; min:number; max:number; };
+		let hitBoxes: HitBox[] = [];
+		let activeKey: keyof ClkState | null = null;
+
+		const drawDiagram = () => {
+			const DPR = window.devicePixelRatio || 1;
+			const W = canvas.parentElement!.clientWidth;
+			const H = Math.max(180, canvasWrap.clientHeight || 220);
+			canvas.width = W * DPR; canvas.height = H * DPR;
+			canvas.style.height = H + 'px';
+			const ctx = canvas.getContext('2d')!;
+			ctx.scale(DPR, DPR);
+
+			const BG = '#0d1117';
+			const BORDER = 'rgba(255,255,255,0.12)';
+			const TEXT = 'rgba(255,255,255,0.88)';
+			const DIM = 'rgba(255,255,255,0.40)';
+			const ACCENT = '#4fc3f7';
+			const GREEN = '#4caf50';
+			const RED = '#f48771';
+			const ORANGE = '#e0a84e';
+			const PURPLE = '#ab47bc';
+			const WIRE = 'rgba(255,255,255,0.20)';
+
+			ctx.fillStyle = BG; ctx.fillRect(0, 0, W, H);
+			hitBoxes = [];
+
+			const result = this._clockTreeSvc.validate({m:st.m,n:st.n,p:st.p,q:st.q}, st.hse, st.ahb, st.apb1, st.apb2, family);
+			const cv = result.valid ? result.computedValues : null;
+			const OK = result.valid;
+
+			// ── Drawing helpers ───────────────────────────────────────────────
+			const roundRect = (x:number,y:number,w:number,h:number,stroke:string,fill='rgba(255,255,255,0.04)') => {
+				const r=6; ctx.beginPath(); ctx.moveTo(x+r,y); ctx.lineTo(x+w-r,y); ctx.arcTo(x+w,y,x+w,y+r,r); ctx.lineTo(x+w,y+h-r); ctx.arcTo(x+w,y+h,x+w-r,y+h,r); ctx.lineTo(x+r,y+h); ctx.arcTo(x,y+h,x,y+h-r,r); ctx.lineTo(x,y+r); ctx.arcTo(x,y,x+r,y,r); ctx.closePath();
+				ctx.fillStyle=fill; ctx.fill(); ctx.strokeStyle=stroke; ctx.lineWidth=1.5; ctx.stroke();
+			};
+			const node = (x:number,y:number,w:number,h:number,stroke:string,topLbl:string,mainVal:string,subLbl?:string,key?:keyof ClkState,hint?:string,kmin?:number,kmax?:number) => {
+				const isActive = key && key===activeKey;
+				const isHover = key && key===hoverKey && !isActive;
+				roundRect(x,y,w,h, isActive?ACCENT:isHover?'rgba(255,255,255,0.45)':stroke, isHover?'rgba(255,255,255,0.08)':'rgba(255,255,255,0.04)');
+				ctx.font='8px system-ui'; ctx.textAlign='center'; ctx.fillStyle=DIM; ctx.fillText(topLbl,x+w/2,y+10);
+				ctx.font='bold 11px monospace'; ctx.textAlign='center'; ctx.fillStyle=isActive?ACCENT:TEXT; ctx.fillText(mainVal,x+w/2,y+h/2+4);
+				if(subLbl){ctx.font='8px system-ui'; ctx.textAlign='center'; ctx.fillStyle=DIM; ctx.fillText(subLbl,x+w/2,y+h-5);}
+				if(key) hitBoxes.push({x,y,w,h,key,label:topLbl,hint:hint??'',min:kmin??0,max:kmax??999});
+			};
+			const divider = (x:number,y:number,val:string,stroke:string,key:keyof ClkState,hint:string,min:number,max:number) => {
+				const w=26,h=18,isActive=key===activeKey,isHover=key===hoverKey&&!isActive;
+				roundRect(x,y,w,h,isActive?ACCENT:isHover?'rgba(255,255,255,0.5)':stroke,isHover?'rgba(255,255,255,0.12)':'rgba(255,255,255,0.07)');
+				ctx.font='bold 9px monospace'; ctx.textAlign='center'; ctx.fillStyle=isActive?ACCENT:stroke; ctx.fillText('/'+val,x+w/2,y+h/2+3);
+				hitBoxes.push({x,y,w,h,key,label:key.toUpperCase(),hint,min,max});
+			};
+			const hLine = (x1:number,y:number,x2:number) => { ctx.strokeStyle=WIRE; ctx.lineWidth=1.5; ctx.setLineDash([]); ctx.beginPath(); ctx.moveTo(x1,y); ctx.lineTo(x2,y); ctx.stroke(); };
+			const elbow = (x1:number,y1:number,turnX:number,x2:number,y2:number) => {
+				ctx.strokeStyle=WIRE; ctx.lineWidth=1.5; ctx.setLineDash([]);
+				ctx.beginPath(); ctx.moveTo(x1,y1); ctx.lineTo(turnX,y1); ctx.lineTo(turnX,y2); ctx.lineTo(x2,y2); ctx.stroke();
+			};
+
+			// ── Proportional layout ───────────────────────────────────────────
+			// Rows:  mainY=110  (HSE, PLL, SYSCLK, HCLK)
+			//        apb1Y=40   (APB1 output box, top branch)
+			//        pll48Y=190 (PLL48, bottom-left branch)
+			//        apb2Y=190  (APB2 output box, bottom-right branch)
+			const mainY = Math.round(H * 0.42);
+			const apb1Y = Math.round(H * 0.06);
+			const apb2Y = Math.round(H * 0.72);
+			const pll48Y = Math.round(H * 0.72);
+			const BH = Math.round(H * 0.24); const BW = Math.max(66, Math.min(90, W * 0.085));
+			const pad = 16;
+
+			// Column x-positions as fractions of W
+			const hseX   = pad;
+			const divMX  = hseX + BW + 10;
+			const pllX   = divMX + 36;
+			const pllW   = BW + 20;
+			const pllH   = BH + 10;
+			const divPX  = pllX + pllW + 8;
+			const sysclkX = divPX + 36;
+			const divAhbX = sysclkX + BW + 10;
+			const hclkX   = divAhbX + 36;
+			// APB branches start after HCLK
+			const branchX = hclkX + BW + 10;
+			const divApb1X = branchX + 14;
+			const divApb2X = branchX + 14;
+			const apb1X   = divApb1X + 36;
+			const apb2X   = divApb2X + 36;
+			// PLL48 under PLL /Q output
+			const divQX   = pllX + pllW + 8;
+			const pll48X  = divQX + 36;
+
+			// ── Draw ──────────────────────────────────────────────────────────
+			// HSE
+			node(hseX, mainY-BH/2, BW, BH, BORDER, 'HSE', `${st.hse} MHz`, 'Crystal', 'hse', 'HSE frequency (MHz)', 1, 50);
+			hLine(hseX+BW, mainY, divMX);
+			divider(divMX, mainY-12, String(st.m), ORANGE, 'm', `PLLM (${constraints.mRange[0]}-${constraints.mRange[1]})`, constraints.mRange[0], constraints.mRange[1]);
+			hLine(divMX+34, mainY, pllX);
+
+			// PLL block — taller, shows xN multiplier + VCO
+			const pllPy = mainY - pllH/2;
+			roundRect(pllX, pllPy, pllW, pllH, OK?GREEN:RED);
+			ctx.font='8px system-ui'; ctx.textAlign='center'; ctx.fillStyle=DIM; ctx.fillText('PLL', pllX+pllW/2, pllPy+10);
+			ctx.font='bold 12px monospace'; ctx.textAlign='center'; ctx.fillStyle=OK?GREEN:RED; ctx.fillText('x'+st.n, pllX+pllW/2, pllPy+pllH/2+3);
+			const vcoMHz = st.hse/st.m*st.n;
+			ctx.font='8px system-ui'; ctx.fillStyle=DIM; ctx.fillText(`VCO ${vcoMHz.toFixed(0)} MHz`, pllX+pllW/2, pllPy+pllH-6);
+			hitBoxes.push({x:pllX,y:pllPy,w:pllW,h:pllH,key:'n',label:'PLLN',hint:`PLLN (${constraints.nRange[0]}-${constraints.nRange[1]})`,min:constraints.nRange[0],max:constraints.nRange[1]});
+
+			// /P output → SYSCLK (top output from PLL right side)
+			const pllRightX = pllX + pllW;
+			const pllTopOutY = mainY - 16;
+			hLine(pllRightX, pllTopOutY, divPX);
+			divider(divPX, pllTopOutY-12, String(st.p), ACCENT, 'p', `PLLP (${constraints.pValues.join('/')})`, constraints.pValues[0], constraints.pValues[constraints.pValues.length-1]);
+			hLine(divPX+34, pllTopOutY, sysclkX);
+
+			// SYSCLK
+			node(sysclkX, pllTopOutY-BH/2, BW, BH, OK?GREEN:RED, 'SYSCLK', cv?`${cv.sysclkMHz.toFixed(0)} MHz`:'--');
+			hLine(sysclkX+BW, pllTopOutY, divAhbX);
+			divider(divAhbX, pllTopOutY-12, String(st.ahb), WIRE, 'ahb', 'AHB Prescaler (1/2/4/8/16)', 1, 16);
+			hLine(divAhbX+34, pllTopOutY, hclkX);
+
+			// HCLK
+			node(hclkX, pllTopOutY-BH/2, BW, BH, OK?GREEN:BORDER, 'HCLK', cv?`${cv.hclkMHz.toFixed(0)} MHz`:'--');
+
+			// APB1 branch (top)
+			const sH = Math.round(BH * 0.72); // small node height
+			const hclkMidY = pllTopOutY;
+			const hclkRightX = hclkX + BW;
+			const apb1MidY = apb1Y + Math.round(sH/2);
+			const apb2MidY = apb2Y + Math.round(sH/2);
+			const pll48MidY = pll48Y + Math.round(sH/2);
+			const dW = 26; // divider width
+			elbow(hclkRightX, hclkMidY, branchX+13, divApb1X, apb1MidY);
+			divider(divApb1X, apb1MidY-9, String(st.apb1), ORANGE, 'apb1', `APB1 max ${constraints.apb1Max} MHz`, 1, 16);
+			hLine(divApb1X+dW, apb1MidY, apb1X);
+			node(apb1X, apb1Y, BW, sH, OK?GREEN:BORDER, 'APB1', cv?`${cv.apb1MHz.toFixed(0)} MHz`:'--');
+
+			// APB2 branch (bottom)
+			elbow(hclkRightX, hclkMidY, branchX+13, divApb2X, apb2MidY);
+			divider(divApb2X, apb2MidY-9, String(st.apb2), ORANGE, 'apb2', `APB2 max ${constraints.apb2Max} MHz`, 1, 16);
+			hLine(divApb2X+dW, apb2MidY, apb2X);
+			node(apb2X, apb2Y, BW, sH, OK?GREEN:BORDER, 'APB2', cv?`${cv.apb2MHz.toFixed(0)} MHz`:'--');
+
+			// /Q output → PLL48 (bottom output from PLL)
+			const pllBotOutY = mainY + Math.round(pllH * 0.28);
+			elbow(pllRightX, pllBotOutY, divQX+13, divQX, pll48MidY);
+			divider(divQX, pll48MidY-9, String(st.q), PURPLE, 'q', `PLLQ (${constraints.qRange[0]}-${constraints.qRange[1]})`, constraints.qRange[0], constraints.qRange[1]);
+			hLine(divQX+dW, pll48MidY, pll48X);
+			node(pll48X, pll48Y, BW, sH, PURPLE, 'PLL48', cv?`${cv.pll48MHz.toFixed(1)} MHz`:'--', 'USB/SDIO');
+		};
+
+		const updateStatus = () => {
+			const result = this._clockTreeSvc.validate({m:st.m,n:st.n,p:st.p,q:st.q}, st.hse, st.ahb, st.apb1, st.apb2, family);
+			while(errStrip.firstChild){errStrip.removeChild(errStrip.firstChild);}
+			if(result.valid){
 				const cv = result.computedValues;
-				const freqGrid = $e('div', 'display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:10px;');
-				const freqCard = (lbl: string, val: string, highlight?: boolean) => {
-					const c = $e('div', `border:1px solid var(--vscode-widget-border);border-radius:6px;padding:10px 12px;background:var(--vscode-sideBar-background);${highlight ? 'border-color:var(--vscode-focusBorder);' : ''}`);
-					c.appendChild($t('div', val, `font-size:15px;font-weight:700;font-family:monospace;color:${highlight ? 'var(--vscode-focusBorder)' : '#4caf50'};`));
-					c.appendChild($t('div', lbl, 'font-size:10px;color:var(--vscode-descriptionForeground);margin-top:3px;text-transform:uppercase;letter-spacing:0.05em;'));
-					return c;
-				};
-				freqGrid.appendChild(freqCard('SYSCLK', `${cv.sysclkMHz.toFixed(1)} MHz`, true));
-				freqGrid.appendChild(freqCard('HCLK', `${cv.hclkMHz.toFixed(1)} MHz`));
-				freqGrid.appendChild(freqCard('APB1 / APB2', `${cv.apb1MHz.toFixed(0)} / ${cv.apb2MHz.toFixed(0)} MHz`));
-				freqGrid.appendChild(freqCard('PLL48CLK', `${cv.pll48MHz.toFixed(2)} MHz`));
-				out.appendChild(freqGrid);
-				const meta = $e('div', 'display:flex;gap:16px;font-size:11px;font-family:monospace;color:var(--vscode-descriptionForeground);');
-				meta.appendChild($t('span', `VCO: ${cv.vcoMHz.toFixed(1)} MHz`));
-				meta.appendChild($t('span', `Flash wait states: ${cv.flashWaitStates} WS`));
-				meta.appendChild($t('span', `PLL input: ${cv.pllInputMHz.toFixed(2)} MHz`));
-				out.appendChild(meta);
+				statusCells['SYSCLK']!.textContent = `${cv.sysclkMHz.toFixed(0)} MHz`;
+				statusCells['HCLK']!.textContent   = `${cv.hclkMHz.toFixed(0)} MHz`;
+				statusCells['APB1']!.textContent   = `${cv.apb1MHz.toFixed(0)} MHz`;
+				statusCells['APB2']!.textContent   = `${cv.apb2MHz.toFixed(0)} MHz`;
+				statusCells['PLL48']!.textContent  = `${cv.pll48MHz.toFixed(2)} MHz`;
+				statusCells['VCO']!.textContent    = `${cv.vcoMHz.toFixed(0)} MHz`;
+				statusCells['Flash WS']!.textContent = `${cv.flashWaitStates} WS`;
+				for(const v of Object.values(statusCells)){v.style.color='#4caf50';}
+				statusCells['SYSCLK']!.style.color='var(--vscode-focusBorder)';
 			} else {
-				for (const e of result.errors) {
-					const errRow = $e('div', 'display:flex;align-items:baseline;gap:8px;padding:4px 0;border-bottom:1px solid var(--vscode-widget-border);font-size:11px;');
-					errRow.appendChild($t('span', e.field, 'font-weight:700;font-family:monospace;min-width:80px;color:var(--vscode-errorForeground,#f48771);'));
-					errRow.appendChild($t('span', e.message, 'color:var(--vscode-foreground);'));
-					out.appendChild(errRow);
+				for(const v of Object.values(statusCells)){v.textContent='--';v.style.color='var(--vscode-descriptionForeground)';}
+				for(const e of result.errors.slice(0,3)){
+					const row=$e('div','font-size:10px;color:#f48771;padding:1px 0;');
+					row.appendChild($t('span',e.field+': ','font-weight:700;font-family:monospace;'));
+					row.appendChild($t('span',e.message,''));
+					errStrip.appendChild(row);
 				}
-			}
-			for (const w of result.warnings) {
-				out.appendChild($t('div', `Warning: ${w.message}`, 'font-size:11px;color:#e0a84e;padding:3px 0;'));
 			}
 		};
 
-		const validateBtn = this._btn('Validate', true, runValidate, 'font-size:11px;padding:5px 14px;');
-		root.appendChild(validateBtn);
-		root.appendChild($e('div', 'height:12px;'));
-		root.appendChild(clkOut);
+		// Hit testing + click to edit
+		const getHit = (mx:number,my:number) => hitBoxes.find(b=>mx>=b.x&&mx<=b.x+b.w&&my>=b.y&&my<=b.y+b.h) ?? null;
 
-		// ── Solver ────────────────────────────────────────────────────────────
-		root.appendChild(this._hwPanelSection('Find PLL Configuration', 'Enter a target SYSCLK and let the solver enumerate all valid M/N/P/Q combinations.'));
+		// Tooltip element
+		const tooltip = $e('div', 'position:absolute;display:none;pointer-events:none;background:var(--vscode-editorWidget-background,#252526);border:1px solid var(--vscode-widget-border);border-radius:4px;padding:4px 8px;font-size:10px;color:var(--vscode-foreground);z-index:20;white-space:nowrap;');
+		canvasWrap.appendChild(tooltip);
 
-		const solveRow = $e('div', 'display:flex;flex-wrap:wrap;gap:12px;align-items:flex-end;margin-bottom:14px;');
-		const solveHse  = this._hwLabeledInput('HSE (MHz)', 'Crystal freq', String(defaultHse), '100px');
-		const solveFreq = this._hwLabeledInput('Target SYSCLK', `max ${constraints.sysclkMax}`, String(constraints.sysclkMax), '110px');
-		const usbWrap = $e('div', 'display:flex;flex-direction:column;gap:4px;');
-		usbWrap.appendChild($t('label', 'Requirement', 'font-size:10px;font-weight:600;color:var(--vscode-descriptionForeground);text-transform:uppercase;letter-spacing:0.06em;'));
-		const usbCb = $e('input', 'margin:0;cursor:pointer;') as HTMLInputElement;
-		usbCb.type = 'checkbox'; usbCb.checked = true;
-		const usbLabel = $e('label', 'display:flex;align-items:center;gap:6px;font-size:11px;cursor:pointer;padding:5px 0;');
-		usbLabel.appendChild(usbCb);
-		usbLabel.appendChild(document.createTextNode('USB requires 48 MHz'));
-		usbWrap.appendChild(usbLabel);
-		const solveBtn = this._btn('Find Solutions', true, () => {
-			const hseVal = +solveHse.input.value, freqVal = +solveFreq.input.value;
-			const solveOut = root.querySelector<HTMLElement>('[data-solve-out]')!;
-			while (solveOut.firstChild) { solveOut.removeChild(solveOut.firstChild); }
-			if (!hseVal || !freqVal || isNaN(hseVal) || isNaN(freqVal)) {
-				solveOut.appendChild($t('div', 'Enter valid HSE and target SYSCLK values.', 'font-size:12px;color:var(--vscode-errorForeground,#f48771);'));
-				return;
+		let hoverKey: string | null = null;
+		canvas.addEventListener('mousemove', (e) => {
+			const rect=canvas.getBoundingClientRect(); const mx=(e.clientX-rect.left)*(canvas.width/rect.width/window.devicePixelRatio), my=(e.clientY-rect.top)*(canvas.height/rect.height/window.devicePixelRatio);
+			const hit=getHit(mx,my);
+			canvas.style.cursor = hit ? 'pointer' : 'default';
+			if(hit?.key !== hoverKey){ hoverKey = hit?.key ?? null; drawDiagram(); }
+			if(hit){
+				tooltip.textContent = hit.hint || hit.label;
+				tooltip.style.display='block';
+				tooltip.style.left=`${e.clientX-rect.left+10}px`;
+				tooltip.style.top=`${e.clientY-rect.top-28}px`;
+			} else {
+				tooltip.style.display='none';
 			}
-			const solutions = this._clockTreeSvc.solve(hseVal, { sysclkMHz: freqVal, usb48Required: usbCb.checked }, family);
-			if (solutions.length === 0) {
-				solveOut.appendChild($t('div', `No valid PLL configuration found for ${freqVal} MHz (HSE=${hseVal} MHz).`, 'font-size:12px;color:var(--vscode-descriptionForeground);padding:8px 0;'));
-				return;
-			}
-			solveOut.appendChild($t('div', `${solutions.length} valid configuration${solutions.length > 1 ? 's' : ''} — sorted by VCO quality:`, 'font-size:11px;color:var(--vscode-descriptionForeground);margin-bottom:10px;'));
-			for (const [i, sol] of solutions.entries()) {
-				const card = $e('div', [
-					'border:1px solid var(--vscode-widget-border)', 'border-radius:7px',
-					'padding:12px 14px', 'margin-bottom:8px',
-					i === 0 ? 'border-color:var(--vscode-focusBorder);background:rgba(0,127,212,0.04);' : 'background:var(--vscode-sideBar-background);',
-				].join(';'));
+		});
+		canvas.addEventListener('mouseleave', () => { tooltip.style.display='none'; hoverKey=null; drawDiagram(); });
 
-				if (i === 0) {
-					const bestBadge = $e('div', 'display:inline-block;font-size:9px;font-weight:700;color:var(--vscode-focusBorder);border:1px solid var(--vscode-focusBorder);border-radius:3px;padding:1px 6px;margin-bottom:8px;');
-					bestBadge.textContent = 'RECOMMENDED';
-					card.appendChild(bestBadge);
+		canvas.addEventListener('click', (e) => {
+			const rect=canvas.getBoundingClientRect(); const mx=e.clientX-rect.left, my=e.clientY-rect.top;
+			const hit=getHit(mx,my);
+			if(!hit){ editor.style.display='none'; activeKey=null; drawDiagram(); return; }
+			activeKey=hit.key;
+			editorLabel.textContent=hit.label;
+			editorInput.value=String(st[hit.key]);
+			editorHint.textContent=hit.hint;
+			// Position editor above/below the block
+			const cx=hit.x+hit.w/2; const cy=hit.y;
+			editor.style.display='flex';
+			editor.style.left=`${Math.min(cx-55, canvas.offsetWidth-130)}px`;
+			editor.style.top=`${Math.max(cy-70,4)}px`;
+			editorInput.focus(); editorInput.select();
+			drawDiagram();
+		});
+
+		editorInput.addEventListener('keydown', (e) => {
+			if(e.key==='Enter'||e.key==='Escape'){
+				if(e.key==='Enter'&&activeKey){
+					const v=parseFloat(editorInput.value);
+					if(!isNaN(v)){
+						const hit=hitBoxes.find(b=>b.key===activeKey);
+						if(hit){ (st as Record<string,number>)[activeKey]=Math.round(Math.min(hit.max,Math.max(hit.min,v))); }
+					}
 				}
-
-				const pllRow = $e('div', 'display:flex;gap:0;margin-bottom:10px;border:1px solid var(--vscode-widget-border);border-radius:5px;overflow:hidden;');
-				const pllVal = (label: string, val: string) => {
-					const cell = $e('div', 'flex:1;padding:8px 0;text-align:center;border-right:1px solid var(--vscode-widget-border);');
-					cell.appendChild($t('div', val, 'font-size:16px;font-weight:700;font-family:monospace;'));
-					cell.appendChild($t('div', label, 'font-size:9px;color:var(--vscode-descriptionForeground);margin-top:2px;text-transform:uppercase;letter-spacing:0.05em;'));
-					return cell;
-				};
-				const lastCell = pllVal('PLLQ', String(sol.pll.q));
-				lastCell.style.borderRight = 'none';
-				pllRow.appendChild(pllVal('PLLM', String(sol.pll.m)));
-				pllRow.appendChild(pllVal('PLLN', String(sol.pll.n)));
-				pllRow.appendChild(pllVal('PLLP', String(sol.pll.p)));
-				pllRow.appendChild(lastCell);
-				card.appendChild(pllRow);
-
-				const freqMeta = $e('div', 'display:flex;flex-wrap:wrap;gap:14px;font-size:11px;font-family:monospace;margin-bottom:10px;');
-				const fv = (k: string, v: string, accent?: boolean) => { const s = $e('span'); s.appendChild($t('span', k + ' ', 'color:var(--vscode-descriptionForeground);')); s.appendChild($t('span', v, accent ? 'font-weight:700;color:#4caf50;' : 'font-weight:600;')); freqMeta.appendChild(s); };
-				fv('SYSCLK', `${sol.sysclkMHz.toFixed(1)} MHz`, true);
-				fv('PLL48', `${(sol.pll48MHz ?? 0).toFixed(2)} MHz`);
-				fv('VCO', `${sol.vcoMHz.toFixed(1)} MHz`);
-				fv('Flash WS', String(sol.flashWaitStates));
-				card.appendChild(freqMeta);
-
-				const cCode = `RCC->PLLCFGR = RCC_PLLCFGR_PLLSRC_HSE\n    | (${sol.pll.m} << RCC_PLLCFGR_PLLM_Pos)\n    | (${sol.pll.n} << RCC_PLLCFGR_PLLN_Pos)\n    | (${(sol.pll.p / 2 - 1)} << RCC_PLLCFGR_PLLP_Pos)\n    | (${sol.pll.q} << RCC_PLLCFGR_PLLQ_Pos);`;
-				const codeBlock = $e('pre', [
-					'margin:0', 'padding:8px 10px', 'border-radius:5px',
-					'background:var(--vscode-editor-background)', 'font-size:10px',
-					'font-family:var(--vscode-editor-font-family,monospace)', 'color:var(--vscode-editor-foreground)',
-					'border:1px solid var(--vscode-widget-border)', 'white-space:pre', 'overflow-x:auto',
-				].join(';'));
-				codeBlock.textContent = cCode;
-				card.appendChild(codeBlock);
-
-				const copyBtn = this._btn('Copy C', false, () => { navigator.clipboard.writeText(cCode); copyBtn.textContent = 'Copied!'; setTimeout(() => copyBtn.textContent = 'Copy C', 2000); }, 'font-size:10px;padding:3px 10px;margin-top:8px;');
-				card.appendChild(copyBtn);
-				solveOut.appendChild(card);
+				editor.style.display='none'; activeKey=null;
+				drawDiagram(); updateStatus();
 			}
-		}, 'font-size:11px;padding:5px 14px;align-self:flex-end;');
-		solveRow.appendChild(solveHse.wrap); solveRow.appendChild(solveFreq.wrap); solveRow.appendChild(usbWrap); solveRow.appendChild(solveBtn);
-		root.appendChild(solveRow);
-		const solveOut = $e('div');
-		solveOut.dataset.solveOut = '';
-		root.appendChild(solveOut);
+		});
 
-		// Auto-validate on load with default values
-		runValidate();
+		editorInput.addEventListener('blur', () => {
+			if(activeKey){
+				const v=parseFloat(editorInput.value);
+				if(!isNaN(v)){
+					const hit=hitBoxes.find(b=>b.key===activeKey);
+					if(hit){ (st as Record<string,number>)[activeKey]=Math.round(Math.min(hit.max,Math.max(hit.min,v))); }
+				}
+			}
+			editor.style.display='none'; activeKey=null;
+			drawDiagram(); updateStatus();
+		});
+
+		// Initial render + resize
+		const ro = new ResizeObserver(() => { drawDiagram(); });
+		ro.observe(canvasWrap);
+		drawDiagram(); updateStatus();
+
+		// ── Async: read real PLL config from project files ────────────────────
+		this._clockTreeSvc.readProjectClockConfig().then(cfg => {
+			if (!cfg) {
+				srcBadge.textContent = 'No project config — solver defaults';
+				srcBadge.style.color = 'var(--vscode-descriptionForeground)';
+				return;
+			}
+			// Apply real values — only override fields we actually found
+			if (cfg.hseMHz !== undefined) { st.hse  = cfg.hseMHz; }
+			if (cfg.m      !== undefined) { st.m    = cfg.m; }
+			if (cfg.n      !== undefined) { st.n    = cfg.n; }
+			if (cfg.p      !== undefined) { st.p    = cfg.p; }
+			if (cfg.q      !== undefined) { st.q    = cfg.q; }
+			if (cfg.ahbPrescaler  !== undefined) { st.ahb  = cfg.ahbPrescaler; }
+			if (cfg.apb1Prescaler !== undefined) { st.apb1 = cfg.apb1Prescaler; }
+			if (cfg.apb2Prescaler !== undefined) { st.apb2 = cfg.apb2Prescaler; }
+			// Update source badge
+			const fname = cfg.sourceFile ? cfg.sourceFile.split('/').pop()! : 'project file';
+			srcBadge.textContent = `From ${fname} (${cfg.confidence} confidence)`;
+			srcBadge.style.borderColor = cfg.confidence === 'high' ? 'rgba(76,175,80,0.4)' : 'rgba(224,168,78,0.4)';
+			srcBadge.style.color = cfg.confidence === 'high' ? '#81c784' : '#e0a84e';
+			drawDiagram(); updateStatus();
+		}).catch(() => {
+			srcBadge.textContent = 'Could not scan project';
+		});
 	}
 
 	// ─── Memory Panel ─────────────────────────────────────────────────────────
 
 	private _renderMemoryPanel(root: HTMLElement, s: IFirmwareSessionData): void {
-		const hdr = $e('div', 'display:flex;align-items:center;gap:10px;margin-bottom:12px;');
-		hdr.appendChild($t('span', 'Memory & Linker', 'font-size:14px;font-weight:700;'));
-		hdr.appendChild($t('div', 'Complete memory region overview with DMA-access hazard warnings, plus a generated GNU .ld linker script from the MCU hardware map.', 'font-size:12px;color:var(--vscode-descriptionForeground);line-height:1.5;'));
+		const hdr = $e('div', 'display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;flex-shrink:0;');
+		const hdrLeft = $e('div');
+		hdrLeft.appendChild($t('span', 'Memory & Linker', 'font-size:13px;font-weight:700;'));
+		hdrLeft.appendChild($t('span', ' — DMA-access hazard warnings + GNU .ld generator', 'font-size:11px;color:var(--vscode-descriptionForeground);margin-left:8px;'));
+		hdr.appendChild(hdrLeft);
 		root.appendChild(hdr);
 
 		if (!s.mcuConfig) {
@@ -1146,24 +1529,225 @@ export class FirmwarePart extends Part {
 		const rtos = s.rtos ?? 'none';
 		const family = mcu.family.toUpperCase();
 
-		// ── Memory stats ───────────────────────────────────────────────────────
-		const statRow = $e('div', 'display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:20px;');
-		const memStat = (label: string, size: number, origin: string) => {
-			const c = $e('div', 'border:1px solid var(--vscode-widget-border);border-radius:7px;padding:14px 16px;background:var(--vscode-sideBar-background);');
-			const top = $e('div', 'display:flex;align-items:baseline;gap:8px;margin-bottom:6px;');
-			top.appendChild($t('span', _fmt(size), 'font-size:22px;font-weight:700;font-family:monospace;'));
-			top.appendChild($t('span', label, 'font-size:11px;color:var(--vscode-descriptionForeground);text-transform:uppercase;letter-spacing:0.05em;'));
+		// ── Canvas memory map bar — driven by real .map file ─────────────────
+		const flashOrigin = this._memoryLayoutSvc.getFlashOrigin();
+		const ramOrigin   = this._memoryLayoutSvc.getRamOrigin();
+
+		// Section color palette
+		const SECT_COLOR: Record<string,string> = {
+			'.isr_vector':'#546e7a', '.text':'#1565c0', '.rodata':'#00695c',
+			'.data':'#e65100', '.bss':'#6a1b9a', '.heap':'#1b5e20',
+			'.stack':'#b71c1c', '.heap+stack':'#7b1fa2', 'other':'#37474f', 'free':'#1a2332',
+		};
+
+		type MemSect = { label:string; size:number; color:string; };
+
+		const barCanvas = $e('canvas','display:block;width:100%;flex-shrink:0;') as HTMLCanvasElement;
+		const barTip = $e('div','position:fixed;display:none;pointer-events:none;background:var(--vscode-editorWidget-background,#1e1e1e);border:1px solid var(--vscode-widget-border);border-radius:4px;padding:4px 8px;font-size:10px;z-index:100;');
+		document.body.appendChild(barTip);
+		const cleanupBarTip=()=>{if(barTip.parentNode){barTip.parentNode.removeChild(barTip);}};
+		setTimeout(cleanupBarTip, 300000);
+
+		// State: null = loading, budget = parsed, 'none' = no map file
+		let budget: import('../engine/memory/mapFileParser.js').IParsedMapFile | null | 'none' = null;
+		let flashSects: MemSect[] = [];
+		let ramSects:   MemSect[] = [];
+
+		const buildSects = (regions: import('../engine/memory/memoryTypes.js').IRegionBudget[], total: number, isFlash: boolean): MemSect[] => {
+			const out: MemSect[] = [];
+			let used = 0;
+			// Group by category
+			const cats = new Map<string,number>();
+			for (const r of regions) {
+				for (const sec of r.sections) {
+					// Categorise
+					let cat = sec.name;
+					if (sec.name.startsWith('.text') || sec.name.startsWith('.init') || sec.name.startsWith('.fini') || sec.name.startsWith('.ARM.ex')) cat = sec.name.startsWith('.rodata') || sec.name.startsWith('.ARM') ? '.rodata' : '.text';
+					if (sec.name.startsWith('.rodata')) cat = '.rodata';
+					if (sec.name.startsWith('.isr_vector')) cat = '.isr_vector';
+					if (sec.name.startsWith('.data') || sec.name.startsWith('.fast') || sec.name.startsWith('.ram')) cat = '.data';
+					if (sec.name.startsWith('.bss') || sec.name.startsWith('.noinit')) cat = '.bss';
+					if (sec.name.includes('heap')) cat = '.heap';
+					if (sec.name.includes('stack') || sec.name.includes('Stack')) cat = '.stack';
+					cats.set(cat, (cats.get(cat)??0) + sec.size);
+					used += sec.size;
+				}
+			}
+			const order = isFlash ? ['.isr_vector','.text','.rodata','other'] : ['.data','.bss','.heap','.stack','other'];
+			for (const lbl of order) {
+				const sz = cats.get(lbl)??0;
+				if (sz > 0) { out.push({label:lbl, size:sz, color:SECT_COLOR[lbl]??'#37474f'}); cats.delete(lbl); }
+			}
+			// Remaining categories
+			for (const [lbl,sz] of cats) {
+				if (sz > 0) out.push({label:lbl, size:sz, color:SECT_COLOR[lbl]??'#37474f'});
+			}
+			const free = total - used;
+			if (free > 0) out.push({label:'free', size:free, color:'#1a2332'});
+			return out;
+		};
+
+		const drawBar = () => {
+			const DPR = window.devicePixelRatio||1;
+			const W = barCanvas.parentElement?.clientWidth||600;
+			const isLoading = budget === null;
+			const noMap     = budget === 'none';
+			const H = noMap ? 48 : 90;
+			barCanvas.width=W*DPR; barCanvas.height=H*DPR; barCanvas.style.height=H+'px';
+			const ctx = barCanvas.getContext('2d')!;
+			ctx.scale(DPR,DPR);
+			ctx.fillStyle='#0d1117'; ctx.fillRect(0,0,W,H);
+
+			if (isLoading) {
+				ctx.fillStyle='rgba(255,255,255,0.3)'; ctx.font='11px system-ui'; ctx.textAlign='center';
+				ctx.fillText('Scanning for .map file...', W/2, H/2+4);
+				return;
+			}
+			if (noMap) {
+				ctx.fillStyle='rgba(255,255,255,0.25)'; ctx.font='10px system-ui'; ctx.textAlign='center';
+				ctx.fillText('No .map file found — build the project or drag a .map file here', W/2, H/2+4);
+				ctx.strokeStyle='rgba(255,255,255,0.06)'; ctx.lineWidth=1; ctx.strokeRect(0,0,W,H);
+				return;
+			}
+
+			const barH=22; const pad=8; const lblW=52; const barW=W-lblW-pad*2-40;
+
+			const drawRow = (label:string, total:number, sects:MemSect[], y:number, usedBytes:number) => {
+				ctx.fillStyle='rgba(255,255,255,0.55)'; ctx.font='bold 9px system-ui'; ctx.textAlign='right';
+				ctx.fillText(label, lblW-4, y+barH/2+3);
+				let x = lblW+pad;
+				for(const sec of sects){
+					const sw = Math.round((sec.size/total)*barW);
+					if(sw<1) continue;
+					ctx.fillStyle=sec.color; ctx.fillRect(x,y,sw,barH);
+					if(sw>28){
+						ctx.fillStyle='rgba(255,255,255,0.75)'; ctx.font='8px monospace'; ctx.textAlign='center';
+						ctx.fillText(sec.label, x+sw/2, y+barH/2+3);
+					}
+					x+=sw;
+				}
+				ctx.strokeStyle='rgba(255,255,255,0.12)'; ctx.lineWidth=0.5;
+				ctx.strokeRect(lblW+pad, y, barW, barH);
+				// Usage text: "12.4 KB / 64 KB (19%)"
+				const pct = total>0?Math.round(usedBytes/total*100):0;
+				ctx.fillStyle='rgba(255,255,255,0.45)'; ctx.font='8px monospace'; ctx.textAlign='left';
+				ctx.fillText(`${_fmt(usedBytes)} / ${_fmt(total)} (${pct}%)`, lblW+pad+barW+6, y+barH/2+3);
+			};
+
+			const bud = budget as import('../engine/memory/mapFileParser.js').IParsedMapFile;
+			const flashReg = bud.flashRegions[0];
+			const ramReg   = bud.ramRegions[0];
+			if (flashReg) drawRow('FLASH', flashReg.size, flashSects, pad, flashReg.used);
+			if (ramReg)   drawRow('RAM',   ramReg.size,   ramSects,   pad+(flashReg?barH+10:0), ramReg.used);
+
+			// Legend
+			const allSects = [...flashSects, ...ramSects].filter(s=>s.label!=='free');
+			const seen = new Set<string>();
+			const unique = allSects.filter(s=>{ if(seen.has(s.label))return false; seen.add(s.label); return true; });
+			let lx = lblW+pad; const ly = pad+(flashReg?barH+10:0)+(ramReg?barH:0)+12;
+			ctx.font='8px system-ui';
+			for(const s of unique){
+				ctx.fillStyle=s.color; ctx.fillRect(lx,ly,8,8);
+				ctx.fillStyle='rgba(255,255,255,0.45)'; ctx.textAlign='left';
+				ctx.fillText(s.label, lx+10, ly+7);
+				lx+=ctx.measureText(s.label).width+22;
+				if (lx > W-60) break;
+			}
+		};
+
+		// Hover hit-test
+		barCanvas.addEventListener('mousemove',(e)=>{
+			if(budget===null||budget==='none'){return;}
+			const bud = budget as import('../engine/memory/mapFileParser.js').IParsedMapFile;
+			const r=barCanvas.getBoundingClientRect();
+			const mx=(e.clientX-r.left); const my=(e.clientY-r.top);
+			const pad=8; const lblW=52; const barW=(barCanvas.offsetWidth||600)-lblW-pad*2-40;
+			const flashReg=bud.flashRegions[0]; const ramReg=bud.ramRegions[0];
+			const rows: [MemSect[],number,number][] = [];
+			if(flashReg) rows.push([flashSects,flashReg.size,pad]);
+			if(ramReg)   rows.push([ramSects,  ramReg.size,  pad+(flashReg?22+10:0)]);
+			let hit: MemSect|null=null; let total=0;
+			for(const [sects,tot,ry] of rows){
+				if(my>=ry&&my<=ry+22&&mx>=lblW+pad&&mx<=lblW+pad+barW){
+					let x=lblW+pad; total=tot;
+					for(const sec of sects){
+						const sw=Math.round((sec.size/tot)*barW);
+						if(mx>=x&&mx<=x+sw){hit=sec; break;}
+						x+=sw;
+					}
+				}
+			}
+			if(hit){barTip.textContent=`${hit.label}: ${_fmt(hit.size)} (${Math.round(hit.size/total*100)}%)`;barTip.style.display='block';barTip.style.left=(e.clientX+12)+'px';barTip.style.top=(e.clientY-24)+'px';}
+			else{barTip.style.display='none';}
+		});
+		barCanvas.addEventListener('mouseleave',()=>{barTip.style.display='none';});
+
+		// Drop zone: accept .map files dragged onto canvas
+		barCanvas.addEventListener('dragover',(e)=>{e.preventDefault();});
+		barCanvas.addEventListener('drop',(e)=>{
+			e.preventDefault();
+			const file=e.dataTransfer?.files[0];
+			if(!file||!file.name.endsWith('.map')){return;}
+			const reader=new FileReader();
+			reader.onload=()=>{
+				const { parseMapFile: pmf, groupSectionsForChart: gsc } = (globalThis as Record<string,unknown>)['__niMapParser'] as never ?? {};
+				void pmf; void gsc;
+				// inline parse since we can't async import here
+				import('../engine/memory/mapFileParser.js').then(mod=>{
+					const bud2 = mod.parseMapFile(String(reader.result), mcu.flashSize, mcu.ramSize);
+					const synth = {flashRegions:bud2.regions.filter(r=>r.name.toUpperCase().includes('FLASH')||r.origin<0x20000000), ramRegions:bud2.regions.filter(r=>r.name.toUpperCase().includes('RAM')||r.origin>=0x20000000), warnings:bud2.warnings};
+					budget = synth as never;
+					flashSects = buildSects(synth.flashRegions, mcu.flashSize, true);
+					ramSects   = buildSects(synth.ramRegions,   mcu.ramSize,   false);
+					drawBar();
+					// update usage bars in stat row
+					updateUsageBars(bud2.totalFlashUsed, mcu.flashSize, bud2.totalRAMUsed, mcu.ramSize);
+				}).catch(()=>{});
+			};
+			reader.readAsText(file);
+		});
+
+		root.appendChild(barCanvas);
+		const roBar=new ResizeObserver(()=>drawBar()); roBar.observe(barCanvas.parentElement!);
+		drawBar(); // show loading state
+
+		// Async: scan workspace for .map file
+		this._memoryLayoutSvc.parseWorkspaceMapFile().then(bud2=>{
+			if(!bud2){ budget='none'; drawBar(); return; }
+			const synth = {flashRegions:bud2.regions.filter(r=>r.name.toUpperCase().includes('FLASH')||r.origin<0x20000000), ramRegions:bud2.regions.filter(r=>r.name.toUpperCase().includes('RAM')||r.origin>=0x20000000), warnings:bud2.warnings};
+			budget = synth as never;
+			flashSects = buildSects(synth.flashRegions, mcu.flashSize, true);
+			ramSects   = buildSects(synth.ramRegions,   mcu.ramSize,   false);
+			drawBar();
+			updateUsageBars(bud2.totalFlashUsed, mcu.flashSize, bud2.totalRAMUsed, mcu.ramSize);
+		}).catch(()=>{ budget='none'; drawBar(); });
+
+		// ── Compact stats row ─────────────────────────────────────────────────
+		let flashUsedBar: HTMLElement, ramUsedBar: HTMLElement;
+		const updateUsageBars = (flashUsed:number, flashTot:number, ramUsed:number, ramTot:number) => {
+			if(flashUsedBar){ flashUsedBar.style.width=`${Math.min(100,Math.round(flashUsed/flashTot*100))}%`; flashUsedBar.style.background=flashUsed/flashTot>0.9?'#f48771':'var(--vscode-focusBorder)'; }
+			if(ramUsedBar){   ramUsedBar.style.width=`${Math.min(100,Math.round(ramUsed/ramTot*100))}%`;     ramUsedBar.style.background=ramUsed/ramTot>0.9?'#f48771':'var(--vscode-focusBorder)'; }
+		};
+
+		const statRow = $e('div', 'display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px;margin-bottom:10px;flex-shrink:0;');
+		const memStat = (label: string, size: number, origin: string): HTMLElement => {
+			const c = $e('div', 'border:1px solid var(--vscode-widget-border);border-radius:5px;padding:8px 12px;');
+			const top=$e('div','display:flex;align-items:center;gap:8px;margin-bottom:5px;');
+			top.appendChild($t('span', _fmt(size), 'font-size:18px;font-weight:700;font-family:monospace;'));
+			top.appendChild($t('span', ' '+label, 'font-size:10px;color:var(--vscode-descriptionForeground);text-transform:uppercase;letter-spacing:0.05em;'));
+			top.appendChild($t('div', `@ ${origin}`, 'font-size:10px;font-family:monospace;color:var(--vscode-descriptionForeground);margin-left:auto;'));
 			c.appendChild(top);
-			// Usage bar (empty since we don't have build output)
-			const barTrack = $e('div', 'height:4px;border-radius:2px;background:var(--vscode-widget-border);margin-bottom:6px;');
-			const barFill = $e('div', 'height:100%;border-radius:2px;background:var(--vscode-focusBorder);width:0%;');
-			barTrack.appendChild(barFill);
-			c.appendChild(barTrack);
-			c.appendChild($t('div', `@ ${origin}`, 'font-size:10px;font-family:monospace;color:var(--vscode-descriptionForeground);'));
+			const track=$e('div','height:3px;border-radius:2px;background:var(--vscode-widget-border);');
+			const fill=$e('div','height:100%;border-radius:2px;background:var(--vscode-focusBorder);width:0%;transition:width 0.4s;');
+			track.appendChild(fill); c.appendChild(track);
 			return c;
 		};
-		statRow.appendChild(memStat('Flash', mcu.flashSize, '0x08000000'));
-		statRow.appendChild(memStat('RAM', mcu.ramSize, '0x20000000'));
+		const flashCard = memStat('Flash', mcu.flashSize, flashOrigin);
+		const ramCard   = memStat('RAM',   mcu.ramSize,   ramOrigin);
+		flashUsedBar = flashCard.querySelector('div div') as HTMLElement;
+		ramUsedBar   = ramCard.querySelector('div div') as HTMLElement;
+		statRow.appendChild(flashCard);
+		statRow.appendChild(ramCard);
 		root.appendChild(statRow);
 
 		// ── Region table ───────────────────────────────────────────────────────
@@ -1232,193 +1816,520 @@ export class FirmwarePart extends Part {
 	// ─── Register Compositor Panel ────────────────────────────────────────────
 
 	private _renderRegisterCompositorPanel(root: HTMLElement, _s: IFirmwareSessionData): void {
-		const hdr = $e('div', 'display:flex;align-items:center;gap:10px;margin-bottom:12px;');
-		hdr.appendChild($t('span', 'Register Composer', 'font-size:14px;font-weight:700;'));
-		hdr.appendChild($t('div', 'Decode any raw register value into its named bit fields, or diff two values to see exactly what changed. Requires an SVD file loaded in the Datasheets tab.', 'font-size:12px;color:var(--vscode-descriptionForeground);line-height:1.5;'));
+		// ── Header ────────────────────────────────────────────────────────────
+		const hdr = $e('div', 'display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;flex-shrink:0;');
+		const hdrLeft = $e('div');
+		hdrLeft.appendChild($t('span', 'Register Composer', 'font-size:13px;font-weight:700;'));
+		hdrLeft.appendChild($t('span', ' — 32-bit SVD bit field viewer & diff', 'font-size:11px;color:var(--vscode-descriptionForeground);margin-left:8px;'));
+		hdr.appendChild(hdrLeft);
+
+		// Mode toggle: Decode | Diff
+		const modeWrap = $e('div', 'display:flex;gap:0;border:1px solid var(--vscode-widget-border);border-radius:4px;overflow:hidden;');
+		type Mode = 'decode' | 'diff';
+		let mode: Mode = 'decode';
+		const modeDecBtn = $e('div', 'padding:3px 10px;font-size:10px;cursor:pointer;background:var(--vscode-button-background);color:var(--vscode-button-foreground);');
+		const modeDifBtn = $e('div', 'padding:3px 10px;font-size:10px;cursor:pointer;background:transparent;color:var(--vscode-descriptionForeground);border-left:1px solid var(--vscode-widget-border);');
+		modeDecBtn.textContent = 'Decode'; modeDifBtn.textContent = 'Diff';
+		modeWrap.appendChild(modeDecBtn); modeWrap.appendChild(modeDifBtn);
+		hdr.appendChild(modeWrap);
 		root.appendChild(hdr);
 
-		// ── Decode ─────────────────────────────────────────────────────────────
-		root.appendChild(this._hwPanelSection('Decode Register Value', 'Enter a peripheral name, register, and raw value to see every bit field with its meaning from the SVD.'));
+		// ── Selector row ──────────────────────────────────────────────────────
+		const selRow = $e('div', 'display:flex;gap:8px;align-items:flex-end;margin-bottom:8px;flex-shrink:0;flex-wrap:wrap;');
+		const periphIn = this._hwLabeledInput('Peripheral', 'e.g. USART1', 'USART1', '110px');
+		const regIn    = this._hwLabeledInput('Register', 'e.g. CR1', 'CR1', '80px');
+		const valIn    = this._hwLabeledInput('Value', 'hex or dec', '0x200C', '100px');
+		const beforeIn = this._hwLabeledInput('Before', 'hex or dec', '0x2000', '90px');
+		const afterIn  = this._hwLabeledInput('After', 'hex or dec', '0x200C', '90px');
+		beforeIn.wrap.style.display = 'none'; afterIn.wrap.style.display = 'none';
+		const goBtn = this._btn('Decode', true, () => run(), 'font-size:10px;padding:4px 12px;align-self:flex-end;');
+		selRow.appendChild(periphIn.wrap); selRow.appendChild(regIn.wrap);
+		selRow.appendChild(valIn.wrap); selRow.appendChild(beforeIn.wrap); selRow.appendChild(afterIn.wrap);
+		selRow.appendChild(goBtn);
+		root.appendChild(selRow);
 
-		const decRow = $e('div', 'display:flex;flex-wrap:wrap;gap:12px;align-items:flex-end;margin-bottom:14px;');
-		const decPeriphIn = this._hwLabeledInput('Peripheral', 'e.g. USART1', 'USART1', '130px');
-		const decRegIn    = this._hwLabeledInput('Register', 'e.g. CR1', 'CR1', '90px');
-		const decValIn    = this._hwLabeledInput('Value', 'hex or decimal', '0x200C', '110px');
-		const decOut = $e('pre', [
-			'font-size:11px', 'font-family:var(--vscode-editor-font-family,monospace)',
-			'padding:12px 14px', 'white-space:pre-wrap', 'min-height:60px',
-			'border:1px solid var(--vscode-widget-border)', 'border-radius:6px',
-			'background:var(--vscode-editor-background)', 'margin-bottom:20px', 'line-height:1.6',
-		].join(';'));
-		decOut.dataset.decOut = '';
-		const runDecode = () => {
-			const v = decValIn.input.value.trim();
-			const num = parseInt(v, v.startsWith('0x') || v.startsWith('0X') ? 16 : 10);
-			if (isNaN(num)) { this._hwSetResult(decOut, 'Invalid value. Use decimal (e.g. 8204) or hex (e.g. 0x200C).', false); return; }
-			const decoded = this._regCompositorSvc.decodeRegisterValue(decPeriphIn.input.value.trim(), decRegIn.input.value.trim(), num);
-			if (!decoded) {
-				this._hwSetResult(decOut, `${decPeriphIn.input.value}.${decRegIn.input.value} not found in loaded SVD. Load an SVD file in the Datasheets tab first.`, false);
+		const setMode = (m: Mode) => {
+			mode = m;
+			modeDecBtn.style.background = m === 'decode' ? 'var(--vscode-button-background)' : 'transparent';
+			modeDecBtn.style.color = m === 'decode' ? 'var(--vscode-button-foreground)' : 'var(--vscode-descriptionForeground)';
+			modeDifBtn.style.background = m === 'diff' ? 'var(--vscode-button-background)' : 'transparent';
+			modeDifBtn.style.color = m === 'diff' ? 'var(--vscode-button-foreground)' : 'var(--vscode-descriptionForeground)';
+			valIn.wrap.style.display = m === 'decode' ? '' : 'none';
+			beforeIn.wrap.style.display = m === 'diff' ? '' : 'none';
+			afterIn.wrap.style.display  = m === 'diff' ? '' : 'none';
+			goBtn.textContent = m === 'decode' ? 'Decode' : 'Diff';
+		};
+		modeDecBtn.addEventListener('click', () => setMode('decode'));
+		modeDifBtn.addEventListener('click', () => setMode('diff'));
+
+		// ── Canvas bit field strip ────────────────────────────────────────────
+		const canvasWrap = $e('div', 'position:relative;width:100%;flex-shrink:0;');
+		const bitCanvas = $e('canvas', 'display:block;width:100%;') as HTMLCanvasElement;
+		canvasWrap.appendChild(bitCanvas);
+		root.appendChild(canvasWrap);
+
+		// Tooltip
+		const tip = $e('div', 'position:fixed;display:none;pointer-events:none;background:var(--vscode-editorWidget-background,#1e1e1e);border:1px solid var(--vscode-focusBorder);border-radius:4px;padding:5px 9px;font-size:10px;z-index:100;max-width:220px;line-height:1.5;');
+		document.body.appendChild(tip);
+		setTimeout(() => { if (tip.parentNode) tip.parentNode.removeChild(tip); }, 300000);
+
+		// ── Field table below canvas ──────────────────────────────────────────
+		const fieldTable = $e('div', 'margin-top:8px;flex-shrink:0;overflow-y:auto;');
+		root.appendChild(fieldTable);
+
+		// ── Error / status strip ──────────────────────────────────────────────
+		const errStrip = $e('div', 'font-size:11px;min-height:16px;flex-shrink:0;margin-top:4px;color:var(--vscode-errorForeground,#f48771);');
+		root.appendChild(errStrip);
+
+		// Field color palette (by index mod 8)
+		const FIELD_COLORS = ['#1565c0','#6a1b9a','#1b5e20','#e65100','#37474f','#00695c','#7b1fa2','#880e4f'];
+		const CHANGED_COLOR = '#b71c1c';
+		const UNCHANGED_DIM = '#1a2332';
+
+		interface RenderedField { name: string; bitHigh: number; bitLow: number; value: number; access: string; description: string; changed?: boolean; beforeVal?: number; }
+
+		const drawBitStrip = (fields: RenderedField[], regVal: number, isDiff: boolean, afterVal?: number) => {
+			const DPR = window.devicePixelRatio || 1;
+			const W = bitCanvas.parentElement!.clientWidth || 800;
+			const H = 68;
+			bitCanvas.width = W * DPR; bitCanvas.height = H * DPR;
+			bitCanvas.style.height = H + 'px';
+			const ctx = bitCanvas.getContext('2d')!;
+			ctx.scale(DPR, DPR);
+			ctx.fillStyle = '#0d1117'; ctx.fillRect(0, 0, W, H);
+
+			const pad = 8;
+			const stripY = 20; const stripH = 32;
+			const totalBits = 32;
+			const bitW = (W - pad * 2) / totalBits;
+
+			// Bit number labels top (31 down to 0)
+			ctx.font = '7px monospace'; ctx.textAlign = 'center'; ctx.fillStyle = 'rgba(255,255,255,0.25)';
+			for (let b = 31; b >= 0; b--) {
+				const x = pad + (31 - b) * bitW + bitW / 2;
+				if (b % 4 === 0 || b === 31 || b === 0) { ctx.fillText(String(b), x, 12); }
+			}
+
+			// Draw each field as a colored group of bits
+			for (let fi = 0; fi < fields.length; fi++) {
+				const f = fields[fi]!;
+				const col = isDiff && f.changed ? CHANGED_COLOR : (isDiff && !f.changed ? UNCHANGED_DIM : (FIELD_COLORS[fi % FIELD_COLORS.length]!));
+				for (let b = f.bitLow; b <= f.bitHigh; b++) {
+					const bitPos = 31 - b;
+					const x = pad + bitPos * bitW;
+					const bitSet = (regVal >> b) & 1;
+					ctx.fillStyle = col;
+					ctx.fillRect(x + 0.5, stripY, bitW - 1, stripH);
+					// Bit value
+					ctx.fillStyle = 'rgba(255,255,255,0.8)';
+					ctx.font = 'bold 9px monospace'; ctx.textAlign = 'center';
+					ctx.fillText(String(bitSet), x + bitW / 2, stripY + stripH / 2 + 4);
+				}
+				// Field name at bottom of group
+				const groupW = (f.bitHigh - f.bitLow + 1) * bitW;
+				const groupX = pad + (31 - f.bitHigh) * bitW;
+				if (groupW > 10) {
+					ctx.font = '8px system-ui'; ctx.textAlign = 'center';
+					ctx.fillStyle = 'rgba(255,255,255,0.55)';
+					const label = f.name.length > Math.floor(groupW / 5) ? f.name.slice(0, Math.floor(groupW / 5) - 1) + '..' : f.name;
+					ctx.fillText(label, groupX + groupW / 2, stripY + stripH + 12);
+				}
+				// Separator line between fields
+				if (f.bitLow > 0) {
+					const sepX = pad + (31 - f.bitLow + 1) * bitW;
+					ctx.strokeStyle = '#0d1117'; ctx.lineWidth = 1.5;
+					ctx.beginPath(); ctx.moveTo(sepX, stripY); ctx.lineTo(sepX, stripY + stripH); ctx.stroke();
+				}
+			}
+
+			// Unused bits (reserved/unassigned) shown as dark
+			const coveredBits = new Set<number>();
+			for (const f of fields) { for (let b = f.bitLow; b <= f.bitHigh; b++) coveredBits.add(b); }
+			for (let b = 0; b < 32; b++) {
+				if (coveredBits.has(b)) continue;
+				const x = pad + (31 - b) * bitW;
+				ctx.fillStyle = '#111820';
+				ctx.fillRect(x + 0.5, stripY, bitW - 1, stripH);
+				const bitSet = (regVal >> b) & 1;
+				if (bitSet) {
+					ctx.fillStyle = 'rgba(255,255,255,0.3)';
+					ctx.font = '8px monospace'; ctx.textAlign = 'center';
+					ctx.fillText('1', x + bitW / 2, stripY + stripH / 2 + 4);
+				}
+			}
+
+			// Hex value display
+			ctx.font = 'bold 10px monospace'; ctx.textAlign = 'right'; ctx.fillStyle = 'rgba(255,255,255,0.5)';
+			const hexVal = isDiff && afterVal !== undefined ? `0x${afterVal.toString(16).toUpperCase().padStart(8,'0')}` : `0x${regVal.toString(16).toUpperCase().padStart(8,'0')}`;
+			ctx.fillText(hexVal, W - pad, 12);
+		};
+
+		// Hit test: which field is under cursor?
+		const hitField = (mx: number, fields: RenderedField[]): RenderedField | null => {
+			const W = bitCanvas.offsetWidth || 800;
+			const pad = 8; const bitW = (W - pad * 2) / 32;
+			const bit = Math.floor((W - pad - mx) / bitW);
+			if (bit < 0 || bit > 31) return null;
+			return fields.find(f => bit >= f.bitLow && bit <= f.bitHigh) || null;
+		};
+
+		let lastFields: RenderedField[] = [];
+		let lastVal = 0;
+
+		bitCanvas.addEventListener('mousemove', (e) => {
+			const r = bitCanvas.getBoundingClientRect();
+			const mx = (e.clientX - r.left) * (bitCanvas.width / r.width / window.devicePixelRatio);
+			const f = hitField(mx, lastFields);
+			if (f) {
+				bitCanvas.style.cursor = 'pointer';
+				const lines = [
+					`${f.name}  [${f.bitHigh}:${f.bitLow}]  = 0x${f.value.toString(16).toUpperCase()} (${f.value})`,
+					`Access: ${f.access || 'rw'}`,
+					f.description || '',
+					f.changed !== undefined ? (f.changed ? 'CHANGED' : 'unchanged') : '',
+				].filter(Boolean);
+				while (tip.firstChild) { tip.removeChild(tip.firstChild); }
+				for (const l of lines) {
+					tip.appendChild($t('div', l, l === 'CHANGED' ? 'color:#ef9a9a;font-weight:700;' : ''));
+				}
+				tip.style.display = 'block';
+				tip.style.left = (e.clientX + 14) + 'px'; tip.style.top = (e.clientY - 10) + 'px';
 			} else {
-				decOut.style.color = 'var(--vscode-editor-foreground)';
-				decOut.textContent = this._regCompositorSvc.formatDecoded(decoded);
+				bitCanvas.style.cursor = 'default'; tip.style.display = 'none';
+			}
+		});
+		bitCanvas.addEventListener('mouseleave', () => { tip.style.display = 'none'; });
+
+		// ── Field property table ──────────────────────────────────────────────
+		const renderFieldTable = (fields: RenderedField[], isDiff: boolean) => {
+			while (fieldTable.firstChild) { fieldTable.removeChild(fieldTable.firstChild); }
+			if (!fields.length) { return; }
+			const tbl = $e('div', 'border:1px solid var(--vscode-widget-border);border-radius:5px;overflow:hidden;');
+			const cols = isDiff ? '80px 60px 50px 50px 50px 1fr' : '80px 60px 60px 40px 1fr';
+			const th = $e('div', `display:grid;grid-template-columns:${cols};gap:8px;padding:5px 10px;background:var(--vscode-sideBarSectionHeader-background);font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;color:var(--vscode-descriptionForeground);`);
+			const heads = isDiff ? ['Field','Bits','Before','After','Status','Description'] : ['Field','Bits','Value','Hex','Description'];
+			heads.forEach(h => th.appendChild($t('div', h)));
+			tbl.appendChild(th);
+			for (let fi = 0; fi < fields.length; fi++) {
+				const f = fields[fi]!;
+				const changed = f.changed;
+				const row = $e('div', `display:grid;grid-template-columns:${cols};gap:8px;padding:5px 10px;font-size:10px;font-family:monospace;border-top:1px solid var(--vscode-widget-border);${changed ? 'background:rgba(183,28,28,0.06);' : ''}`);
+				const nameEl = $t('div', f.name, `font-weight:700;color:${isDiff && changed ? '#ef9a9a' : (FIELD_COLORS[fi % FIELD_COLORS.length]!)};overflow:hidden;text-overflow:ellipsis;white-space:nowrap;`);
+				row.appendChild(nameEl);
+				row.appendChild($t('div', `[${f.bitHigh}:${f.bitLow}]`, 'color:var(--vscode-descriptionForeground);'));
+				if (isDiff) {
+					row.appendChild($t('div', `0x${(f.beforeVal || 0).toString(16).toUpperCase()}`, 'color:var(--vscode-descriptionForeground);'));
+					row.appendChild($t('div', `0x${f.value.toString(16).toUpperCase()}`, changed ? 'color:#ef9a9a;font-weight:700;' : ''));
+					row.appendChild($t('div', changed ? 'CHANGED' : '', changed ? 'color:#ef9a9a;font-weight:700;' : 'color:var(--vscode-descriptionForeground);'));
+				} else {
+					row.appendChild($t('div', String(f.value), ''));
+					row.appendChild($t('div', `0x${f.value.toString(16).toUpperCase()}`, 'color:var(--vscode-descriptionForeground);'));
+				}
+				row.appendChild($t('div', f.description || '', 'color:var(--vscode-descriptionForeground);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;'));
+				tbl.appendChild(row);
+			}
+			fieldTable.appendChild(tbl);
+		};
+
+		// ── Run decode / diff ─────────────────────────────────────────────────
+		const run = () => {
+			while (errStrip.firstChild) { errStrip.removeChild(errStrip.firstChild); }
+			const periph = periphIn.input.value.trim().toUpperCase();
+			const reg    = regIn.input.value.trim().toUpperCase();
+			const parse  = (v: string) => { const s = v.trim(); return parseInt(s, s.toLowerCase().startsWith('0x') ? 16 : 10); };
+
+			if (mode === 'decode') {
+				const num = parse(valIn.input.value);
+				if (isNaN(num)) { errStrip.textContent = 'Invalid value — use hex (0x200C) or decimal.'; return; }
+				const decoded = this._regCompositorSvc.decodeRegisterValue(periph, reg, num);
+				if (!decoded) { errStrip.textContent = `${periph}.${reg} not found in loaded SVD. Load an SVD in Datasheets first.`; renderFieldTable([], false); return; }
+				// Build RenderedField list from decoded result
+				const text = this._regCompositorSvc.formatDecoded(decoded);
+				const fields: RenderedField[] = this._parseDecodedFields(text, num);
+				lastFields = fields; lastVal = num;
+				drawBitStrip(fields, num, false);
+				renderFieldTable(fields, false);
+			} else {
+				const before = parse(beforeIn.input.value), after = parse(afterIn.input.value);
+				if (isNaN(before) || isNaN(after)) { errStrip.textContent = 'Invalid values.'; return; }
+				const diff = this._regCompositorSvc.diffRegisters(periph, reg, before, after);
+				if (!diff) { errStrip.textContent = `${periph}.${reg} not found in loaded SVD.`; renderFieldTable([], true); return; }
+				const text = this._regCompositorSvc.formatDiff(diff);
+				const fields: RenderedField[] = this._parseDiffFields(text, before, after);
+				lastFields = fields; lastVal = after;
+				drawBitStrip(fields, after, true, after);
+				renderFieldTable(fields, true);
 			}
 		};
-		const decBtn = this._btn('Decode', true, runDecode, 'font-size:11px;padding:5px 14px;align-self:flex-end;');
-		decRow.appendChild(decPeriphIn.wrap); decRow.appendChild(decRegIn.wrap); decRow.appendChild(decValIn.wrap); decRow.appendChild(decBtn);
-		root.appendChild(decRow);
-		root.appendChild(decOut);
 
-		// ── Diff ───────────────────────────────────────────────────────────────
-		root.appendChild(this._hwPanelSection('Diff Two Register Values', 'Compare before/after values to see exactly which bit fields changed — useful when debugging why a register changed unexpectedly.'));
+		[periphIn.input, regIn.input, valIn.input].forEach(i => i.addEventListener('keydown', e => { if (e.key === 'Enter') run(); }));
+		[beforeIn.input, afterIn.input].forEach(i => i.addEventListener('keydown', e => { if (e.key === 'Enter') run(); }));
 
-		const diffRow = $e('div', 'display:flex;flex-wrap:wrap;gap:12px;align-items:flex-end;margin-bottom:14px;');
-		const diffPeriphIn  = this._hwLabeledInput('Peripheral', 'e.g. USART1', 'USART1', '130px');
-		const diffRegIn     = this._hwLabeledInput('Register', 'e.g. CR1', 'CR1', '90px');
-		const diffBeforeIn  = this._hwLabeledInput('Before value', 'hex or decimal', '0x2000', '110px');
-		const diffAfterIn   = this._hwLabeledInput('After value', 'hex or decimal', '0x200C', '110px');
-		const diffOut = $e('pre', [
-			'font-size:11px', 'font-family:var(--vscode-editor-font-family,monospace)',
-			'padding:12px 14px', 'white-space:pre-wrap', 'min-height:60px',
-			'border:1px solid var(--vscode-widget-border)', 'border-radius:6px',
-			'background:var(--vscode-editor-background)', 'line-height:1.6',
-		].join(';'));
-		diffOut.dataset.diffOut = '';
-		const diffBtn = this._btn('Diff', true, () => {
-			const parse = (v: string) => parseInt(v.trim(), v.trim().startsWith('0x') ? 16 : 10);
-			const before = parse(diffBeforeIn.input.value), after = parse(diffAfterIn.input.value);
-			if (isNaN(before) || isNaN(after)) { this._hwSetResult(diffOut, 'Invalid values. Use decimal or hex (0x...).', false); return; }
-			const diff = this._regCompositorSvc.diffRegisters(diffPeriphIn.input.value.trim(), diffRegIn.input.value.trim(), before, after);
-			if (!diff) {
-				this._hwSetResult(diffOut, `${diffPeriphIn.input.value}.${diffRegIn.input.value} not found in loaded SVD.`, false);
-			} else {
-				diffOut.style.color = 'var(--vscode-editor-foreground)';
-				diffOut.textContent = this._regCompositorSvc.formatDiff(diff);
+		// Initial empty canvas
+		const ro = new ResizeObserver(() => { if (lastFields.length) drawBitStrip(lastFields, lastVal, mode === 'diff'); });
+		ro.observe(bitCanvas.parentElement!);
+		// Draw placeholder
+		const DPR = window.devicePixelRatio || 1;
+		const W0 = bitCanvas.parentElement?.clientWidth || 800;
+		bitCanvas.width = W0 * DPR; bitCanvas.height = 68 * DPR;
+		bitCanvas.style.height = '68px';
+		const ctx0 = bitCanvas.getContext('2d')!;
+		ctx0.scale(DPR, DPR);
+		ctx0.fillStyle = '#0d1117'; ctx0.fillRect(0, 0, W0, 68);
+		ctx0.fillStyle = 'rgba(255,255,255,0.18)'; ctx0.font = '11px system-ui'; ctx0.textAlign = 'center';
+		ctx0.fillText('Enter peripheral + register + value, then press Decode', W0 / 2, 38);
+	}
+
+	/** Parse formatDecoded() text output into RenderedField list. */
+	private _parseDecodedFields(text: string, regVal: number): Array<{name:string;bitHigh:number;bitLow:number;value:number;access:string;description:string;}> {
+		const fields: Array<{name:string;bitHigh:number;bitLow:number;value:number;access:string;description:string;}> = [];
+		// Format: "  FIELDNAME  [hi:lo]  = VALUE  (decimal)  access  description"
+		// or single-bit: "  FIELDNAME  [bit]  = VALUE"
+		const re = /^\s{2,}(\S+)\s+\[(\d+)(?::(\d+))?\]\s+=\s+(\S+)/mg;
+		let m: RegExpExecArray | null;
+		while ((m = re.exec(text)) !== null) {
+			const hi = parseInt(m[2]!);
+			const lo = m[3] !== undefined ? parseInt(m[3]!) : hi;
+			const rawVal = m[4]!;
+			const val = parseInt(rawVal, rawVal.startsWith('0x') || rawVal.startsWith('0X') ? 16 : 10);
+			// Extract description from rest of line
+			const lineEnd = text.indexOf('\n', re.lastIndex - m[0].length + m[0].length);
+			const rest = lineEnd > 0 ? text.slice(re.lastIndex - m[0].length + m[0].length, lineEnd) : '';
+			fields.push({ name: m[1]!, bitHigh: hi, bitLow: lo, value: isNaN(val) ? (regVal >> lo) & ((1 << (hi-lo+1))-1) : val, access: 'rw', description: rest.trim() });
+		}
+		// Fallback: if no structured parse, synthesise 1-bit fields from value
+		if (!fields.length) {
+			for (let b = 0; b < 32; b++) {
+				const v = (regVal >> b) & 1;
+				if (v) fields.push({name:`BIT${b}`, bitHigh:b, bitLow:b, value:v, access:'rw', description:''});
 			}
-		}, 'font-size:11px;padding:5px 14px;align-self:flex-end;');
-		diffRow.appendChild(diffPeriphIn.wrap); diffRow.appendChild(diffRegIn.wrap); diffRow.appendChild(diffBeforeIn.wrap); diffRow.appendChild(diffAfterIn.wrap); diffRow.appendChild(diffBtn);
-		root.appendChild(diffRow);
-		root.appendChild(diffOut);
+		}
+		return fields;
+	}
+
+	/** Parse formatDiff() text output into RenderedField list. */
+	private _parseDiffFields(text: string, before: number, after: number): Array<{name:string;bitHigh:number;bitLow:number;value:number;access:string;description:string;changed:boolean;beforeVal:number;}> {
+		const fields: Array<{name:string;bitHigh:number;bitLow:number;value:number;access:string;description:string;changed:boolean;beforeVal:number;}> = [];
+		const re = /^\s{2,}(\S+)\s+\[(\d+)(?::(\d+))?\]\s+(CHANGED|unchanged)/mg;
+		let m: RegExpExecArray | null;
+		while ((m = re.exec(text)) !== null) {
+			const hi = parseInt(m[2]!);
+			const lo = m[3] !== undefined ? parseInt(m[3]!) : hi;
+			const mask = (1 << (hi - lo + 1)) - 1;
+			const afterVal = (after >> lo) & mask;
+			const beforeVal = (before >> lo) & mask;
+			fields.push({ name: m[1]!, bitHigh: hi, bitLow: lo, value: afterVal, access: 'rw', description: '', changed: m[4] === 'CHANGED', beforeVal });
+		}
+		return fields;
 	}
 
 	// ─── Init Dependencies Panel ──────────────────────────────────────────────
 
 	private _renderDepsPanel(root: HTMLElement, s: IFirmwareSessionData): void {
-		const hdr = $e('div', 'display:flex;align-items:center;gap:10px;margin-bottom:12px;');
-		hdr.appendChild($t('span', 'Init Dependencies', 'font-size:14px;font-weight:700;'));
-		hdr.appendChild($t('div', 'Generates the complete ordered initialization sequence for any peripheral — RCC clock enable, GPIO alternate function, DMA, NVIC — with ready-to-paste C code.', 'font-size:12px;color:var(--vscode-descriptionForeground);line-height:1.5;'));
+		// ── Header ────────────────────────────────────────────────────────────
+		const hdr = $e('div', 'display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;flex-shrink:0;');
+		const hdrLeft = $e('div');
+		hdrLeft.appendChild($t('span', 'Init Dependencies', 'font-size:13px;font-weight:700;'));
+		hdrLeft.appendChild($t('span', ' — ordered init chain with C code', 'font-size:11px;color:var(--vscode-descriptionForeground);margin-left:8px;'));
+		hdr.appendChild(hdrLeft);
+		const copyAllBtn = this._btn('Copy All C', false, () => {}, 'font-size:10px;padding:3px 10px;');
+		hdr.appendChild(copyAllBtn);
 		root.appendChild(hdr);
 
-		root.appendChild(this._hwPanelSection('Analyze Peripheral', 'Select a peripheral and options to generate the full dependency chain.'));
-
-		const controlRow = $e('div', 'display:flex;flex-wrap:wrap;gap:12px;align-items:flex-end;margin-bottom:20px;');
-		const periphIn = this._hwLabeledInput('Peripheral', 'e.g. USART1, SPI2, TIM3', 'USART1', '180px');
-
-		const optWrap = $e('div', 'display:flex;flex-direction:column;gap:4px;');
-		optWrap.appendChild($t('label', 'Options', 'font-size:10px;font-weight:600;color:var(--vscode-descriptionForeground);text-transform:uppercase;letter-spacing:0.06em;'));
-		const checkRow = $e('div', 'display:flex;gap:16px;padding:5px 0;');
+		// ── Control row ───────────────────────────────────────────────────────
+		const controlRow = $e('div', 'display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap;margin-bottom:10px;flex-shrink:0;');
+		const periphIn = this._hwLabeledInput('Peripheral', 'e.g. USART1, SPI2', 'USART1', '120px');
 		const mkCheck = (label: string, checked: boolean) => {
 			const cb = $e('input', 'margin:0;cursor:pointer;') as HTMLInputElement;
 			cb.type = 'checkbox'; cb.checked = checked;
-			const lbl = $e('label', 'display:flex;align-items:center;gap:5px;font-size:11px;cursor:pointer;');
+			const lbl = $e('label', 'display:flex;align-items:center;gap:4px;font-size:10px;cursor:pointer;padding-bottom:4px;');
 			lbl.appendChild(cb); lbl.appendChild(document.createTextNode(label));
-			checkRow.appendChild(lbl);
-			return cb;
+			return { cb, lbl };
 		};
-		const dmaCb  = mkCheck('Include DMA', false);
-		const irqCb  = mkCheck('Interrupts', true);
-		optWrap.appendChild(checkRow);
+		const { cb: dmaCb, lbl: dmaLbl } = mkCheck('DMA', false);
+		const { cb: irqCb, lbl: irqLbl } = mkCheck('IRQ', true);
+		const analyzeBtn = this._btn('Analyze', true, () => runAnalyze(), 'font-size:10px;padding:4px 12px;align-self:flex-end;');
+		controlRow.appendChild(periphIn.wrap);
+		controlRow.appendChild(dmaLbl); controlRow.appendChild(irqLbl);
+		controlRow.appendChild(analyzeBtn);
+		root.appendChild(controlRow);
+		periphIn.input.addEventListener('keydown', e => { if (e.key === 'Enter') runAnalyze(); });
 
-		const depsOut = $e('div');
-		depsOut.dataset.depsOut = '';
+		// ── Step flow container ───────────────────────────────────────────────
+		const flowWrap = $e('div', 'flex:1;overflow-y:auto;padding-right:4px;');
+		root.appendChild(flowWrap);
+
+		// Kind color map
+		const KIND_COLOR: Record<string, string> = {
+			'rcc-clock-enable':  '#0288d1',
+			'gpio-af-config':    '#388e3c',
+			'gpio-analog-config':'#388e3c',
+			'nvic-enable':       '#7b1fa2',
+			'dma-stream-config': '#e65100',
+			'peripheral-enable': '#1565c0',
+			'pll-config':        '#f57f17',
+			'power-domain':      '#ad1457',
+			'bus-prescaler':     '#546e7a',
+		};
+		const KIND_SHORT: Record<string, string> = {
+			'rcc-clock-enable':  'RCC',
+			'gpio-af-config':    'GPIO',
+			'gpio-analog-config':'GPIO',
+			'nvic-enable':       'NVIC',
+			'dma-stream-config': 'DMA',
+			'peripheral-enable': 'PERI',
+			'pll-config':        'PLL',
+			'power-domain':      'PWR',
+			'bus-prescaler':     'BUS',
+		};
+
+		const NS = 'http://www.w3.org/2000/svg';
 
 		const runAnalyze = () => {
+			while (flowWrap.firstChild) { flowWrap.removeChild(flowWrap.firstChild); }
+
 			const chain = this._depSvc.getDependencyChain(periphIn.input.value.trim().toUpperCase(), {
 				useDMA: dmaCb.checked, useInterrupt: irqCb.checked, useHAL: false,
-				rtos: (s.rtos as any) ?? 'none',
+				rtos: (s.rtos as 'none' | 'freertos' | 'zephyr' | undefined) || 'none',
 			});
-			const out = depsOut;
-			while (out.firstChild) { out.removeChild(out.firstChild); }
 
-			const resultHdr = $e('div', 'display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;');
-			const titleWrap = $e('div');
-			titleWrap.appendChild($t('div', chain.peripheral, 'font-size:15px;font-weight:700;'));
-			titleWrap.appendChild($t('div', `${chain.nodes.filter(n => !n.optional).length} required steps, ${chain.nodes.filter(n => n.optional).length} optional`, 'font-size:11px;color:var(--vscode-descriptionForeground);margin-top:2px;'));
-			resultHdr.appendChild(titleWrap);
-			const copyBtn = this._btn('Copy C Code', false, () => {
+			// Update copy-all button
+			copyAllBtn.addEventListener('click', () => {
 				const seq = this._depSvc.generateInitSequence(periphIn.input.value.trim().toUpperCase(), { useDMA: dmaCb.checked, useInterrupt: irqCb.checked, useHAL: false });
 				navigator.clipboard.writeText(seq);
-				copyBtn.textContent = 'Copied!';
-				setTimeout(() => copyBtn.textContent = 'Copy C Code', 2000);
-			}, 'font-size:11px;padding:4px 12px;');
-			resultHdr.appendChild(copyBtn);
-			out.appendChild(resultHdr);
+				copyAllBtn.textContent = 'Copied!';
+				setTimeout(() => { copyAllBtn.textContent = 'Copy All C'; }, 2000);
+			});
 
-			const kindColors: Record<string, string> = {
-				'rcc-clock-enable':  'var(--vscode-terminal-ansiCyan)',
-				'gpio-af-config':    '#4caf50',
-				'gpio-analog-config':'#4caf50',
-				'nvic-enable':       'var(--vscode-terminal-ansiMagenta)',
-				'dma-stream-config': '#e0a84e',
-				'peripheral-enable': 'var(--vscode-focusBorder)',
-				'pll-config':        'var(--vscode-terminal-ansiYellow)',
-				'power-domain':      '#c586c0',
-				'bus-prescaler':     'var(--vscode-descriptionForeground)',
+			if (!chain.nodes.length) {
+				flowWrap.appendChild($t('div', `No dependency data for ${chain.peripheral}. Load an SVD file first.`, 'font-size:11px;color:var(--vscode-descriptionForeground);padding:12px 0;'));
+				return;
+			}
+
+			// Summary row
+			const req = chain.nodes.filter(n => !n.optional).length;
+			const opt = chain.nodes.filter(n => n.optional).length;
+			const sumRow = $e('div', 'display:flex;align-items:center;gap:10px;margin-bottom:10px;');
+			sumRow.appendChild($t('span', chain.peripheral, 'font-size:12px;font-weight:700;font-family:monospace;'));
+			sumRow.appendChild($t('span', `${req} required`, 'font-size:10px;color:#81c784;'));
+			if (opt) sumRow.appendChild($t('span', `${opt} optional`, 'font-size:10px;color:var(--vscode-descriptionForeground);'));
+			flowWrap.appendChild(sumRow);
+
+			// Track expanded state
+			const expanded = new Set<number>();
+
+			const renderFlow = () => {
+				// Remove all step nodes (keep sumRow)
+				while (flowWrap.children.length > 1) { flowWrap.removeChild(flowWrap.lastChild!); }
+
+				for (let i = 0; i < chain.nodes.length; i++) {
+					const node = chain.nodes[i]!;
+					const color = KIND_COLOR[node.kind] || '#546e7a';
+					const shortKind = KIND_SHORT[node.kind] || node.kind.slice(0, 4).toUpperCase();
+					const isLast = i === chain.nodes.length - 1;
+					const isExpanded = expanded.has(i);
+
+					// Row container: SVG circle + connector + content card
+					const row = $e('div', 'display:flex;align-items:flex-start;gap:0;');
+
+					// Left column: circle + vertical line
+					const leftCol = $e('div', 'display:flex;flex-direction:column;align-items:center;width:40px;flex-shrink:0;');
+
+					// SVG circle with step number
+					const circleSvg = document.createElementNS(NS, 'svg');
+					circleSvg.setAttribute('width', '28'); circleSvg.setAttribute('height', '28');
+					circleSvg.style.cssText = 'display:block;flex-shrink:0;';
+					const circle = document.createElementNS(NS, 'circle');
+					circle.setAttribute('cx', '14'); circle.setAttribute('cy', '14'); circle.setAttribute('r', '12');
+					circle.setAttribute('fill', node.optional ? 'rgba(84,110,122,0.15)' : color + '22');
+					circle.setAttribute('stroke', node.optional ? '#546e7a' : color);
+					circle.setAttribute('stroke-width', '1.5');
+					const cText = document.createElementNS(NS, 'text');
+					cText.setAttribute('x', '14'); cText.setAttribute('y', '18');
+					cText.setAttribute('text-anchor', 'middle'); cText.setAttribute('font-size', '9');
+					cText.setAttribute('font-family', 'monospace'); cText.setAttribute('font-weight', 'bold');
+					cText.setAttribute('fill', node.optional ? '#546e7a' : color);
+					cText.textContent = String(node.order);
+					circleSvg.appendChild(circle); circleSvg.appendChild(cText);
+					leftCol.appendChild(circleSvg);
+
+					// Vertical connector line (not on last item)
+					if (!isLast) {
+						const lineEl = $e('div', `width:1px;flex:1;min-height:${isExpanded ? '8px' : '4px'};background:rgba(255,255,255,0.10);margin-top:0;`);
+						leftCol.appendChild(lineEl);
+					}
+
+					row.appendChild(leftCol);
+
+					// Right column: card
+					const card = $e('div', `flex:1;margin-bottom:${isLast ? '4px' : '2px'};margin-left:6px;border-radius:5px;border:1px solid ${isExpanded ? color + '44' : 'var(--vscode-widget-border)'};overflow:hidden;${node.optional ? 'opacity:0.7;' : ''}`);
+
+					// Card header — always visible, click to expand
+					const cardHdr = $e('div', `display:flex;align-items:center;gap:8px;padding:6px 10px;cursor:pointer;background:${isExpanded ? color + '0d' : 'transparent'};`);
+
+					const kindPill = $e('div', `font-size:8px;font-weight:700;padding:1px 5px;border-radius:2px;background:${color}20;color:${color};flex-shrink:0;font-family:monospace;`);
+					kindPill.textContent = shortKind;
+
+					const descSpan = $t('span', node.description, 'font-size:11px;font-weight:600;flex:1;');
+
+					const rightSide = $e('div', 'display:flex;align-items:center;gap:6px;flex-shrink:0;');
+					if (node.optional) {
+						rightSide.appendChild($t('span', 'optional', 'font-size:9px;color:var(--vscode-descriptionForeground);'));
+					}
+					// Expand chevron
+					const chevron = $t('span', isExpanded ? '▲' : '▼', 'font-size:8px;color:var(--vscode-descriptionForeground);');
+					rightSide.appendChild(chevron);
+
+					cardHdr.appendChild(kindPill); cardHdr.appendChild(descSpan); cardHdr.appendChild(rightSide);
+					card.appendChild(cardHdr);
+
+					// Condition text (if optional)
+					if (node.condition) {
+						const condEl = $t('div', `Condition: ${node.condition}`, `font-size:9px;color:var(--vscode-descriptionForeground);padding:0 10px 4px;${isExpanded ? '' : 'display:none;'}`);
+						card.appendChild(condEl);
+					}
+
+					// Code snippet (expanded only)
+					if (isExpanded && node.codeSnippet) {
+						const codeWrap = $e('div', 'padding:0 10px 8px;');
+						const pre = $e('pre', 'margin:0;padding:8px 10px;border-radius:4px;background:var(--vscode-editor-background);font-size:10px;font-family:var(--vscode-editor-font-family,monospace);color:var(--vscode-editor-foreground);border:1px solid var(--vscode-widget-border);white-space:pre-wrap;overflow-x:auto;');
+						pre.textContent = node.codeSnippet;
+						const copyBtn2 = this._btn('Copy', false, () => {
+							navigator.clipboard.writeText(node.codeSnippet);
+							copyBtn2.textContent = 'Copied!';
+							setTimeout(() => { copyBtn2.textContent = 'Copy'; }, 1500);
+						}, 'font-size:9px;padding:2px 8px;margin-top:4px;');
+						codeWrap.appendChild(pre); codeWrap.appendChild(copyBtn2);
+						card.appendChild(codeWrap);
+					}
+
+					cardHdr.addEventListener('click', () => {
+						if (expanded.has(i)) { expanded.delete(i); } else { expanded.add(i); }
+						renderFlow();
+					});
+
+					row.appendChild(card);
+					flowWrap.appendChild(row);
+				}
+
+				// Platform notes
+				if (chain.notes.length > 0) {
+					const notes = $e('div', 'margin-top:8px;padding:8px 10px;background:rgba(224,168,78,0.06);border:1px solid rgba(224,168,78,0.22);border-radius:5px;');
+					notes.appendChild($t('div', 'Platform Notes', 'font-size:9px;font-weight:700;color:#e0a84e;margin-bottom:4px;text-transform:uppercase;letter-spacing:0.05em;'));
+					for (const note of chain.notes) {
+						const nr = $e('div', 'font-size:10px;padding:2px 0;color:var(--vscode-foreground);line-height:1.5;');
+						nr.appendChild($t('span', '• ', 'color:#e0a84e;'));
+						nr.appendChild($t('span', note, ''));
+						notes.appendChild(nr);
+					}
+					flowWrap.appendChild(notes);
+				}
 			};
 
-			for (const node of chain.nodes) {
-				const color = kindColors[node.kind] ?? 'var(--vscode-descriptionForeground)';
-				const card = $e('div', [
-					'border:1px solid var(--vscode-widget-border)', 'border-radius:7px',
-					'padding:12px 14px', 'margin-bottom:8px',
-					node.optional ? 'opacity:0.65;' : '',
-				].join(';'));
-
-				const cardTop = $e('div', 'display:flex;align-items:center;gap:10px;margin-bottom:8px;');
-				const stepNum = $e('div', `width:22px;height:22px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;background:${color}22;color:${color};border:1px solid ${color}44;flex-shrink:0;`);
-				stepNum.textContent = String(node.order);
-				const kindBadge = $e('div', `font-size:9px;font-weight:700;padding:2px 7px;border-radius:3px;background:${color}15;color:${color};border:1px solid ${color}33;flex-shrink:0;`);
-				kindBadge.textContent = node.kind;
-				const descText = $e('div', 'flex:1;');
-				descText.appendChild($t('div', node.description, 'font-size:12px;font-weight:600;'));
-				if (node.optional && node.condition) {
-					descText.appendChild($t('div', `Condition: ${node.condition}`, 'font-size:10px;color:var(--vscode-descriptionForeground);margin-top:2px;'));
-				}
-				cardTop.appendChild(stepNum);
-				cardTop.appendChild(kindBadge);
-				cardTop.appendChild(descText);
-				if (node.optional) { cardTop.appendChild($t('span', 'optional', 'font-size:9px;color:var(--vscode-descriptionForeground);padding:1px 5px;border:1px solid var(--vscode-widget-border);border-radius:3px;flex-shrink:0;')); }
-				card.appendChild(cardTop);
-
-				const codeEl = $e('pre', [
-					'margin:0', 'padding:8px 10px', 'border-radius:5px',
-					'background:var(--vscode-editor-background)', 'font-size:10px',
-					'font-family:var(--vscode-editor-font-family,monospace)', 'color:var(--vscode-editor-foreground)',
-					'border:1px solid var(--vscode-widget-border)', 'white-space:pre-wrap',
-				].join(';'));
-				codeEl.textContent = node.codeSnippet;
-				card.appendChild(codeEl);
-				out.appendChild(card);
-			}
-
-			if (chain.notes.length > 0) {
-				const notes = $e('div', 'margin-top:12px;padding:12px 14px;background:rgba(224,168,78,0.06);border:1px solid rgba(224,168,78,0.25);border-radius:7px;');
-				notes.appendChild($t('div', 'Platform Notes', 'font-size:10px;font-weight:700;color:#e0a84e;margin-bottom:6px;text-transform:uppercase;letter-spacing:0.05em;'));
-				for (const note of chain.notes) {
-					const row = $e('div', 'display:flex;align-items:baseline;gap:8px;padding:3px 0;font-size:11px;');
-					row.appendChild($t('span', '—', 'color:#e0a84e;flex-shrink:0;'));
-					row.appendChild($t('span', note, 'color:var(--vscode-foreground);line-height:1.5;'));
-					notes.appendChild(row);
-				}
-				out.appendChild(notes);
-			}
+			renderFlow();
 		};
 
-		const analyzeBtn = this._btn('Analyze', true, runAnalyze, 'font-size:11px;padding:5px 14px;align-self:flex-end;');
-		controlRow.appendChild(periphIn.wrap); controlRow.appendChild(optWrap); controlRow.appendChild(analyzeBtn);
-		root.appendChild(controlRow);
-		root.appendChild(depsOut);
-
-		// Auto-analyze on load
+		root.appendChild(flowWrap);
 		runAnalyze();
 	}
 
@@ -1451,7 +2362,7 @@ export class FirmwarePart extends Part {
 		return wrap;
 	}
 
-	private _hwSetResult(el: HTMLElement, message: string, ok: boolean): void {
+	protected _hwSetResult(el: HTMLElement, message: string, ok: boolean): void {
 		el.textContent = message;
 		el.style.color = ok ? '#4caf50' : 'var(--vscode-errorForeground,#f48771)';
 	}

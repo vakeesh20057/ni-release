@@ -18,6 +18,20 @@ export class LinkerScriptGenerator {
 
 	constructor(private readonly _session: IFirmwareSessionService) {}
 
+	getFlashOrigin(): string {
+		const s = this._session.session;
+		if (!s.isActive || !s.mcuConfig) { return '0x08000000'; }
+		const { flashOrigin } = this._getMemoryOrigins(s.mcuConfig.family?.toUpperCase() ?? '', (s.mcuConfig as unknown as Record<string,unknown>)['memoryMap'] as never);
+		return '0x' + flashOrigin.toString(16).toUpperCase().padStart(8, '0');
+	}
+
+	getRamOrigin(): string {
+		const s = this._session.session;
+		if (!s.isActive || !s.mcuConfig) { return '0x20000000'; }
+		const { ramOrigin } = this._getMemoryOrigins(s.mcuConfig.family?.toUpperCase() ?? '', (s.mcuConfig as unknown as Record<string,unknown>)['memoryMap'] as never);
+		return '0x' + ramOrigin.toString(16).toUpperCase().padStart(8, '0');
+	}
+
 	generate(config?: Partial<ILinkerScriptConfig>): string {
 		const s = this._session.session;
 		if (!s.isActive || !s.mcuConfig) { return '/* No active firmware session */'; }
