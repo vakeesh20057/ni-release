@@ -144,6 +144,8 @@ export class FirmwarePart extends Part {
 		@INIMdService private readonly _niMdSvc: INIMdService,
 	) {
 		super(FIRMWARE_PART_ID, { hasTitle: false }, themeService, storageService, layoutService);
+		void this._schematicSvc;
+		void this._niMdSvc;
 	}
 
 	protected override createContentArea(parent: HTMLElement): HTMLElement {
@@ -718,15 +720,15 @@ export class FirmwarePart extends Part {
 
 		type HWPanel = 'pin-mux' | 'clock-tree' | 'memory' | 'register' | 'deps';
 		const panels: Array<{ id: HWPanel; label: string; badge: string; desc: string; color: string }> = [
-			{ id: 'pin-mux',    label: 'Pin Mux',           badge: 'GPIO',  desc: 'Conflict detection & AF validation',  color: 'var(--vscode-terminal-ansiCyan)' },
-			{ id: 'clock-tree', label: 'Clock Tree',        badge: 'PLL',   desc: 'PLL validator & SYSCLK solver',       color: 'var(--vscode-terminal-ansiYellow)' },
-			{ id: 'memory',     label: 'Memory & Linker',   badge: '.ld',   desc: 'Linker script & DMA hazard check',    color: 'var(--vscode-terminal-ansiGreen,#4caf50)' },
-			{ id: 'register',   label: 'Register Composer', badge: 'REG',   desc: 'Decode / diff register values',       color: 'var(--vscode-terminal-ansiMagenta)' },
+			{ id: 'pin-mux',    label: 'Pin Mux',           badge: 'GPIO',  desc: 'Conflict detection & AF validation',  color: 'var(--vscode-focusBorder)' },
+			{ id: 'clock-tree', label: 'Clock Tree',        badge: 'PLL',   desc: 'PLL validator & SYSCLK solver',       color: 'var(--vscode-focusBorder)' },
+			{ id: 'memory',     label: 'Memory & Linker',   badge: '.ld',   desc: 'Linker script & DMA hazard check',    color: 'var(--vscode-focusBorder)' },
+			{ id: 'register',   label: 'Register Composer', badge: 'REG',   desc: 'Decode / diff register values',       color: 'var(--vscode-focusBorder)' },
 			{ id: 'deps',       label: 'Init Dependencies', badge: 'INIT',  desc: 'Full peripheral init chain & C code', color: '#e0a84e' },
 		];
 
-		let activePanel: HWPanel = 'clock-tree';
-		const detail = $e('div', 'flex:1;overflow-y:auto;padding:24px 28px;background:var(--vscode-editor-background);');
+		let activePanel: HWPanel = 'pin-mux';
+		const detail = $e('div', 'flex:1;overflow-y:auto;padding:16px 20px;background:var(--vscode-editor-background);');
 
 		const nav = $e('div', [
 			'width:220px', 'flex-shrink:0',
@@ -810,8 +812,8 @@ export class FirmwarePart extends Part {
 		const conflicts = this._pinMuxSvc.getConflicts();
 
 		// Page header
-		const hdr = $e('div', 'margin-bottom:20px;');
-		hdr.appendChild($t('h2', 'Pin Mux Conflict Detector', 'margin:0 0 4px;font-size:17px;font-weight:700;'));
+		const hdr = $e('div', 'display:flex;align-items:center;gap:10px;margin-bottom:12px;');
+		hdr.appendChild($t('span', 'Pin Mux', 'font-size:14px;font-weight:700;'));
 		hdr.appendChild($t('div', 'Detects GPIO alternate function conflicts from live source analysis. All data from loaded SVD register maps — no LLM calls.', 'font-size:12px;color:var(--vscode-descriptionForeground);line-height:1.5;'));
 		root.appendChild(hdr);
 
@@ -823,11 +825,11 @@ export class FirmwarePart extends Part {
 				? 'background:rgba(76,175,80,0.08);border:1px solid rgba(76,175,80,0.25);'
 				: 'background:rgba(244,135,113,0.08);border:1px solid rgba(244,135,113,0.3);',
 		].join(';'));
-		const statusDot = $e('div', `width:10px;height:10px;border-radius:50%;flex-shrink:0;background:${conflicts.length === 0 ? 'var(--vscode-terminal-ansiGreen,#4caf50)' : 'var(--vscode-errorForeground,#f48771)'};box-shadow:0 0 6px ${conflicts.length === 0 ? 'rgba(76,175,80,0.5)' : 'rgba(244,135,113,0.5)'};`);
+		const statusDot = $e('div', `width:10px;height:10px;border-radius:50%;flex-shrink:0;background:${conflicts.length === 0 ? '#4caf50' : 'var(--vscode-errorForeground,#f48771)'};box-shadow:0 0 6px ${conflicts.length === 0 ? 'rgba(76,175,80,0.5)' : 'rgba(244,135,113,0.5)'};`);
 		const statusText = $e('div', 'flex:1;');
 		statusText.appendChild($t('div',
 			conflicts.length === 0 ? 'No pin conflicts detected' : `${conflicts.length} conflict${conflicts.length > 1 ? 's' : ''} detected`,
-			`font-size:14px;font-weight:700;color:${conflicts.length === 0 ? 'var(--vscode-terminal-ansiGreen,#4caf50)' : 'var(--vscode-errorForeground,#f48771)'};`));
+			`font-size:14px;font-weight:700;color:${conflicts.length === 0 ? '#4caf50' : 'var(--vscode-errorForeground,#f48771)'};`));
 		statusText.appendChild($t('div',
 			conflicts.length === 0 ? 'All GPIO alternate function assignments are consistent' : 'Multiple peripherals claim the same GPIO pin',
 			'font-size:11px;color:var(--vscode-descriptionForeground);margin-top:2px;'));
@@ -842,7 +844,7 @@ export class FirmwarePart extends Part {
 				const allocGrid = $e('div', 'display:flex;flex-direction:column;gap:3px;');
 				for (const alloc of c.allocations) {
 					const row = $e('div', 'display:flex;align-items:center;gap:10px;font-size:11px;font-family:monospace;padding:3px 0;border-top:1px solid rgba(244,135,113,0.15);');
-					row.appendChild($t('span', alloc.signal, 'color:var(--vscode-terminal-ansiCyan);min-width:120px;font-weight:600;'));
+					row.appendChild($t('span', alloc.signal, 'color:var(--vscode-foreground);min-width:120px;font-weight:600;'));
 					row.appendChild($t('span', `AF${alloc.af}`, 'color:#e0a84e;min-width:36px;'));
 					row.appendChild($t('span', alloc.source, 'color:var(--vscode-descriptionForeground);'));
 					allocGrid.appendChild(row);
@@ -900,10 +902,10 @@ export class FirmwarePart extends Part {
 			for (const sg of suggestions.slice(0, 16)) {
 				const row = $e('div', 'display:grid;grid-template-columns:60px 50px 140px 1fr;gap:12px;padding:6px 12px;font-size:11px;font-family:monospace;border-top:1px solid var(--vscode-widget-border);');
 				row.appendChild($t('div', `P${sg.pin.port}${sg.pin.pin}`, 'font-weight:700;'));
-				row.appendChild($t('div', `AF${sg.af}`, 'color:var(--vscode-terminal-ansiYellow);'));
-				row.appendChild($t('div', sg.signal, 'color:var(--vscode-terminal-ansiCyan);'));
+				row.appendChild($t('div', `AF${sg.af}`, 'color:var(--vscode-descriptionForeground);'));
+				row.appendChild($t('div', sg.signal, 'color:var(--vscode-foreground);'));
 				const avail = sg.reason === 'available';
-				row.appendChild($t('div', sg.reason, `color:${avail ? 'var(--vscode-terminal-ansiGreen,#4caf50)' : 'var(--vscode-descriptionForeground)'};font-weight:${avail ? '600' : '400'};`));
+				row.appendChild($t('div', sg.reason, `color:${avail ? '#4caf50' : 'var(--vscode-descriptionForeground)'};font-weight:${avail ? '600' : '400'};`));
 				tableWrap.appendChild(row);
 			}
 			out.appendChild(tableWrap);
@@ -921,8 +923,8 @@ export class FirmwarePart extends Part {
 		const family = s.mcuConfig?.family ?? 'STM32F4';
 		const constraints = this._clockTreeSvc.getConstraints(family);
 
-		const hdr = $e('div', 'margin-bottom:20px;');
-		hdr.appendChild($t('h2', 'Clock Tree Validator & Solver', 'margin:0 0 4px;font-size:17px;font-weight:700;'));
+		const hdr = $e('div', 'display:flex;align-items:center;gap:10px;margin-bottom:12px;');
+		hdr.appendChild($t('span', 'Clock Tree', 'font-size:14px;font-weight:700;'));
 		hdr.appendChild($t('div', `Constraint solver for ${family} PLL. Validates M/N/P/Q combinations, flash wait states, and USB/SDIO 48 MHz requirements against hardware limits.`, 'font-size:12px;color:var(--vscode-descriptionForeground);line-height:1.5;'));
 		root.appendChild(hdr);
 
@@ -996,9 +998,9 @@ export class FirmwarePart extends Part {
 					? 'background:rgba(76,175,80,0.08);border:1px solid rgba(76,175,80,0.25);'
 					: 'background:rgba(244,135,113,0.08);border:1px solid rgba(244,135,113,0.3);',
 			].join(';'));
-			const dot2 = $e('div', `width:8px;height:8px;border-radius:50%;flex-shrink:0;background:${result.valid ? 'var(--vscode-terminal-ansiGreen,#4caf50)' : 'var(--vscode-errorForeground,#f48771)'};`);
+			const dot2 = $e('div', `width:8px;height:8px;border-radius:50%;flex-shrink:0;background:${result.valid ? '#4caf50' : 'var(--vscode-errorForeground,#f48771)'};`);
 			resultBar.appendChild(dot2);
-			resultBar.appendChild($t('span', result.valid ? 'Configuration valid' : `${result.errors.length} constraint violation${result.errors.length > 1 ? 's' : ''}`, `font-weight:700;font-size:13px;color:${result.valid ? 'var(--vscode-terminal-ansiGreen,#4caf50)' : 'var(--vscode-errorForeground,#f48771)'};`));
+			resultBar.appendChild($t('span', result.valid ? 'Configuration valid' : `${result.errors.length} constraint violation${result.errors.length > 1 ? 's' : ''}`, `font-weight:700;font-size:13px;color:${result.valid ? '#4caf50' : 'var(--vscode-errorForeground,#f48771)'};`));
 			out.appendChild(resultBar);
 
 			if (result.valid) {
@@ -1006,7 +1008,7 @@ export class FirmwarePart extends Part {
 				const freqGrid = $e('div', 'display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:10px;');
 				const freqCard = (lbl: string, val: string, highlight?: boolean) => {
 					const c = $e('div', `border:1px solid var(--vscode-widget-border);border-radius:6px;padding:10px 12px;background:var(--vscode-sideBar-background);${highlight ? 'border-color:var(--vscode-focusBorder);' : ''}`);
-					c.appendChild($t('div', val, `font-size:15px;font-weight:700;font-family:monospace;color:${highlight ? 'var(--vscode-focusBorder)' : 'var(--vscode-terminal-ansiGreen,#4caf50)'};`));
+					c.appendChild($t('div', val, `font-size:15px;font-weight:700;font-family:monospace;color:${highlight ? 'var(--vscode-focusBorder)' : '#4caf50'};`));
 					c.appendChild($t('div', lbl, 'font-size:10px;color:var(--vscode-descriptionForeground);margin-top:3px;text-transform:uppercase;letter-spacing:0.05em;'));
 					return c;
 				};
@@ -1095,7 +1097,7 @@ export class FirmwarePart extends Part {
 				card.appendChild(pllRow);
 
 				const freqMeta = $e('div', 'display:flex;flex-wrap:wrap;gap:14px;font-size:11px;font-family:monospace;margin-bottom:10px;');
-				const fv = (k: string, v: string, accent?: boolean) => { const s = $e('span'); s.appendChild($t('span', k + ' ', 'color:var(--vscode-descriptionForeground);')); s.appendChild($t('span', v, accent ? 'font-weight:700;color:var(--vscode-terminal-ansiGreen,#4caf50);' : 'font-weight:600;')); freqMeta.appendChild(s); };
+				const fv = (k: string, v: string, accent?: boolean) => { const s = $e('span'); s.appendChild($t('span', k + ' ', 'color:var(--vscode-descriptionForeground);')); s.appendChild($t('span', v, accent ? 'font-weight:700;color:#4caf50;' : 'font-weight:600;')); freqMeta.appendChild(s); };
 				fv('SYSCLK', `${sol.sysclkMHz.toFixed(1)} MHz`, true);
 				fv('PLL48', `${(sol.pll48MHz ?? 0).toFixed(2)} MHz`);
 				fv('VCO', `${sol.vcoMHz.toFixed(1)} MHz`);
@@ -1130,8 +1132,8 @@ export class FirmwarePart extends Part {
 	// ─── Memory Panel ─────────────────────────────────────────────────────────
 
 	private _renderMemoryPanel(root: HTMLElement, s: IFirmwareSessionData): void {
-		const hdr = $e('div', 'margin-bottom:20px;');
-		hdr.appendChild($t('h2', 'Memory Budget & Linker Script', 'margin:0 0 4px;font-size:17px;font-weight:700;'));
+		const hdr = $e('div', 'display:flex;align-items:center;gap:10px;margin-bottom:12px;');
+		hdr.appendChild($t('span', 'Memory & Linker', 'font-size:14px;font-weight:700;'));
 		hdr.appendChild($t('div', 'Complete memory region overview with DMA-access hazard warnings, plus a generated GNU .ld linker script from the MCU hardware map.', 'font-size:12px;color:var(--vscode-descriptionForeground);line-height:1.5;'));
 		root.appendChild(hdr);
 
@@ -1190,7 +1192,7 @@ export class FirmwarePart extends Part {
 			row.appendChild($t('div', region, 'font-weight:700;font-family:monospace;'));
 			row.appendChild($t('div', origin, 'font-family:monospace;color:var(--vscode-descriptionForeground);font-size:10px;'));
 			row.appendChild($t('div', size, 'font-family:monospace;'));
-			const dmaEl = $t('div', dma, `font-weight:700;color:${dma === 'NO' ? 'var(--vscode-errorForeground,#f48771)' : dma === 'YES' ? 'var(--vscode-terminal-ansiGreen,#4caf50)' : 'var(--vscode-descriptionForeground)'};`);
+			const dmaEl = $t('div', dma, `font-weight:700;color:${dma === 'NO' ? 'var(--vscode-errorForeground,#f48771)' : dma === 'YES' ? '#4caf50' : 'var(--vscode-descriptionForeground)'};`);
 			row.appendChild(dmaEl);
 			row.appendChild($t('div', notes, `font-size:10px;color:${hazard ? 'var(--vscode-errorForeground,#f48771)' : 'var(--vscode-descriptionForeground)'};`));
 			table.appendChild(row);
@@ -1230,8 +1232,8 @@ export class FirmwarePart extends Part {
 	// ─── Register Compositor Panel ────────────────────────────────────────────
 
 	private _renderRegisterCompositorPanel(root: HTMLElement, _s: IFirmwareSessionData): void {
-		const hdr = $e('div', 'margin-bottom:20px;');
-		hdr.appendChild($t('h2', 'Register Value Compositor', 'margin:0 0 4px;font-size:17px;font-weight:700;'));
+		const hdr = $e('div', 'display:flex;align-items:center;gap:10px;margin-bottom:12px;');
+		hdr.appendChild($t('span', 'Register Composer', 'font-size:14px;font-weight:700;'));
 		hdr.appendChild($t('div', 'Decode any raw register value into its named bit fields, or diff two values to see exactly what changed. Requires an SVD file loaded in the Datasheets tab.', 'font-size:12px;color:var(--vscode-descriptionForeground);line-height:1.5;'));
 		root.appendChild(hdr);
 
@@ -1301,8 +1303,8 @@ export class FirmwarePart extends Part {
 	// ─── Init Dependencies Panel ──────────────────────────────────────────────
 
 	private _renderDepsPanel(root: HTMLElement, s: IFirmwareSessionData): void {
-		const hdr = $e('div', 'margin-bottom:20px;');
-		hdr.appendChild($t('h2', 'Peripheral Init Dependencies', 'margin:0 0 4px;font-size:17px;font-weight:700;'));
+		const hdr = $e('div', 'display:flex;align-items:center;gap:10px;margin-bottom:12px;');
+		hdr.appendChild($t('span', 'Init Dependencies', 'font-size:14px;font-weight:700;'));
 		hdr.appendChild($t('div', 'Generates the complete ordered initialization sequence for any peripheral — RCC clock enable, GPIO alternate function, DMA, NVIC — with ready-to-paste C code.', 'font-size:12px;color:var(--vscode-descriptionForeground);line-height:1.5;'));
 		root.appendChild(hdr);
 
@@ -1353,8 +1355,8 @@ export class FirmwarePart extends Part {
 
 			const kindColors: Record<string, string> = {
 				'rcc-clock-enable':  'var(--vscode-terminal-ansiCyan)',
-				'gpio-af-config':    'var(--vscode-terminal-ansiGreen,#4caf50)',
-				'gpio-analog-config':'var(--vscode-terminal-ansiGreen,#4caf50)',
+				'gpio-af-config':    '#4caf50',
+				'gpio-analog-config':'#4caf50',
 				'nvic-enable':       'var(--vscode-terminal-ansiMagenta)',
 				'dma-stream-config': '#e0a84e',
 				'peripheral-enable': 'var(--vscode-focusBorder)',
@@ -1424,36 +1426,34 @@ export class FirmwarePart extends Part {
 
 	/** Labeled input: returns { wrap, input } — wrap goes in the form, input is the <input> element. */
 	private _hwLabeledInput(label: string, hint: string, defaultVal: string, width: string): { wrap: HTMLElement; input: HTMLInputElement } {
-		const wrap = $e('div', 'display:flex;flex-direction:column;gap:4px;');
-		const lbl = $t('label', label, 'font-size:10px;font-weight:600;color:var(--vscode-descriptionForeground);text-transform:uppercase;letter-spacing:0.06em;white-space:nowrap;');
+		const wrap = $e('div', 'display:flex;flex-direction:column;gap:2px;');
+		const lbl = $t('label', label, 'font-size:9px;font-weight:600;color:var(--vscode-descriptionForeground);text-transform:uppercase;letter-spacing:0.04em;');
 		const el = $e('input', [
-			`width:${width}`, 'padding:5px 8px', 'box-sizing:border-box',
+			`width:${width}`, 'padding:4px 7px', 'box-sizing:border-box',
 			'border:1px solid var(--vscode-input-border,var(--vscode-widget-border))',
-			'border-radius:4px', 'background:var(--vscode-input-background)',
-			'color:var(--vscode-input-foreground)', 'font-size:12px',
+			'border-radius:3px', 'background:var(--vscode-input-background)',
+			'color:var(--vscode-input-foreground)', 'font-size:11px',
 			'font-family:var(--vscode-editor-font-family,monospace)', 'outline:none',
 		].join(';')) as HTMLInputElement;
-		el.placeholder = hint;
-		el.value = defaultVal;
+		el.placeholder = hint; el.value = defaultVal;
 		el.addEventListener('focus', () => { el.style.borderColor = 'var(--vscode-focusBorder)'; });
 		el.addEventListener('blur', () => { el.style.borderColor = 'var(--vscode-input-border,var(--vscode-widget-border))'; });
-		wrap.appendChild(lbl);
-		wrap.appendChild(el);
+		wrap.appendChild(lbl); wrap.appendChild(el);
 		return { wrap, input: el };
 	}
 
 	private _hwPanelSection(title: string, desc: string): HTMLElement {
-		const wrap = $e('div', 'margin:20px 0 12px;');
-		wrap.appendChild($t('div', title, 'font-size:12px;font-weight:700;color:var(--vscode-foreground);margin-bottom:3px;'));
-		wrap.appendChild($t('div', desc, 'font-size:11px;color:var(--vscode-descriptionForeground);line-height:1.5;'));
-		const line = $e('div', 'height:1px;background:var(--vscode-widget-border);margin-top:10px;');
-		wrap.appendChild(line);
+		const wrap = $e('div', 'margin:12px 0 8px;padding-top:10px;border-top:1px solid var(--vscode-widget-border);');
+		const row = $e('div', 'display:flex;align-items:baseline;gap:8px;');
+		row.appendChild($t('span', title, 'font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.04em;color:var(--vscode-foreground);'));
+		row.appendChild($t('span', desc, 'font-size:10px;color:var(--vscode-descriptionForeground);'));
+		wrap.appendChild(row);
 		return wrap;
 	}
 
 	private _hwSetResult(el: HTMLElement, message: string, ok: boolean): void {
 		el.textContent = message;
-		el.style.color = ok ? 'var(--vscode-terminal-ansiGreen,#4caf50)' : 'var(--vscode-errorForeground,#f48771)';
+		el.style.color = ok ? '#4caf50' : 'var(--vscode-errorForeground,#f48771)';
 	}
 
 	// ─── Upload datasheet ─────────────────────────────────────────────────────
@@ -1661,22 +1661,27 @@ export class FirmwarePart extends Part {
 	// ─── Instruments ─────────────────────────────────────────────────────────
 
 	private _renderInstruments(root: HTMLElement): void {
-		const wrap = $e('div', 'flex:1;display:flex;flex-direction:column;overflow:hidden;');
+		const wrap = $e('div', 'flex:1;display:flex;flex-direction:column;overflow:hidden;background:var(--vscode-editor-background);');
 		root.appendChild(wrap);
 
-		// Sub-nav: Logic / Power / Scope / Combined
 		type InstrTab = 'logic' | 'power' | 'scope' | 'combined';
 		let activeInstr: InstrTab = 'logic';
-		const subTabBar = $e('div', 'display:flex;gap:2px;padding:6px 12px;background:var(--vscode-sideBar-background);border-bottom:1px solid var(--vscode-widget-border);flex-shrink:0;');
-		const content = $e('div', 'flex:1;overflow-y:auto;padding:16px;');
-		wrap.appendChild(subTabBar);
+
+		// VS Code native tab-style bar
+		const toolbar = $e('div', [
+			'display:flex', 'align-items:center', 'gap:1px', 'padding:0',
+			'background:var(--vscode-editorGroupHeader-tabsBackground)',
+			'border-bottom:1px solid var(--vscode-editorGroupHeader-tabsBorder,var(--vscode-widget-border))',
+			'flex-shrink:0', 'height:35px',
+		].join(';'));
+
+		const content = $e('div', 'flex:1;display:flex;flex-direction:column;overflow:hidden;');
+		wrap.appendChild(toolbar);
 		wrap.appendChild(content);
 
 		const subTabs: Array<{ id: InstrTab; label: string }> = [
-			{ id: 'logic',    label: 'Logic Analyzer' },
-			{ id: 'power',    label: 'Power Analyzer' },
-			{ id: 'scope',    label: 'Oscilloscope' },
-			{ id: 'combined', label: 'Combined' },
+			{ id: 'logic', label: 'Logic' }, { id: 'power', label: 'Power' },
+			{ id: 'scope', label: 'Scope' }, { id: 'combined', label: 'Combined' },
 		];
 
 		const renderContent = (tab: InstrTab): void => {
@@ -1692,223 +1697,395 @@ export class FirmwarePart extends Part {
 		const subBtns = new Map<InstrTab, HTMLButtonElement>();
 		for (const st of subTabs) {
 			const btn = $e('button', [
-				'padding:4px 12px', 'border:1px solid var(--vscode-widget-border)',
-				'border-radius:4px', 'cursor:pointer', 'font-size:11px',
-				'background:transparent', 'color:var(--vscode-foreground)',
+				'padding:0 14px', 'border:none', 'border-bottom:2px solid transparent',
+				'cursor:pointer', 'font-size:11px', 'font-weight:500',
+				'background:transparent', 'color:var(--vscode-tab-inactiveForeground)',
+				'height:35px', 'white-space:nowrap',
 			].join(';')) as HTMLButtonElement;
 			btn.textContent = st.label;
 			btn.addEventListener('click', () => {
 				activeInstr = st.id;
 				subBtns.forEach((b, id) => {
-					b.style.background = id === activeInstr ? 'var(--vscode-button-background)' : 'transparent';
-					b.style.color = id === activeInstr ? 'var(--vscode-button-foreground)' : 'var(--vscode-foreground)';
+					const active = id === activeInstr;
+					b.style.borderBottomColor = active ? 'var(--vscode-panelTitle-activeBorder,var(--vscode-focusBorder))' : 'transparent';
+					b.style.color = active ? 'var(--vscode-tab-activeForeground)' : 'var(--vscode-tab-inactiveForeground)';
 				});
 				renderContent(st.id);
 			});
 			subBtns.set(st.id, btn);
-			subTabBar.appendChild(btn);
+			toolbar.appendChild(btn);
 		}
+		toolbar.appendChild($e('div', 'flex:1;'));
 
-		// Activate logic by default
-		const logicBtn = subBtns.get('logic')!;
-		logicBtn.style.background = 'var(--vscode-button-background)';
-		logicBtn.style.color = 'var(--vscode-button-foreground)';
+		const first = subBtns.get('logic')!;
+		first.style.borderBottomColor = 'var(--vscode-panelTitle-activeBorder,var(--vscode-focusBorder))';
+		first.style.color = 'var(--vscode-tab-activeForeground)';
 		renderContent('logic');
 	}
 
 	private _renderLogicPanel(root: HTMLElement): void {
-		this._instrSection(root, 'Logic Analyzer', 'Capture and decode digital signals (UART, SPI, I2C, CAN, ...) using Saleae Logic 2 or Digilent WaveForms.');
+		// ── Layout: compact toolbar / dark canvas / decode table ──
+		const panel = $e('div', 'flex:1;display:flex;flex-direction:column;overflow:hidden;');
+		root.appendChild(panel);
 
-		// Status card
-		const statusCard = this._instrCard(root, 'Status');
-		const statusText = $t('div', 'Click Detect to check for connected analyzer.', 'font-size:11px;color:var(--vscode-descriptionForeground);');
-		statusCard.appendChild(statusText);
-		const detectBtn = this._instrBtn('Detect Analyzer');
-		detectBtn.addEventListener('click', async () => {
-			statusText.textContent = 'Detecting...';
-			try {
-				const status = await this._laSvc.detect();
-				statusText.textContent = status.connected
-					? `Connected: ${status.backend.toUpperCase()} — ${status.availableChannels} channels, max ${status.maxSampleRateMHz} MHz`
-					: `Not detected. Start Logic 2 with automation on port 10430, or connect Digilent device.`;
-			} catch (e) { statusText.textContent = `Error: ${(e as Error).message}`; }
-		});
-		statusCard.appendChild(detectBtn);
+		const tb = $e('div', 'display:flex;align-items:center;gap:6px;padding:5px 10px;background:var(--vscode-sideBarSectionHeader-background);border-bottom:1px solid var(--vscode-widget-border);flex-shrink:0;');
+		const statusDot = $e('div', 'width:7px;height:7px;border-radius:50%;background:#616161;flex-shrink:0;');
+		const statusLbl = $t('span', 'Disconnected', 'font-size:10px;color:var(--vscode-descriptionForeground);min-width:100px;');
+		tb.appendChild(statusDot); tb.appendChild(statusLbl);
+		tb.appendChild($e('div', 'width:1px;height:14px;background:var(--vscode-widget-border);margin:0 2px;'));
 
-		// Channel config
-		const chanCard = this._instrCard(root, 'Capture');
-		const row = $e('div', 'display:flex;gap:8px;align-items:center;flex-wrap:wrap;');
-		const durInput = this._instrInput('Duration (s)', '2', '80px');
-		const rateInput = this._instrInput('Sample rate (MHz)', '12', '100px');
-		const protoSel = $e('select', 'padding:4px 6px;font-size:11px;background:var(--vscode-input-background);color:var(--vscode-input-foreground);border:1px solid var(--vscode-input-border);border-radius:4px;') as HTMLSelectElement;
-		for (const p of ['uart', 'spi', 'i2c', 'can', 'lin']) {
-			const opt = $e('option') as HTMLOptionElement; opt.value = p; opt.textContent = p.toUpperCase(); protoSel.appendChild(opt);
-		}
-		const captureBtn = this._instrBtn('Capture + Decode');
-		const outEl = $t('pre', '', 'margin-top:8px;font-size:10px;font-family:monospace;white-space:pre-wrap;max-height:300px;overflow-y:auto;background:var(--vscode-terminal-background);padding:6px;border-radius:4px;');
-		row.appendChild($t('span', 'Duration:', 'font-size:11px;')); row.appendChild(durInput);
-		row.appendChild($t('span', 'Rate:', 'font-size:11px;')); row.appendChild(rateInput);
-		row.appendChild($t('span', 'Protocol:', 'font-size:11px;')); row.appendChild(protoSel);
-		row.appendChild(captureBtn);
-		chanCard.appendChild(row);
-		chanCard.appendChild(outEl);
+		const durIn = this._instrInput('Dur', '2', '44px');
+		const rateIn = this._instrInput('MHz', '12', '36px');
+		const protoSel = $e('select', 'padding:3px 5px;font-size:10px;background:var(--vscode-dropdown-background);color:var(--vscode-dropdown-foreground);border:1px solid var(--vscode-dropdown-border,var(--vscode-widget-border));border-radius:3px;') as HTMLSelectElement;
+		for (const p of ['uart','spi','i2c','can','lin','i2s','jtag','swd']) { const o=$e('option') as HTMLOptionElement; o.value=p; o.textContent=p.toUpperCase(); protoSel.appendChild(o); }
 
-		captureBtn.addEventListener('click', async () => {
-			outEl.textContent = 'Capturing...';
-			try {
-				const dur = parseFloat(durInput.value) || 2;
-				const rate = (parseFloat(rateInput.value) || 12) * 1e6;
-				const capture = await this._laSvc.captureChannels(
-					[{ id: 0, label: 'CH0', threshold: 1.65, pullup: false }, { id: 1, label: 'CH1', threshold: 1.65, pullup: true }],
-					dur, rate,
-				);
-				outEl.textContent = `Captured: ${capture.captureId}\n`;
-				const frames = await this._laSvc.decodeProtocol(capture.captureId, { protocol: protoSel.value as Parameters<typeof this._laSvc.decodeProtocol>[1]['protocol'] });
-				if (frames.length === 0) {
-					outEl.textContent += 'No frames decoded.';
-				} else {
-					outEl.textContent += frames.slice(0, 30).map(f =>
-						`${f.timestamp.toFixed(6)}s  ${f.dataHex}  "${f.dataAscii}"${f.error ? '  [ERR: ' + f.error + ']' : ''}`,
-					).join('\n');
-					if (frames.length > 30) { outEl.textContent += `\n... ${frames.length - 30} more`; }
+		const detBtn = this._instrBtn('Detect');
+		const capBtn = this._instrBtn('Capture');
+		capBtn.style.background = '#2e7d32'; capBtn.style.color = '#fff';
+		const stopBtn = this._instrBtn('Stop');
+		stopBtn.style.background = '#c62828'; stopBtn.style.color = '#fff'; stopBtn.style.display = 'none';
+
+		tb.appendChild($t('span','Dur:','font-size:10px;color:var(--vscode-descriptionForeground);')); tb.appendChild(durIn);
+		tb.appendChild($t('span','@','font-size:10px;color:var(--vscode-descriptionForeground);')); tb.appendChild(rateIn);
+		tb.appendChild($t('span','MHz','font-size:10px;color:var(--vscode-descriptionForeground);'));
+		tb.appendChild($e('div','width:1px;height:14px;background:var(--vscode-widget-border);margin:0 2px;'));
+		tb.appendChild(protoSel); tb.appendChild($e('div','flex:1;'));
+		tb.appendChild(detBtn); tb.appendChild(capBtn); tb.appendChild(stopBtn);
+		panel.appendChild(tb);
+
+		// Canvas waveform area
+		const cWrap = $e('div', 'flex:2;position:relative;overflow:hidden;background:#1a1a2e;border-bottom:1px solid var(--vscode-widget-border);min-height:180px;');
+		const canvas = $e('canvas', 'width:100%;height:100%;display:block;') as HTMLCanvasElement;
+		cWrap.appendChild(canvas);
+		const overlay = $t('div','Click Detect, then Capture to see waveforms','position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:12px;color:#607D8B;pointer-events:none;');
+		cWrap.appendChild(overlay);
+		panel.appendChild(cWrap);
+
+		// Decode table
+		const dWrap = $e('div', 'flex:1;overflow-y:auto;min-height:100px;');
+		const dHdr = $e('div','display:grid;grid-template-columns:90px 60px 80px 1fr 80px 60px;gap:1px;padding:4px 10px;background:var(--vscode-sideBarSectionHeader-background);font-size:9px;font-weight:700;color:var(--vscode-descriptionForeground);text-transform:uppercase;letter-spacing:0.04em;border-bottom:1px solid var(--vscode-widget-border);flex-shrink:0;');
+		for (const h of ['Timestamp','Proto','Address','Data','ASCII','Status']) dHdr.appendChild($t('span',h));
+		dWrap.appendChild(dHdr);
+		const dBody = $e('div','font-family:var(--vscode-editor-font-family,monospace);font-size:10px;');
+		dBody.appendChild($t('div','No decoded frames yet','padding:12px;color:var(--vscode-descriptionForeground);font-size:11px;'));
+		dWrap.appendChild(dBody);
+		panel.appendChild(dWrap);
+
+		// ── Canvas drawing ──
+		const COLORS = ['#4fc3f7','#81c784','#ffb74d','#f06292','#ba68c8','#4db6ac','#ff8a65','#aed581'];
+		let lastSamples: Record<number,number[]> | null = null;
+
+		const drawWaveform = (samples: Record<number,number[]>, sr: number) => {
+			overlay.style.display = 'none';
+			const ctx = canvas.getContext('2d'); if (!ctx) return;
+			const r = cWrap.getBoundingClientRect();
+			const dpr = window.devicePixelRatio||1;
+			canvas.width = r.width*dpr; canvas.height = r.height*dpr;
+			ctx.scale(dpr,dpr);
+			const W=r.width, H=r.height;
+			ctx.fillStyle='#1a1a2e'; ctx.fillRect(0,0,W,H);
+			ctx.strokeStyle='#2a2a4a'; ctx.lineWidth=0.5;
+			for(let x=0;x<W;x+=W/10){ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,H);ctx.stroke();}
+
+			const ids = Object.keys(samples).map(Number).sort();
+			const chH = Math.max(28, H/Math.max(ids.length,1));
+			for(let ci=0;ci<ids.length;ci++){
+				const s=samples[ids[ci]!]??[]; if(!s.length) continue;
+				const yLo=ci*chH+chH*0.8, yHi=ci*chH+chH*0.2;
+				const col=COLORS[ci%COLORS.length]!;
+				ctx.fillStyle=col; ctx.font='9px monospace';
+				ctx.fillText(`CH${ids[ci]}`,4,ci*chH+12);
+				ctx.strokeStyle=col; ctx.lineWidth=1.5; ctx.beginPath();
+				let ly=s[0]?yHi:yLo; ctx.moveTo(0,ly);
+				for(let px=1;px<W;px++){
+					const si=Math.floor((px/W)*s.length);
+					const y=(s[Math.min(si,s.length-1)]??0)?yHi:yLo;
+					if(y!==ly){ctx.lineTo(px,ly);ctx.lineTo(px,y);}
+					ly=y;
 				}
-			} catch (e) { outEl.textContent = `Error: ${(e as Error).message}`; }
+				ctx.lineTo(W,ly); ctx.stroke();
+				if(ci<ids.length-1){ctx.strokeStyle='#2a2a4a';ctx.lineWidth=0.5;ctx.beginPath();ctx.moveTo(0,(ci+1)*chH);ctx.lineTo(W,(ci+1)*chH);ctx.stroke();}
+			}
+			const dur=(Object.values(samples)[0]?.length??0)/sr;
+			ctx.fillStyle='#546E7A'; ctx.font='9px monospace'; ctx.textAlign='left'; ctx.textBaseline='bottom';
+			for(let i=0;i<=10;i++){const t=(i/10)*dur;ctx.fillText(t<0.001?`${(t*1e6).toFixed(0)}us`:t<1?`${(t*1e3).toFixed(1)}ms`:`${t.toFixed(2)}s`,(i/10)*W+2,H-2);}
+		};
+
+		const renderFrames = (frames: Array<{timestamp:number;protocol:string;address?:number;data:number[];dataHex:string;dataAscii:string;error?:string}>) => {
+			dBody.textContent='';
+			if(!frames.length){dBody.appendChild($t('div','No frames decoded. Check channel assignment and baud rate.','padding:10px;color:var(--vscode-descriptionForeground);font-size:11px;'));return;}
+			for(const f of frames.slice(0,200)){
+				const row=$e('div',`display:grid;grid-template-columns:90px 60px 80px 1fr 80px 60px;gap:1px;padding:3px 10px;border-top:1px solid var(--vscode-widget-border);font-size:10px;${f.error?'background:rgba(244,67,54,0.07);':''}`);
+				row.appendChild($t('span',`${f.timestamp.toFixed(6)}s`,'color:var(--vscode-descriptionForeground);'));
+				row.appendChild($t('span',f.protocol.toUpperCase(),'font-weight:600;'));
+				row.appendChild($t('span',f.address!==undefined?`0x${f.address.toString(16).toUpperCase().padStart(2,'0')}`:'-',''));
+				row.appendChild($t('span',f.dataHex,'overflow:hidden;text-overflow:ellipsis;white-space:nowrap;'));
+				row.appendChild($t('span',f.dataAscii,'color:var(--vscode-descriptionForeground);'));
+				const st=$t('span',f.error?'ERR':'OK','font-weight:600;');
+				st.style.color=f.error?'#f44336':'#4caf50'; if(f.error)st.title=f.error;
+				row.appendChild(st); dBody.appendChild(row);
+			}
+			if(frames.length>200)dBody.appendChild($t('div',`Showing 200 of ${frames.length}`,'padding:4px 10px;font-size:9px;color:var(--vscode-descriptionForeground);'));
+		};
+
+		detBtn.addEventListener('click', async()=>{
+			statusLbl.textContent='Detecting...'; statusDot.style.background='#ffc107';
+			try{const s=await this._laSvc.detect(); if(s.connected){statusDot.style.background='#4caf50';statusLbl.textContent=`${s.backend.toUpperCase()} (${s.availableChannels}ch)`;}else{statusDot.style.background='#f44336';statusLbl.textContent='Not found';}}
+			catch(e){statusDot.style.background='#f44336';statusLbl.textContent=`Error`;}
 		});
+
+		capBtn.addEventListener('click', async()=>{
+			capBtn.style.display='none'; stopBtn.style.display='';
+			overlay.textContent='Capturing...'; overlay.style.display='flex';
+			try{
+				const dur=parseFloat(durIn.value)||2, rate=(parseFloat(rateIn.value)||12)*1e6;
+				const cap=await this._laSvc.captureChannels([{id:0,label:'CH0',threshold:1.65,pullup:false},{id:1,label:'CH1',threshold:1.65,pullup:true}],dur,rate);
+				if(cap.rawSamples&&Object.keys(cap.rawSamples).length>0){lastSamples=cap.rawSamples;drawWaveform(cap.rawSamples,cap.sampleRate);}
+				else{overlay.textContent=`Captured ${cap.captureId}`;}
+				const proto=protoSel.value as 'uart'|'spi'|'i2c'|'can'|'lin'|'i2s'|'jtag'|'swd';
+				const frames=await this._laSvc.decodeProtocol(cap.captureId,{protocol:proto,baudRate:115200,dataChannel:0,clockChannel:1});
+				renderFrames(frames);
+			}catch(e){overlay.textContent=`Error: ${(e as Error).message}`;overlay.style.display='flex';}
+			finally{capBtn.style.display='';stopBtn.style.display='none';}
+		});
+
+		new ResizeObserver(()=>{if(lastSamples)drawWaveform(lastSamples,12e6);}).observe(cWrap);
 	}
 
 	private _renderPowerPanel(root: HTMLElement): void {
-		this._instrSection(root, 'Power Analyzer', 'Measure DUT current, voltage, and energy using Nordic PPK2 or Joulescope JS110/JS220.');
+		const panel = $e('div','flex:1;display:flex;flex-direction:column;overflow:hidden;');
+		root.appendChild(panel);
 
-		const statusCard = this._instrCard(root, 'Status');
-		const statusText = $t('div', 'Click Detect to find connected analyzer.', 'font-size:11px;color:var(--vscode-descriptionForeground);');
-		statusCard.appendChild(statusText);
-		const detectBtn = this._instrBtn('Detect Device');
-		detectBtn.addEventListener('click', async () => {
-			statusText.textContent = 'Detecting...';
-			const st = await this._paSvc.detect();
-			statusText.textContent = st.connected ? `Connected: ${st.device.toUpperCase()}${st.firmwareVersion ? ' v' + st.firmwareVersion : ''}` : `Not detected. Connect Nordic PPK2 or Joulescope JS110/JS220.`;
-		});
-		statusCard.appendChild(detectBtn);
+		const tb = $e('div','display:flex;align-items:center;gap:6px;padding:5px 10px;background:var(--vscode-sideBarSectionHeader-background);border-bottom:1px solid var(--vscode-widget-border);flex-shrink:0;');
+		const dot = $e('div','width:7px;height:7px;border-radius:50%;background:#616161;flex-shrink:0;');
+		const lbl = $t('span','Disconnected','font-size:10px;color:var(--vscode-descriptionForeground);min-width:80px;');
+		tb.appendChild(dot); tb.appendChild(lbl);
+		tb.appendChild($e('div','width:1px;height:14px;background:var(--vscode-widget-border);margin:0 2px;'));
+		const durIn=this._instrInput('Dur','5','40px');
+		const voltIn=this._instrInput('V','3.3','36px');
+		const modeSel=$e('select','padding:3px 5px;font-size:10px;background:var(--vscode-dropdown-background);color:var(--vscode-dropdown-foreground);border:1px solid var(--vscode-dropdown-border,var(--vscode-widget-border));border-radius:3px;') as HTMLSelectElement;
+		for(const m of [['ampere','Ampere'],['source','Source']]){const o=$e('option') as HTMLOptionElement;o.value=m[0]!;o.textContent=m[1]!;modeSel.appendChild(o);}
+		const detBtn=this._instrBtn('Detect');
+		const measBtn=this._instrBtn('Measure');
+		measBtn.style.background='#2e7d32'; measBtn.style.color='#fff';
+		tb.appendChild($t('span','Dur:','font-size:10px;color:var(--vscode-descriptionForeground);')); tb.appendChild(durIn);
+		tb.appendChild($t('span','s V:','font-size:10px;color:var(--vscode-descriptionForeground);')); tb.appendChild(voltIn);
+		tb.appendChild(modeSel); tb.appendChild($e('div','flex:1;'));
+		tb.appendChild(detBtn); tb.appendChild(measBtn);
+		panel.appendChild(tb);
 
-		const measureCard = this._instrCard(root, 'Measure');
-		const row = $e('div', 'display:flex;gap:8px;align-items:center;flex-wrap:wrap;');
-		const durInput = this._instrInput('Duration (s)', '5', '80px');
-		const voltInput = this._instrInput('Voltage (V)', '3.3', '70px');
-		const measureBtn = this._instrBtn('Measure Current');
-		const resultEl = $t('div', '', 'margin-top:8px;font-size:12px;');
-		row.appendChild($t('span', 'Duration:', 'font-size:11px;')); row.appendChild(durInput);
-		row.appendChild($t('span', 'Supply:', 'font-size:11px;')); row.appendChild(voltInput);
-		row.appendChild(measureBtn);
-		measureCard.appendChild(row);
-		measureCard.appendChild(resultEl);
+		// Current graph canvas (Nordic PPK2 style)
+		const gWrap=$e('div','flex:3;position:relative;overflow:hidden;background:#0d1117;border-bottom:1px solid var(--vscode-widget-border);min-height:200px;');
+		const gCanvas=$e('canvas','width:100%;height:100%;display:block;') as HTMLCanvasElement;
+		gWrap.appendChild(gCanvas);
+		const gOverlay=$t('div','Click Detect, then Measure','position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:12px;color:#607D8B;pointer-events:none;');
+		gWrap.appendChild(gOverlay);
+		panel.appendChild(gWrap);
 
-		measureBtn.addEventListener('click', async () => {
-			resultEl.textContent = 'Measuring...';
-			try {
-				const st = this._paSvc.getStatus();
-				const r = await this._paSvc.measure({ device: st.device, mode: 'ampere', voltageV: parseFloat(voltInput.value) || 3.3 }, parseFloat(durInput.value) || 5);
-				const fmtUa = (ua: number) => ua >= 1000 ? `${(ua/1000).toFixed(2)} mA` : `${ua.toFixed(1)} µA`;
-				resultEl.textContent = `avg: ${fmtUa(r.avgUa)}  min: ${fmtUa(r.minUa)}  max: ${fmtUa(r.maxUa)}  peak: ${fmtUa(r.peakUa)}\nenergy: ${r.energyUJ.toFixed(1)} µJ  charge: ${r.chargeUC.toFixed(1)} µC`;
-			} catch (e) { resultEl.textContent = `Error: ${(e as Error).message}`; }
-		});
+		// Stats bar
+		const statsBar=$e('div','display:grid;grid-template-columns:repeat(6,1fr);gap:1px;background:var(--vscode-widget-border);border-top:1px solid var(--vscode-widget-border);flex-shrink:0;');
+		const statVals: Record<string,HTMLElement>={};
+		for(const lb of ['AVG','MIN','MAX','PEAK','ENERGY','CHARGE']){
+			const cell=$e('div','padding:6px 8px;background:var(--vscode-editor-background);text-align:center;');
+			const v=$t('div','-','font-size:13px;font-weight:700;font-family:var(--vscode-editor-font-family,monospace);');
+			cell.appendChild(v); cell.appendChild($t('div',lb,'font-size:8px;color:var(--vscode-descriptionForeground);text-transform:uppercase;letter-spacing:0.04em;margin-top:1px;'));
+			statsBar.appendChild(cell); statVals[lb]=v;
+		}
+		panel.appendChild(statsBar);
+
+		const fmtUa=(ua:number)=>ua>=1000?`${(ua/1000).toFixed(2)} mA`:`${ua.toFixed(1)} uA`;
+
+		const drawGraph=(r:{avgUa:number;minUa:number;maxUa:number;peakUa:number;energyUJ:number;chargeUC:number;durationMs:number})=>{
+			gOverlay.style.display='none';
+			const ctx=gCanvas.getContext('2d'); if(!ctx) return;
+			const rect=gWrap.getBoundingClientRect();
+			const dpr=window.devicePixelRatio||1;
+			gCanvas.width=rect.width*dpr; gCanvas.height=rect.height*dpr;
+			ctx.scale(dpr,dpr); const W=rect.width,H=rect.height;
+			ctx.fillStyle='#0d1117'; ctx.fillRect(0,0,W,H);
+			const yMax=r.peakUa*1.2||1000;
+			ctx.strokeStyle='#1c2433'; ctx.lineWidth=0.5;
+			for(let i=0;i<=5;i++){const y=(i/5)*H;ctx.beginPath();ctx.moveTo(40,y);ctx.lineTo(W,y);ctx.stroke();const val=yMax-(i/5)*yMax;ctx.fillStyle='#546E7A';ctx.font='9px monospace';ctx.textAlign='left';ctx.fillText(val>=1000?`${(val/1000).toFixed(1)}mA`:`${val.toFixed(0)}uA`,2,y+3);}
+			// avg line + range band
+			const avgY=H-(r.avgUa/yMax)*H;
+			const minY=H-(r.minUa/yMax)*H;
+			const maxY=H-(r.maxUa/yMax)*H;
+			ctx.fillStyle='rgba(79,195,247,0.07)'; ctx.fillRect(40,maxY,W-40,minY-maxY);
+			ctx.strokeStyle='#4fc3f7'; ctx.lineWidth=2; ctx.setLineDash([4,4]);
+			ctx.beginPath(); ctx.moveTo(40,avgY); ctx.lineTo(W,avgY); ctx.stroke(); ctx.setLineDash([]);
+			ctx.fillStyle='#4fc3f7'; ctx.font='11px monospace'; ctx.textAlign='center';
+			ctx.fillText(fmtUa(r.avgUa),W/2,avgY-8);
+			statVals['AVG']!.textContent=fmtUa(r.avgUa);
+			statVals['MIN']!.textContent=fmtUa(r.minUa);
+			statVals['MAX']!.textContent=fmtUa(r.maxUa);
+			statVals['PEAK']!.textContent=fmtUa(r.peakUa);
+			statVals['ENERGY']!.textContent=r.energyUJ>=1000?`${(r.energyUJ/1000).toFixed(1)}mJ`:`${r.energyUJ.toFixed(0)}uJ`;
+			statVals['CHARGE']!.textContent=`${r.chargeUC.toFixed(1)}uC`;
+		};
+
+		detBtn.addEventListener('click',async()=>{lbl.textContent='Detecting...';dot.style.background='#ffc107';const s=await this._paSvc.detect();if(s.connected){dot.style.background='#4caf50';lbl.textContent=s.device.toUpperCase();}else{dot.style.background='#f44336';lbl.textContent='Not found';}});
+		measBtn.addEventListener('click',async()=>{gOverlay.textContent='Measuring...';gOverlay.style.display='flex';try{const s=this._paSvc.getStatus();const r=await this._paSvc.measure({device:s.device,mode:modeSel.value as 'source'|'ampere',voltageV:parseFloat(voltIn.value)||3.3},parseFloat(durIn.value)||5);drawGraph(r);}catch(e){gOverlay.textContent=`Error: ${(e as Error).message}`;gOverlay.style.display='flex';}});
+		new ResizeObserver(()=>{gCanvas.style.width=`${gWrap.clientWidth}px`;gCanvas.style.height=`${gWrap.clientHeight}px`;}).observe(gWrap);
 	}
 
 	private _renderScopePanel(root: HTMLElement): void {
-		this._instrSection(root, 'Oscilloscope', 'Control Siglent SDS800X HD or any LXI/SCPI scope over LAN. Discover via mDNS or set VOID_SCOPE_HOST env var.');
+		const panel=$e('div','flex:1;display:flex;flex-direction:column;overflow:hidden;');
+		root.appendChild(panel);
 
-		const statusCard = this._instrCard(root, 'Connection');
-		const statusText = $t('div', 'Click Discover to find scopes on LAN.', 'font-size:11px;color:var(--vscode-descriptionForeground);');
-		statusCard.appendChild(statusText);
-		const discoverBtn = this._instrBtn('Discover Scopes');
-		discoverBtn.addEventListener('click', async () => {
-			statusText.textContent = 'Scanning LAN for LXI scopes...';
-			const scopes = await this._scopeSvc.discover();
-			statusText.textContent = scopes.length > 0
-				? scopes.map(s => `${s.model} @ ${s.host} (${s.manufacturer})`).join('\n')
-				: 'No scopes found. Check LAN connection or set VOID_SCOPE_HOST=<ip> env var.';
-		});
-		statusCard.appendChild(discoverBtn);
+		const tb=$e('div','display:flex;align-items:center;gap:6px;padding:5px 10px;background:var(--vscode-sideBarSectionHeader-background);border-bottom:1px solid var(--vscode-widget-border);flex-shrink:0;');
+		const dot=$e('div','width:7px;height:7px;border-radius:50%;background:#616161;flex-shrink:0;');
+		const lbl=$t('span','No scope','font-size:10px;color:var(--vscode-descriptionForeground);min-width:70px;');
+		tb.appendChild(dot); tb.appendChild(lbl);
+		tb.appendChild($e('div','width:1px;height:14px;background:var(--vscode-widget-border);margin:0 2px;'));
+		const chIn=this._instrInput('CH','1','28px');
+		const vdivIn=this._instrInput('V/div','1.0','46px');
+		const trigIn=this._instrInput('Trig','0','46px');
+		const trigSel=$e('select','padding:3px 4px;font-size:10px;background:var(--vscode-dropdown-background);color:var(--vscode-dropdown-foreground);border:1px solid var(--vscode-dropdown-border,var(--vscode-widget-border));border-radius:3px;') as HTMLSelectElement;
+		for(const e of [['POS','Rise'],['NEG','Fall']]){const o=$e('option') as HTMLOptionElement;o.value=e[0]!;o.textContent=e[1]!;trigSel.appendChild(o);}
+		const discBtn=this._instrBtn('Discover');
+		const capBtn=this._instrBtn('Capture'); capBtn.style.background='#2e7d32'; capBtn.style.color='#fff';
+		tb.appendChild($t('span','CH:','font-size:10px;color:var(--vscode-descriptionForeground);')); tb.appendChild(chIn);
+		tb.appendChild($t('span','V/div:','font-size:10px;color:var(--vscode-descriptionForeground);')); tb.appendChild(vdivIn);
+		tb.appendChild($t('span','Trig:','font-size:10px;color:var(--vscode-descriptionForeground);')); tb.appendChild(trigIn); tb.appendChild(trigSel);
+		tb.appendChild($e('div','flex:1;')); tb.appendChild(discBtn); tb.appendChild(capBtn);
+		panel.appendChild(tb);
 
-		const captureCard = this._instrCard(root, 'Capture');
-		const row = $e('div', 'display:flex;gap:8px;align-items:center;flex-wrap:wrap;');
-		const chInput = this._instrInput('Channel', '1', '50px');
-		const vdivInput = this._instrInput('V/div', '1.0', '70px');
-		const trigInput = this._instrInput('Trigger V', '0', '70px');
-		const captureBtn = this._instrBtn('Capture Waveform');
-		const resultEl = $t('pre', '', 'margin-top:8px;font-size:10px;font-family:monospace;white-space:pre-wrap;max-height:200px;overflow-y:auto;');
-		row.appendChild($t('span', 'CH:', 'font-size:11px;')); row.appendChild(chInput);
-		row.appendChild($t('span', 'V/div:', 'font-size:11px;')); row.appendChild(vdivInput);
-		row.appendChild($t('span', 'Trig:', 'font-size:11px;')); row.appendChild(trigInput);
-		row.appendChild(captureBtn);
-		captureCard.appendChild(row);
-		captureCard.appendChild(resultEl);
+		// CRT-style scope canvas
+		const sWrap=$e('div','flex:1;position:relative;overflow:hidden;background:#001a00;border-bottom:1px solid var(--vscode-widget-border);min-height:250px;');
+		const sCanvas=$e('canvas','width:100%;height:100%;display:block;') as HTMLCanvasElement;
+		sWrap.appendChild(sCanvas);
+		const sOverlay=$t('div','Click Discover to find scope on LAN','position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:12px;color:#2e7d32;pointer-events:none;');
+		sWrap.appendChild(sOverlay);
+		panel.appendChild(sWrap);
 
-		captureBtn.addEventListener('click', async () => {
-			resultEl.textContent = 'Arming trigger...';
-			try {
-				const ch = (parseInt(chInput.value) || 1) as 1|2|3|4;
-				await this._scopeSvc.configureChannel({ channel: ch, vDiv: parseFloat(vdivInput.value) || 1.0, coupling: 'DC', probe: 1, enabled: true });
-				await this._scopeSvc.configureTrigger({ source: `C${ch}`, edge: 'POS', level: parseFloat(trigInput.value) || 0, mode: 'SING' });
-				const capture = await this._scopeSvc.capture(5);
-				const wf = capture.channels[0];
-				if (!wf) { resultEl.textContent = 'No waveform data.'; return; }
-				const vMin = Math.min(...wf.voltages), vMax = Math.max(...wf.voltages);
-				const vMean = wf.voltages.reduce((a, b) => a + b, 0) / wf.voltages.length;
-				resultEl.textContent = `Capture: ${capture.captureId}\nCH${wf.channel}: ${wf.voltages.length} samples @ ${(wf.sampleRate/1e6).toFixed(1)} MHz\nPk-Pk: ${(vMax-vMin).toFixed(3)} V  Max: ${vMax.toFixed(3)} V  Min: ${vMin.toFixed(3)} V  Mean: ${vMean.toFixed(3)} V`;
-			} catch (e) { resultEl.textContent = `Error: ${(e as Error).message}`; }
-		});
+		// Measurements bar
+		const mBar=$e('div','display:flex;gap:18px;padding:7px 12px;background:var(--vscode-sideBarSectionHeader-background);border-top:1px solid var(--vscode-widget-border);flex-shrink:0;font-family:var(--vscode-editor-font-family,monospace);font-size:11px;');
+		const mVals: Record<string,HTMLElement>={};
+		for(const m of ['Freq','Pk-Pk','Rise','Mean','RMS']){const c=$e('span');c.appendChild($t('span',`${m}: `,'font-size:9px;color:var(--vscode-descriptionForeground);'));const v=$t('span','-','color:#66bb6a;font-weight:600;');c.appendChild(v);mBar.appendChild(c);mVals[m]=v;}
+		panel.appendChild(mBar);
+
+		const drawScope=(voltages:number[],vDiv:number)=>{
+			sOverlay.style.display='none';
+			const ctx=sCanvas.getContext('2d'); if(!ctx) return;
+			const r=sWrap.getBoundingClientRect();
+			const dpr=window.devicePixelRatio||1;
+			sCanvas.width=r.width*dpr; sCanvas.height=r.height*dpr;
+			ctx.scale(dpr,dpr); const W=r.width,H=r.height;
+			ctx.fillStyle='#001a00'; ctx.fillRect(0,0,W,H);
+			// Grid 10x8
+			ctx.strokeStyle='#0a3d0a'; ctx.lineWidth=0.5;
+			for(let i=0;i<=10;i++){ctx.beginPath();ctx.moveTo((i/10)*W,0);ctx.lineTo((i/10)*W,H);ctx.stroke();}
+			for(let i=0;i<=8;i++){ctx.beginPath();ctx.moveTo(0,(i/8)*H);ctx.lineTo(W,(i/8)*H);ctx.stroke();}
+			ctx.strokeStyle='#1b5e20'; ctx.lineWidth=1;
+			ctx.beginPath();ctx.moveTo(W/2,0);ctx.lineTo(W/2,H);ctx.stroke();
+			ctx.beginPath();ctx.moveTo(0,H/2);ctx.lineTo(W,H/2);ctx.stroke();
+			// Waveform
+			const vRange=vDiv*8;
+			ctx.strokeStyle='#66bb6a'; ctx.lineWidth=1.5; ctx.shadowColor='#66bb6a'; ctx.shadowBlur=3;
+			ctx.beginPath();
+			for(let i=0;i<voltages.length;i++){const x=(i/voltages.length)*W;const y=H/2-((voltages[i]??0)/vRange)*H;if(i===0)ctx.moveTo(x,y);else ctx.lineTo(x,y);}
+			ctx.stroke(); ctx.shadowBlur=0;
+			// Trigger line
+			const tLv=parseFloat(trigIn.value)||0;
+			const tY=H/2-(tLv/vRange)*H;
+			ctx.strokeStyle='#ff9800'; ctx.lineWidth=1; ctx.setLineDash([3,3]);
+			ctx.beginPath();ctx.moveTo(0,tY);ctx.lineTo(20,tY);ctx.stroke(); ctx.setLineDash([]);
+			ctx.fillStyle='#ff9800'; ctx.font='9px monospace'; ctx.fillText('T',2,tY-3);
+			// Measurements
+			const vMin=Math.min(...voltages),vMax=Math.max(...voltages);
+			const vMean=voltages.reduce((a,b)=>a+b,0)/voltages.length;
+			const vRms=Math.sqrt(voltages.reduce((a,b)=>a+b*b,0)/voltages.length);
+			mVals['Pk-Pk']!.textContent=`${(vMax-vMin).toFixed(3)}V`;
+			mVals['Mean']!.textContent=`${vMean.toFixed(3)}V`;
+			mVals['RMS']!.textContent=`${vRms.toFixed(3)}V`;
+		};
+
+		discBtn.addEventListener('click',async()=>{lbl.textContent='Scanning...';dot.style.background='#ffc107';const ss=await this._scopeSvc.discover();if(ss.length>0){dot.style.background='#4caf50';lbl.textContent=(ss[0]!.model).substring(0,14);}else{dot.style.background='#f44336';lbl.textContent='Not found';}});
+		capBtn.addEventListener('click',async()=>{sOverlay.textContent='Arming trigger...';sOverlay.style.display='flex';try{const ch=(parseInt(chIn.value)||1) as 1|2|3|4;const vDiv=parseFloat(vdivIn.value)||1;await this._scopeSvc.configureChannel({channel:ch,vDiv,coupling:'DC',probe:1,enabled:true});await this._scopeSvc.configureTrigger({source:`C${ch}`,edge:trigSel.value as 'POS'|'NEG',level:parseFloat(trigIn.value)||0,mode:'SING'});const cap=await this._scopeSvc.capture(5);const wf=cap.channels[0];if(wf?.voltages.length)drawScope(wf.voltages,vDiv);else{sOverlay.textContent='No waveform data';sOverlay.style.display='flex';}}catch(e){sOverlay.textContent=`Error: ${(e as Error).message}`;sOverlay.style.display='flex';}});
+		new ResizeObserver(()=>{sCanvas.style.width=`${sWrap.clientWidth}px`;sCanvas.style.height=`${sWrap.clientHeight}px`;}).observe(sWrap);
 	}
 
 	private _renderCombinedPanel(root: HTMLElement): void {
-		this._instrSection(root, 'Combined Workflows', 'Multi-instrument debug scenarios that orchestrate GDB + Logic Analyzer + Power Analyzer + Oscilloscope in a single session.');
+		const panel=$e('div','flex:1;display:flex;flex-direction:column;overflow:hidden;');
+		root.appendChild(panel);
 
-		const scenarios = [
-			{ id: 'sleep-regression', label: 'Sleep Current Regression', desc: 'Power measurement + GDB non-intrusive register read + UART decode. Diagnose why sleep current increased.' },
-			{ id: 'i2c-nack',         label: 'I2C NACK Hunt',            desc: 'GDB breakpoint on error callback + triggered I2C bus capture. Find exactly which transaction NACKs.' },
-			{ id: 'brownout',         label: 'Brown-out Diagnosis',       desc: 'Oscilloscope rail check + logic analyzer on PWM/load + GDB CFSR register read without halting MCU.' },
+		// Header
+		const hdr=$e('div','padding:10px 14px;border-bottom:1px solid var(--vscode-widget-border);flex-shrink:0;');
+		hdr.appendChild($t('div','Multi-Instrument Debug Workflows','font-size:13px;font-weight:600;margin-bottom:2px;'));
+		hdr.appendChild($t('div','Coordinated hardware debugging across GDB, logic analyzer, power profiler, and oscilloscope','font-size:10px;color:var(--vscode-descriptionForeground);'));
+		panel.appendChild(hdr);
+
+		// Full-height 3-row grid
+		const grid=$e('div','flex:1;display:grid;grid-template-rows:1fr 1fr 1fr;gap:1px;overflow:hidden;background:var(--vscode-widget-border);');
+		panel.appendChild(grid);
+
+		const scenarios=[
+			{id:'sleep-regression',label:'Sleep Current Regression',short:'SLEEP',color:'#4fc3f7',
+			 instrs:['Power','GDB','Logic'],
+			 steps:['Detect PPK2/Joulescope','Measure current (5s)','GDB: read RCC_CSR+PWR_CSR','LA: decode UART log','Correlate timestamps']},
+			{id:'i2c-nack',label:'I2C NACK Hunt',short:'I2C',color:'#81c784',
+			 instrs:['Logic','GDB'],
+			 steps:['Set breakpoint on I2C error CB','Arm LA trigger (SCL falling)','Wait for NACK event','Decode I2C frames','Report address+data']},
+			{id:'brownout',label:'Brown-out Diagnosis',short:'BOR',color:'#ffb74d',
+			 instrs:['Scope','Logic','GDB'],
+			 steps:['Configure scope CH1 on VDD','Set trigger below 2.8V','Capture PWM on LA','Read SCB CFSR (no halt)','Correlate droop vs load']},
 		];
 
-		for (const scenario of scenarios) {
-			const card = this._instrCard(root, scenario.label);
-			card.appendChild($t('div', scenario.desc, 'font-size:11px;color:var(--vscode-descriptionForeground);margin-bottom:8px;line-height:1.5;'));
-			const runBtn = this._instrBtn(`Run: ${scenario.label}`);
-			const outEl = $t('pre', '', 'margin-top:8px;font-size:10px;font-family:monospace;white-space:pre-wrap;max-height:200px;overflow-y:auto;background:var(--vscode-terminal-background);padding:6px;border-radius:4px;display:none;');
-			runBtn.addEventListener('click', async () => {
-				outEl.style.display = 'block';
-				outEl.textContent = `Running ${scenario.label}...\n`;
-				// The agent tools handle the actual multi-instrument orchestration.
-				// The UI shows the user how to invoke via the agent chat instead.
-				outEl.textContent += `\nTo run this workflow, send to the Neural Inverse agent:\n\n  fw_debug_combined({ scenario: "${scenario.id}" })\n\nThe agent will orchestrate all instruments and return a complete diagnostic report.`;
-			});
-			card.appendChild(runBtn);
-			card.appendChild(outEl);
+		for(const sc of scenarios){
+			const card=$e('div',`display:grid;grid-template-columns:56px 1fr 230px;background:var(--vscode-editor-background);overflow:hidden;`);
+
+			// Left icon strip
+			const iconCol=$e('div',`background:${sc.color}10;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;border-left:3px solid ${sc.color};`);
+			const circle=$t('div',sc.short,`width:28px;height:28px;border-radius:50%;background:${sc.color}25;color:${sc.color};display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;`);
+			iconCol.appendChild(circle);
+			card.appendChild(iconCol);
+
+			// Center: title + instrument dots + run button
+			const center=$e('div','padding:10px 12px;display:flex;flex-direction:column;justify-content:center;gap:5px;');
+			center.appendChild($t('div',sc.label,'font-size:12px;font-weight:600;'));
+			const dotsRow=$e('div','display:flex;gap:8px;align-items:center;');
+			for(const ins of sc.instrs){
+				const d=$e('div','display:flex;align-items:center;gap:3px;');
+				d.appendChild($e('div','width:6px;height:6px;border-radius:50%;background:#616161;'));
+				d.appendChild($t('span',ins,'font-size:9px;color:var(--vscode-descriptionForeground);'));
+				dotsRow.appendChild(d);
+			}
+			center.appendChild(dotsRow);
+			const runRow=$e('div','display:flex;align-items:center;gap:8px;');
+			const runBtn=$e('button',`padding:4px 12px;border:none;border-radius:3px;cursor:pointer;font-size:10px;font-weight:600;background:${sc.color};color:#000;`) as HTMLButtonElement;
+			runBtn.textContent='Run';
+			const runStatus=$t('span','','font-size:9px;color:var(--vscode-descriptionForeground);');
+			runBtn.addEventListener('click',()=>{runStatus.textContent=`fw_debug_combined({ scenario: "${sc.id}" })`;runStatus.style.color=sc.color;});
+			runRow.appendChild(runBtn); runRow.appendChild(runStatus);
+			center.appendChild(runRow);
+			card.appendChild(center);
+
+			// Right: step list
+			const stepsCol=$e('div','padding:10px 12px;display:flex;flex-direction:column;justify-content:center;gap:3px;border-left:1px solid var(--vscode-widget-border);background:var(--vscode-sideBar-background);');
+			stepsCol.appendChild($t('div','STEPS','font-size:8px;font-weight:700;letter-spacing:0.06em;color:var(--vscode-descriptionForeground);margin-bottom:2px;'));
+			for(let i=0;i<sc.steps.length;i++){
+				const s=$e('div','display:flex;align-items:center;gap:5px;');
+				const n=$t('span',`${i+1}`,'width:14px;height:14px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:8px;font-weight:700;background:var(--vscode-widget-border);color:var(--vscode-descriptionForeground);flex-shrink:0;');
+				s.appendChild(n);
+				s.appendChild($t('span',sc.steps[i]!,'font-size:9px;color:var(--vscode-descriptionForeground);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;'));
+				stepsCol.appendChild(s);
+			}
+			card.appendChild(stepsCol);
+			grid.appendChild(card);
 		}
 	}
 
 	// ─── Instrument UI helpers ────────────────────────────────────────────────
 
-	private _instrSection(root: HTMLElement, title: string, desc: string): void {
-		root.appendChild($t('h3', title, 'margin:0 0 4px;font-size:14px;font-weight:700;'));
-		root.appendChild($t('div', desc, 'font-size:11px;color:var(--vscode-descriptionForeground);margin-bottom:16px;line-height:1.5;'));
-	}
-
-	private _instrCard(root: HTMLElement, title: string): HTMLElement {
-		const card = $e('div', 'margin-bottom:16px;padding:12px;border:1px solid var(--vscode-widget-border);border-radius:6px;background:var(--vscode-sideBar-background);');
-		card.appendChild($t('div', title, 'font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;color:var(--vscode-descriptionForeground);margin-bottom:8px;'));
-		root.appendChild(card);
-		return card;
-	}
-
 	private _instrBtn(label: string): HTMLButtonElement {
-		const btn = $e('button', 'padding:5px 12px;background:var(--vscode-button-background);color:var(--vscode-button-foreground);border:none;border-radius:4px;cursor:pointer;font-size:11px;font-weight:600;') as HTMLButtonElement;
-		btn.textContent = label;
+		const btn=$e('button','padding:4px 10px;background:var(--vscode-button-background);color:var(--vscode-button-foreground);border:none;border-radius:3px;cursor:pointer;font-size:10px;font-weight:600;') as HTMLButtonElement;
+		btn.textContent=label;
 		return btn;
 	}
 
 	private _instrInput(placeholder: string, defaultVal: string, width: string): HTMLInputElement {
-		const el = $e('input', `width:${width};padding:4px 6px;font-size:11px;background:var(--vscode-input-background);color:var(--vscode-input-foreground);border:1px solid var(--vscode-input-border,var(--vscode-widget-border));border-radius:4px;`) as HTMLInputElement;
-		el.placeholder = placeholder;
-		el.value = defaultVal;
+		const el=$e('input',`width:${width};padding:3px 5px;font-size:10px;background:var(--vscode-input-background);color:var(--vscode-input-foreground);border:1px solid var(--vscode-input-border,var(--vscode-widget-border));border-radius:3px;font-family:var(--vscode-editor-font-family,monospace);`) as HTMLInputElement;
+		el.placeholder=placeholder; el.value=defaultVal;
 		return el;
 	}
 
@@ -2518,13 +2695,13 @@ export class FirmwarePart extends Part {
 			if (allConflicts.length > 0) {
 				padded.appendChild($e('hr', 'border:none;border-bottom:1px solid var(--vscode-widget-border);margin:12px 0;'));
 				const conflictHdr = $e('div', 'display:flex;align-items:center;gap:6px;margin-bottom:6px;');
-				conflictHdr.appendChild($t('span', `[!] ${allConflicts.length} Conflict(s)`, 'font-size:11px;font-weight:700;color:var(--vscode-terminal-ansiYellow);'));
+				conflictHdr.appendChild($t('span', `[!] ${allConflicts.length} Conflict(s)`, 'font-size:11px;font-weight:700;color:var(--vscode-descriptionForeground);'));
 				if (muxConflicts.length > 0) {
 					conflictHdr.appendChild($t('span', `${muxConflicts.length} pin mux`, 'font-size:9px;padding:1px 5px;border-radius:3px;background:rgba(255,180,0,0.15);color:#e0a84e;'));
 				}
 				padded.appendChild(conflictHdr);
 				for (const c of allConflicts) {
-					padded.appendChild($t('div', c, 'font-size:10px;color:var(--vscode-terminal-ansiYellow);padding:2px 0;'));
+					padded.appendChild($t('div', c, 'font-size:10px;color:var(--vscode-descriptionForeground);padding:2px 0;'));
 				}
 			}
 
@@ -3067,7 +3244,7 @@ export class FirmwarePart extends Part {
 		// Status dot
 		const dot = $e('span', [
 			'width:7px', 'height:7px', 'border-radius:50%', 'flex-shrink:0',
-			'background:' + (isConnected ? 'var(--vscode-terminal-ansiGreen,#4caf50)' : 'var(--vscode-descriptionForeground)'),
+			'background:' + (isConnected ? '#4caf50' : 'var(--vscode-descriptionForeground)'),
 			'transition:background 0.2s',
 		].join(';'));
 		connBar.appendChild(dot);
@@ -3242,7 +3419,7 @@ export class FirmwarePart extends Part {
 			const card = $e('div', [
 				'border:1px solid var(--vscode-widget-border,var(--vscode-panel-border))',
 				'border-radius:7px', 'padding:14px 16px',
-				active ? 'border-left:3px solid var(--vscode-terminal-ansiGreen,#4caf50);' : '',
+				active ? 'border-left:3px solid #4caf50;' : '',
 				'background:var(--vscode-sideBar-background,var(--vscode-editor-background))',
 				'cursor:pointer', 'transition:border-color 0.1s,background 0.1s',
 			].join(';'));
@@ -3255,7 +3432,7 @@ export class FirmwarePart extends Part {
 			if (active) {
 				top.appendChild($t('span', 'ACTIVE', [
 					'font-size:9px', 'font-weight:700', 'padding:2px 7px', 'border-radius:3px',
-					'background:var(--vscode-terminal-ansiGreen,#4caf50)',
+					'background:#4caf50',
 					'color:var(--vscode-editor-background)',
 				].join(';')));
 			}
@@ -3300,7 +3477,7 @@ export class FirmwarePart extends Part {
 			].join(';'));
 			resultHdr.appendChild($t('span', b.success ? 'Last Build: SUCCESS' : 'Last Build: FAILED', [
 				'font-size:12px', 'font-weight:700',
-				'color:' + (b.success ? 'var(--vscode-terminal-ansiGreen,#4caf50)' : 'var(--vscode-errorForeground,#f48771)'),
+				'color:' + (b.success ? '#4caf50' : 'var(--vscode-errorForeground,#f48771)'),
 			].join(';')));
 			resultHdr.appendChild($t('span', `${b.durationMs}ms \u00b7 ${b.errors.length} errors \u00b7 ${b.warnings.length} warnings`,
 				'font-size:11px;color:var(--vscode-descriptionForeground);'));
