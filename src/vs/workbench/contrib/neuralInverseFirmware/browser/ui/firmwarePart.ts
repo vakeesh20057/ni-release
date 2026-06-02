@@ -6108,15 +6108,6 @@ export class FirmwarePart extends Part {
 		});
 	}
 
-\tprotected _loopPhaseBadge(phase: ClosedLoopPhase): HTMLElement {
-		const colors: Record<string, string> = {
-			build:'#1565c0', flash:'#6a1b9a', observe:'#00838f',
-			diagnose:'#e65100', fix:'#880e4f', complete:'#1b5e20', failed:'#b71c1c',
-		};
-		const c = colors[phase] || '#546e7a';
-		const el = $t('span', phase.toUpperCase(), `font-size:9px;font-weight:700;padding:2px 6px;border-radius:3px;background:${c}20;color:${c};font-family:monospace;`);
-		return el;
-	}
 }
 
 
