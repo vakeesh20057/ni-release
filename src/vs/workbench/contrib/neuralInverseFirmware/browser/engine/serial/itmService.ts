@@ -20,10 +20,10 @@
  * Backend: OpenOCD (monitor tpiu config) or J-Link (monitor SWO StartCapture)
  */
 
-import { Emitter, Event } from '../../../../../../../base/common/event.js';
-import { Disposable } from '../../../../../../../base/common/lifecycle.js';
-import { createDecorator } from '../../../../../../../platform/instantiation/common/instantiation.js';
-import { registerSingleton, InstantiationType } from '../../../../../../../platform/instantiation/common/extensions.js';
+import { Emitter, Event } from '../../../../../../base/common/event.js';
+import { Disposable } from '../../../../../../base/common/lifecycle.js';
+import { createDecorator } from '../../../../../../platform/instantiation/common/instantiation.js';
+import { registerSingleton, InstantiationType } from '../../../../../../platform/instantiation/common/extensions.js';
 
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -316,7 +316,7 @@ for raw_line in proc.stdout:
 
 	private async _spawnITMDecoder(script: string, backend: string): Promise<void> {
 		const cp = (globalThis as Record<string, unknown>)['require']
-			? ((globalThis as Record<string, unknown>)['require']('child_process') as typeof import('child_process'))
+			? ((globalThis as Record<string, unknown>)['require'] as (m: string) => unknown)('child_process') as typeof import('child_process')
 			: null;
 
 		if (!cp) { throw new Error('ITM requires Node.js environment.'); }
@@ -325,8 +325,8 @@ for raw_line in proc.stdout:
 
 		let configured = false;
 
-		this._swoProcess.stdout?.on('data', (chunk: Buffer) => {
-			const lines = chunk.toString().split('\n').filter(Boolean);
+		this._swoProcess.stdout?.on('data', (chunk: unknown) => {
+			const lines = String(chunk).split('\n').filter(Boolean);
 			for (const line of lines) {
 				try {
 					const msg = JSON.parse(line) as Record<string, unknown>;
@@ -429,7 +429,7 @@ for raw_line in proc.stdout:
 
 	private async _checkOpenOCD(): Promise<boolean> {
 		const cp = (globalThis as Record<string, unknown>)['require']
-			? ((globalThis as Record<string, unknown>)['require']('child_process') as typeof import('child_process'))
+			? ((globalThis as Record<string, unknown>)['require'] as (m: string) => unknown)('child_process') as typeof import('child_process')
 			: null;
 		if (!cp) { return false; }
 

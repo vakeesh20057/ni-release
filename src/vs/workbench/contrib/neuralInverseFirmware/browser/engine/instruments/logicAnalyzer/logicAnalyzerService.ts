@@ -22,7 +22,7 @@ import { Disposable } from '../../../../../../../base/common/lifecycle.js';
 import { createDecorator } from '../../../../../../../platform/instantiation/common/instantiation.js';
 import { registerSingleton, InstantiationType } from '../../../../../../../platform/instantiation/common/extensions.js';
 import {
-	LogicAnalyzerBackend, LogicProtocol,
+	LogicProtocol,
 	ILogicChannel, IProtocolConfig, IDecodedFrame,
 	ILogicCapture, ILogicTrigger, ILogicAnalyzerStatus,
 } from './logicAnalyzerTypes.js';
@@ -253,7 +253,9 @@ class LogicAnalyzerServiceImpl extends Disposable implements ILogicAnalyzerServi
 			analyzer_id: resp.analyzer_id,
 		});
 
-		const frames: IDecodedFrame[] = (dataResp?.frames ?? []).map((f: Record<string, unknown>) =>
+		const dataRespRec = dataResp as Record<string, unknown>;
+		const rawFrames = (dataRespRec?.['frames'] as Array<Record<string, unknown>>) ?? [];
+		const frames: IDecodedFrame[] = rawFrames.map((f: Record<string, unknown>) =>
 			this._parseSaleaeFrame(f, config.protocol),
 		);
 
@@ -357,9 +359,8 @@ class LogicAnalyzerServiceImpl extends Disposable implements ILogicAnalyzerServi
 			// In browser/Electron context, use XMLHttpRequest or fetch to a localhost proxy.
 			// In Node.js context (VS Code extension host), use net.Socket directly.
 			// We use a simple HTTP proxy approach that VS Code's Node.js environment supports.
-			const net = (globalThis as Record<string, unknown>)['require']
-				? (globalThis as Record<string, unknown>)['require']('net') as typeof import('net')
-				: null;
+			const _req = (globalThis as Record<string, unknown>)['require'] as ((m: string) => unknown) | undefined;
+			const net = _req ? (_req('net') as typeof import('net')) : null;
 
 			if (!net) {
 				reject(new Error('Logic 2 automation requires Node.js environment (VS Code extension host).'));
@@ -765,7 +766,7 @@ print(json.dumps({"triggered": True}))
 		const csCh = config.csChannel ?? 3;
 		const bitOrder = config.bitOrder ?? 'msb';
 		const sampleRate = capture.sampleRate;
-		const cpol = (config as Record<string,unknown>)['cpol'] ? 1 : 0;  // clock polarity
+		const cpol = 0;  // CPOL=0 (CPHA=0 SPI Mode 0) — most common; configurable via spiMode field
 
 		const mosi = capture.rawSamples?.[mosiCh];
 		const sck = capture.rawSamples?.[sckCh];
@@ -856,9 +857,8 @@ print(json.dumps({"triggered": True}))
 
 	private async _runPython(script: string): Promise<string> {
 		return new Promise((resolve, reject) => {
-			const cp = (globalThis as Record<string, unknown>)['require']
-				? (globalThis as Record<string, unknown>)['require']('child_process') as typeof import('child_process')
-				: null;
+			const _cpReq = (globalThis as Record<string, unknown>)['require'] as ((m: string) => unknown) | undefined;
+			const cp = _cpReq ? (_cpReq('child_process') as typeof import('child_process')) : null;
 
 			if (!cp) {
 				reject(new Error('Python subprocess requires Node.js environment.'));

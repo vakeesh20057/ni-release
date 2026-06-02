@@ -19,11 +19,11 @@
  * Uses GitHub REST API v3 with personal access token authentication.
  */
 
-import { Emitter, Event } from '../../../../../../base/common/event.js';
-import { Disposable } from '../../../../../../base/common/lifecycle.js';
-import { createDecorator } from '../../../../../../platform/instantiation/common/instantiation.js';
-import { registerSingleton, InstantiationType } from '../../../../../../platform/instantiation/common/extensions.js';
-import { IWorkspaceContextService } from '../../../../../../platform/workspace/common/workspace.js';
+import { Emitter, Event } from '../../../../../base/common/event.js';
+import { Disposable } from '../../../../../base/common/lifecycle.js';
+import { createDecorator } from '../../../../../platform/instantiation/common/instantiation.js';
+import { registerSingleton, InstantiationType } from '../../../../../platform/instantiation/common/extensions.js';
+import { IWorkspaceContextService } from '../../../../../platform/workspace/common/workspace.js';
 
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -141,7 +141,7 @@ class GitHubDaemonServiceImpl extends Disposable implements IGitHubDaemonService
 
 		// Verify token and repo access
 		const repoInfo = await this._apiGet(`/repos/${config.owner}/${config.repo}`);
-		if (!repoInfo.id) {
+		if (!(repoInfo as Record<string, unknown>)['id']) {
 			throw new Error(`Cannot access repo ${config.owner}/${config.repo}. Check token permissions (repo scope required).`);
 		}
 
@@ -244,7 +244,7 @@ class GitHubDaemonServiceImpl extends Disposable implements IGitHubDaemonService
 			const item = await this._apiGet(
 				`/repos/${this._config!.owner}/${this._config!.repo}/${type === 'pr' ? 'pulls' : 'issues'}/${number}`,
 			);
-			title = String(item['title'] ?? title);
+			title = String((item as Record<string, unknown>)['title'] ?? title);
 		} catch { /* keep default title */ }
 
 		// Remove trigger mention from prompt
@@ -324,9 +324,8 @@ class GitHubDaemonServiceImpl extends Disposable implements IGitHubDaemonService
 	private async _runHeadlessAgent(prompt: string, claim: IDaemonClaim): Promise<string> {
 		if (!this._config) { throw new Error('Daemon not configured.'); }
 
-		const cp = (globalThis as Record<string, unknown>)['require']
-			? ((globalThis as Record<string, unknown>)['require']('child_process') as typeof import('child_process'))
-			: null;
+		const _reqFn = (globalThis as Record<string, unknown>)['require'] as ((m: string) => unknown) | undefined;
+		const cp = _reqFn ? (_reqFn('child_process') as typeof import('child_process')) : null;
 
 		if (!cp) {
 			// Browser environment — cannot run subprocess. Return analysis based on repo content only.
@@ -338,9 +337,8 @@ class GitHubDaemonServiceImpl extends Disposable implements IGitHubDaemonService
 		const cwd = this._getWorkspaceRoot();
 		const worktreeDir = `${cwd}/.inverse/daemon-worktrees/${claim.id}_${Date.now()}`;
 
-		const fs = (globalThis as Record<string, unknown>)['require']
-			? ((globalThis as Record<string, unknown>)['require']('fs') as typeof import('fs'))
-			: null;
+		const _reqFsFn = (globalThis as Record<string, unknown>)['require'] as ((m: string) => unknown) | undefined;
+		const fs = _reqFsFn ? (_reqFsFn('fs') as typeof import('fs')) : null;
 
 		if (fs) {
 			fs.mkdirSync(worktreeDir, { recursive: true });
@@ -383,7 +381,7 @@ class GitHubDaemonServiceImpl extends Disposable implements IGitHubDaemonService
 		return new Promise(resolve => {
 			const proc = cp.spawn('find', [dir, '-maxdepth', '3', '-name', '*.c', '-o', '-name', 'platformio.ini', '-o', '-name', 'CMakeLists.txt', '-o', '-name', '*.elf'], { timeout: 10000 });
 			let out = '';
-			proc.stdout?.on('data', (d: Buffer) => { out += d.toString(); });
+			proc.stdout?.on('data', (d: unknown) => { out += String(d); });
 			proc.on('close', () => {
 				const files = out.trim().split('\n').filter(Boolean);
 				const buildSystem = files.some(f => f.endsWith('platformio.ini')) ? 'platformio' :
@@ -414,8 +412,8 @@ class GitHubDaemonServiceImpl extends Disposable implements IGitHubDaemonService
 
 				let stdout = '';
 				let stderr = '';
-				proc.stdout?.on('data', (d: Buffer) => { stdout += d.toString(); });
-				proc.stderr?.on('data', (d: Buffer) => { stderr += d.toString(); });
+				proc.stdout?.on('data', (d: unknown) => { stdout += String(d); });
+				proc.stderr?.on('data', (d: unknown) => { stderr += String(d); });
 				proc.on('close', (code: number) => {
 					if (code === 0 && stdout.trim()) {
 						resolve(stdout.trim());
@@ -510,14 +508,13 @@ class GitHubDaemonServiceImpl extends Disposable implements IGitHubDaemonService
 
 	private async _runGitCmd(args: string[], cwd: string): Promise<string> {
 		return new Promise((resolve, reject) => {
-			const cp = (globalThis as Record<string, unknown>)['require']
-				? ((globalThis as Record<string, unknown>)['require']('child_process') as typeof import('child_process'))
-				: null;
+			const cp = ((globalThis as Record<string, unknown>)['require'] as ((m: string) => unknown) | undefined)
+				?.('child_process') as typeof import('child_process') ?? null;
 			if (!cp) { resolve(''); return; }
 
 			const proc = cp.spawn('git', args, { cwd, timeout: 30000 });
 			let out = '';
-			proc.stdout?.on('data', (d: Buffer) => { out += d.toString(); });
+			proc.stdout?.on('data', (d: unknown) => { out += String(d); });
 			proc.on('close', (code: number) => { code === 0 ? resolve(out.trim()) : reject(new Error(`git ${args[0]} failed`)); });
 			proc.on('error', (e: Error) => reject(e));
 		});

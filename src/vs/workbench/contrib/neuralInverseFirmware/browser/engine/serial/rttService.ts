@@ -20,10 +20,10 @@
  * Logs stored in .inverse/rtt/<sessionId>/ch<N>.log
  */
 
-import { Emitter, Event } from '../../../../../../../base/common/event.js';
-import { Disposable } from '../../../../../../../base/common/lifecycle.js';
-import { createDecorator } from '../../../../../../../platform/instantiation/common/instantiation.js';
-import { registerSingleton, InstantiationType } from '../../../../../../../platform/instantiation/common/extensions.js';
+import { Emitter, Event } from '../../../../../../base/common/event.js';
+import { Disposable } from '../../../../../../base/common/lifecycle.js';
+import { createDecorator } from '../../../../../../platform/instantiation/common/instantiation.js';
+import { registerSingleton, InstantiationType } from '../../../../../../platform/instantiation/common/extensions.js';
 
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -176,10 +176,10 @@ class RTTServiceImpl extends Disposable implements IRTTService {
 
 		// Create JLink script file using OS-appropriate temp dir
 		const os = (globalThis as Record<string, unknown>)['require']
-			? ((globalThis as Record<string, unknown>)['require']('os') as typeof import('os'))
+			? ((globalThis as Record<string, unknown>)['require'] as (m: string) => unknown)('os') as typeof import('os')
 			: null;
 		const path = (globalThis as Record<string, unknown>)['require']
-			? ((globalThis as Record<string, unknown>)['require']('path') as typeof import('path'))
+			? ((globalThis as Record<string, unknown>)['require'] as (m: string) => unknown)('path') as typeof import('path')
 			: null;
 
 		const script = [
@@ -191,8 +191,8 @@ class RTTServiceImpl extends Disposable implements IRTTService {
 		].join('\n');
 
 		const fs = this._requireFS();
-		const tmpDir = os?.tmpdir?.() ?? '/tmp';
-		const scriptPath = path?.join(tmpDir, `ni_rtt_${Date.now()}.jlink`) ?? `/tmp/ni_rtt_${Date.now()}.jlink`;
+		const tmpDir = os ? os.tmpdir() : '/tmp';
+		const scriptPath = path ? path.join(tmpDir, `ni_rtt_${Date.now()}.jlink`) : `/tmp/ni_rtt_${Date.now()}.jlink`;
 		fs.writeFileSync(scriptPath, script, 'utf8');
 
 		this._jlinkProcess = cp.spawn('JLinkExe', ['-CommandFile', scriptPath], {
@@ -202,8 +202,8 @@ class RTTServiceImpl extends Disposable implements IRTTService {
 		let output = '';
 		let connected = false;
 
-		this._jlinkProcess.stdout?.on('data', (chunk: Buffer) => {
-			const text = chunk.toString();
+		this._jlinkProcess.stdout?.on('data', (chunk: unknown) => {
+			const text = String(chunk);
 			output += text;
 
 			const lines = text.split('\n');
@@ -264,8 +264,8 @@ class RTTServiceImpl extends Disposable implements IRTTService {
 			}
 		});
 
-		this._jlinkProcess.stderr?.on('data', (chunk: Buffer) => {
-			const err = chunk.toString();
+		this._jlinkProcess.stderr?.on('data', (chunk: unknown) => {
+			const err = String(chunk);
 			if (err.includes('Cannot connect') || err.includes('Error')) {
 				this._onRTTError.fire(err.trim());
 			}
@@ -344,8 +344,8 @@ while True:
 
 		let connected = false;
 
-		this._jlinkProcess.stdout?.on('data', (chunk: Buffer) => {
-			const lines = chunk.toString().split('\n').filter(Boolean);
+		this._jlinkProcess.stdout?.on('data', (chunk: unknown) => {
+			const lines = String(chunk).split('\n').filter(Boolean);
 			for (const line of lines) {
 				try {
 					const msg = JSON.parse(line) as Record<string, unknown>;

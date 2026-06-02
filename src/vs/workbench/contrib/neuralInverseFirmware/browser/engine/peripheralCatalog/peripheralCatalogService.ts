@@ -3,9 +3,9 @@
  *  Licensed under the Apache License, Version 2.0. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import { Disposable } from '../../../../../../../base/common/lifecycle.js';
-import { createDecorator } from '../../../../../../../platform/instantiation/common/instantiation.js';
-import { registerSingleton, InstantiationType } from '../../../../../../../platform/instantiation/common/extensions.js';
+import { Disposable } from '../../../../../../base/common/lifecycle.js';
+import { createDecorator } from '../../../../../../platform/instantiation/common/instantiation.js';
+import { registerSingleton, InstantiationType } from '../../../../../../platform/instantiation/common/extensions.js';
 import { IFirmwareSessionService } from '../../firmwareSessionService.js';
 import { IPeripheralCatalogEntry } from './peripheralCatalogTypes.js';
 import { BUILTIN_CATALOG } from './builtinCatalog.js';
@@ -50,7 +50,7 @@ class PeripheralCatalogServiceImpl extends Disposable implements IPeripheralCata
 	private readonly _catalog: IPeripheralCatalogEntry[] = BUILTIN_CATALOG;
 
 	constructor(
-		@IFirmwareSessionService private readonly _session: IFirmwareSessionService,
+		@IFirmwareSessionService private readonly _session: IFirmwareSessionService
 	) {
 		super();
 	}
@@ -144,6 +144,7 @@ class PeripheralCatalogServiceImpl extends Disposable implements IPeripheralCata
 	}
 
 	getCatalogSize(): number {
+		void this._session; // session used for MCU-aware filtering in future
 		return this._catalog.length;
 	}
 }

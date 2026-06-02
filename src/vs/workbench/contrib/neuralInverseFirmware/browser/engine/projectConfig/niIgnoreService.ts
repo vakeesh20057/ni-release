@@ -12,7 +12,7 @@
  * Pattern syntax is gitignore-compatible:
  *   vendor/           — block all files under vendor/ directory
  *   *.bin             — block all .bin files at any depth
- *   **/generated/**   — block any path containing 'generated'
+ *   ** /generated/ **  — block any path containing 'generated' (remove spaces)
  *   !src/generated/config.h  — re-include (override parent block)
  *   # comment         — ignored
  *
@@ -22,11 +22,11 @@
  * File is watched and reloads automatically when changed — no session restart.
  */
 
-import { Emitter, Event } from '../../../../../../../base/common/event.js';
-import { Disposable } from '../../../../../../../base/common/lifecycle.js';
-import { createDecorator } from '../../../../../../../platform/instantiation/common/instantiation.js';
-import { registerSingleton, InstantiationType } from '../../../../../../../platform/instantiation/common/extensions.js';
-import { IWorkspaceContextService } from '../../../../../../../platform/workspace/common/workspace.js';
+import { Emitter, Event } from '../../../../../../base/common/event.js';
+import { Disposable } from '../../../../../../base/common/lifecycle.js';
+import { createDecorator } from '../../../../../../platform/instantiation/common/instantiation.js';
+import { registerSingleton, InstantiationType } from '../../../../../../platform/instantiation/common/extensions.js';
+import { IWorkspaceContextService } from '../../../../../../platform/workspace/common/workspace.js';
 
 
 // ─── Types ────────────────────────────────────────────────────────────────────

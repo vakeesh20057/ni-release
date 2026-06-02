@@ -31,12 +31,12 @@
  * File is watched and reloaded automatically when changed.
  */
 
-import { Emitter, Event } from '../../../../../../../base/common/event.js';
-import { Disposable } from '../../../../../../../base/common/lifecycle.js';
-import { createDecorator } from '../../../../../../../platform/instantiation/common/instantiation.js';
-import { registerSingleton, InstantiationType } from '../../../../../../../platform/instantiation/common/extensions.js';
+import { Emitter, Event } from '../../../../../../base/common/event.js';
+import { Disposable } from '../../../../../../base/common/lifecycle.js';
+import { createDecorator } from '../../../../../../platform/instantiation/common/instantiation.js';
+import { registerSingleton, InstantiationType } from '../../../../../../platform/instantiation/common/extensions.js';
 import { IFirmwareSessionService } from '../../firmwareSessionService.js';
-import { IWorkspaceContextService } from '../../../../../../../platform/workspace/common/workspace.js';
+import { IWorkspaceContextService } from '../../../../../../platform/workspace/common/workspace.js';
 
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -200,7 +200,7 @@ class NIMdServiceImpl extends Disposable implements INIMdService {
 		lines.push(`## Rules`);
 		lines.push(`# Project-specific rules for the AI:`);
 
-		if (s.complianceFrameworks?.includes('misra-c')) {
+		if (s.complianceFrameworks?.some(f => f.includes('misra'))) {
 			lines.push(`- Follow MISRA C:2012 rules — no dynamic allocation, no recursion`);
 		}
 		if (mcu?.family?.startsWith('STM32')) {
@@ -369,7 +369,7 @@ class NIMdServiceImpl extends Disposable implements INIMdService {
 		if (folders.length > 0) {
 			const root = folders[0]!.uri.fsPath;
 			const path = (globalThis as Record<string, unknown>)['require']
-				? ((globalThis as Record<string, unknown>)['require']('path') as typeof import('path'))
+				? (((globalThis as Record<string, unknown>)['require'] as (m: string) => unknown)('path') as typeof import('path'))
 				: null;
 			return path ? path.join(root, 'NI.md') : `${root}/NI.md`;
 		}

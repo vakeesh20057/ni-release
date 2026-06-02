@@ -109,6 +109,15 @@ import './engine/schematic/schematicService.js';
 // Phase 9: GitHub Daemon
 import './voidGitHubDaemon/gitHubDaemonService.js';
 
+// Phase 10: Errata, Formula Verification, Closed-Loop, HIL, Coordinated Capture, Citations
+import './engine/errata/errataService.js';
+import './engine/verification/formulaVerifierService.js';
+import './engine/closedLoop/closedLoopService.js';
+import './engine/hil/hilTestService.js';
+import './engine/instruments/coordinatedCaptureService.js';
+import './engine/datasheet/citationService.js';
+import './engine/rtos/rtosDebugService.js';
+
 // Infrastructure
 import './voidFirmwareToolsContrib.js';
 import './statusbar/firmwareStatus.contribution.js';

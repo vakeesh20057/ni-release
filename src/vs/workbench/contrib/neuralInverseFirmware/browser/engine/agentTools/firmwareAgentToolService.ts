@@ -53,6 +53,18 @@ import { INIMdService } from '../projectConfig/niMdService.js';
 import { INIIgnoreService } from '../projectConfig/niIgnoreService.js';
 import { ICheckpointService } from '../projectConfig/checkpointService.js';
 import { IGitHubDaemonService } from '../../voidGitHubDaemon/gitHubDaemonService.js';
+import { IMCUDatabaseService } from '../../mcuDatabaseService.js';
+import { IErrataService } from '../errata/errataService.js';
+import { IFormulaVerifierService } from '../verification/formulaVerifierService.js';
+import { IClosedLoopService } from '../closedLoop/closedLoopService.js';
+import { buildErrataTools } from './errataTools.js';
+import { buildFormulaTools } from './formulaTools.js';
+import { buildClosedLoopTools } from './closedLoopTools.js';
+import { buildHILTools } from './hilTools.js';
+import { IHILTestService } from '../hil/hilTestService.js';
+import { ICoordinatedCaptureService } from '../instruments/coordinatedCaptureService.js';
+import { IRTOSDebugService } from '../rtos/rtosDebugService.js';
+import { buildRTOSTools } from './rtosTools.js';
 
 
 // ─── Service interface ────────────────────────────────────────────────────────
@@ -96,6 +108,13 @@ class FirmwareAgentToolService extends Disposable implements IFirmwareAgentToolS
 		@INIIgnoreService private readonly _niIgnore: INIIgnoreService,
 		@ICheckpointService private readonly _checkpoint: ICheckpointService,
 		@IGitHubDaemonService private readonly _daemon: IGitHubDaemonService,
+		@IMCUDatabaseService private readonly _mcuDb: IMCUDatabaseService,
+		@IErrataService private readonly _errata: IErrataService,
+		@IFormulaVerifierService private readonly _formula: IFormulaVerifierService,
+		@IClosedLoopService private readonly _closedLoop: IClosedLoopService,
+		@IHILTestService private readonly _hil: IHILTestService,
+		@ICoordinatedCaptureService private readonly _coordCapture: ICoordinatedCaptureService,
+		@IRTOSDebugService private readonly _rtos: IRTOSDebugService,
 	) {
 		super();
 	}
@@ -139,6 +158,18 @@ class FirmwareAgentToolService extends Disposable implements IFirmwareAgentToolS
 			...buildPeripheralCatalogTools(this._session, this._catalog),
 			// ── Phase 15: Schematic / Pinout ─────────────────────────────
 			...buildSchematicTools(this._session, this._schematic),
+			// ── Phase 18: Errata database ────────────────────────────────
+			...buildErrataTools(this._errata),
+			// ── Phase 19: Formula verification ───────────────────────────
+			...buildFormulaTools(this._formula),
+			// ── Phase 20: Autonomous closed-loop ─────────────────────────
+			...buildClosedLoopTools(this._closedLoop),
+			// ── Phase 21: HIL test runner ────────────────────────────────
+			...buildHILTools(this._hil),
+			// ── Phase 22: Coordinated capture ────────────────────────────
+			this._fwCaptureAll(),
+			// ── Phase 23: RTOS-aware debugging ───────────────────────────
+			...buildRTOSTools(this._rtos),
 			// ── Phase 16: Project config (NI.md, .niignore, checkpoint) ──
 			this._fwInit(),
 			this._fwNiIgnoreCheck(),
@@ -370,12 +401,12 @@ class FirmwareAgentToolService extends Disposable implements IFirmwareAgentToolS
 				const peripheral = args.peripheral as string | undefined;
 
 				const errata = peripheral
-					? this._session.getErrataForPeripheral(peripheral)
-					: s.errata;
+					? this._errata.getForPeripheral(peripheral)
+					: this._errata.getAllErrata();
 
 				if (errata.length === 0) return peripheral
 					? `No errata found for ${peripheral}.`
-					: 'No errata loaded. Upload a datasheet to extract errata.';
+					: 'No errata loaded. Upload a datasheet or ensure MCU is configured for built-in errata lookup.';
 
 				const lines = [`Silicon Errata (${errata.length}):`, ''];
 				for (const e of errata) {
@@ -402,7 +433,7 @@ class FirmwareAgentToolService extends Disposable implements IFirmwareAgentToolS
 			execute: async (args: Record<string, any>) => {
 				const peripheral = args.peripheral as string;
 				const operation = args.operation as string;
-				const errata = this._session.getErrataForPeripheral(peripheral);
+				const errata = this._errata.getForPeripheral(peripheral);
 
 				if (errata.length === 0) return `No known errata for ${peripheral}.`;
 
@@ -608,19 +639,48 @@ class FirmwareAgentToolService extends Disposable implements IFirmwareAgentToolS
 	private _fwBuild(): IVoidInternalTool {
 		return {
 			name: 'fw_build',
-			description: 'Build the firmware project. Compiles the project using the detected build system (PlatformIO, CMake, Make, ESP-IDF, Cargo, etc.).',
+			description: 'Build the firmware project. Compiles the project using the detected build system (PlatformIO, CMake, Make, ESP-IDF, Cargo, etc.). Returns build result with error/warning count.',
 			params: {
 				target: { description: 'Optional build target or environment, e.g. "debug", "release", PlatformIO env name' },
 			},
 			execute: async (args: Record<string, any>) => {
 				const s = this._session.session;
 				if (!s.isActive) return 'No active firmware session.';
+				if (!s.projectInfo?.projectRoot) return 'No project root detected. Run fw_scan_project first.';
 
-				const projectType = s.projectInfo?.projectType ?? 'generic';
-				const buildSystem = s.buildSystem ?? 'unknown';
+				if (this._build.isBuilding) return 'A build is already in progress.';
+
+				const projectType = s.projectInfo.projectType ?? 'generic';
 				const target = args.target as string | undefined;
+				const command = this._build.getBuildCommand(projectType, target);
 
-				return `Build initiated for ${projectType} project.\nBuild system: ${buildSystem}\nTarget: ${target ?? 'default'}\n\nNote: Build commands are emitted to the integrated terminal. Use the Build tab in the Firmware Environment for build output and error parsing.`;
+				try {
+					const result = await this._build.build(s.projectInfo.projectRoot, projectType, target);
+
+					const lines = [
+						result.success ? '✓ Build succeeded' : '✗ Build failed',
+						`  Command: ${command.join(' ')}`,
+						`  Duration: ${result.durationMs}ms`,
+						`  Errors: ${result.errors.length}`,
+						`  Warnings: ${result.warnings.length}`,
+					];
+
+					if (result.errors.length > 0) {
+						lines.push('', 'Errors:');
+						for (const e of result.errors.slice(0, 10)) {
+							lines.push(`  ${e.file ?? ''}:${e.line ?? ''} ${e.message}`);
+						}
+						if (result.errors.length > 10) lines.push(`  ... and ${result.errors.length - 10} more`);
+					}
+
+					if (!result.success) {
+						lines.push('', 'Use fw_get_build_errors for full structured diagnostics.');
+					}
+
+					return lines.join('\n');
+				} catch (err: any) {
+					return `Build failed: ${err.message ?? String(err)}`;
+				}
 			},
 		};
 	}
@@ -628,19 +688,51 @@ class FirmwareAgentToolService extends Disposable implements IFirmwareAgentToolS
 	private _fwFlash(): IVoidInternalTool {
 		return {
 			name: 'fw_flash',
-			description: 'Flash firmware to the target MCU. Uses the appropriate flash tool (OpenOCD, esptool, nrfjprog, etc.) based on the detected project type.',
+			description: 'Flash firmware to the target MCU. Uses the appropriate flash tool (OpenOCD, esptool, nrfjprog, etc.) based on the detected project type. Executes the flash command in the integrated terminal and reports success/failure.',
 			params: {
 				tool: { description: 'Optional flash tool override: "openocd", "stm32-programmer-cli", "esptool", "nrfjprog", "jlink", "pyocd", "dfu-util"' },
 				port: { description: 'Optional serial port for UART-based flashing, e.g. "/dev/ttyUSB0", "COM3"' },
+				verify: { description: 'Whether to verify after flashing (default: true)' },
 			},
 			execute: async (args: Record<string, any>) => {
 				const s = this._session.session;
 				if (!s.isActive) return 'No active firmware session.';
+				if (!s.projectInfo?.projectRoot) return 'No project root detected. Run fw_scan_project first.';
 
-				const projectType = s.projectInfo?.projectType ?? 'generic';
+				if (this._build.isFlashing) return 'A flash operation is already in progress.';
+
+				const projectType = s.projectInfo.projectType ?? 'generic';
 				const tool = args.tool as string | undefined;
+				const port = args.port as string | undefined;
 
-				return `Flash initiated for ${projectType} project.\nFlash tool: ${tool ?? 'auto-detect'}\nMCU: ${s.mcuConfig?.family ?? 'unknown'} ${s.mcuConfig?.variant ?? ''}\n\nFlash commands are emitted to the integrated terminal.`;
+				const flashConfig = tool ? {
+					tool: tool as any,
+					interface: 'swd' as const,
+					...(port ? { extraArgs: [port] } : {}),
+				} : undefined;
+
+				const command = this._build.getFlashCommand(projectType, flashConfig);
+
+				try {
+					const result = await this._build.flash(s.projectInfo.projectRoot, projectType, flashConfig);
+
+					const lines = [
+						result.success ? '✓ Flash complete' : '✗ Flash failed',
+						`  Tool: ${result.tool}`,
+						`  Duration: ${result.durationMs}ms`,
+						`  Command: ${command.join(' ')}`,
+					];
+					if (result.verified !== undefined) {
+						lines.push(`  Verify: ${result.verified ? 'PASS' : 'FAIL'}`);
+					}
+					if (!result.success) {
+						lines.push(`  Error: ${result.message}`);
+					}
+					lines.push('', 'Check the "Firmware Build" terminal for full output.');
+					return lines.join('\n');
+				} catch (err: any) {
+					return `Flash failed: ${err.message ?? String(err)}`;
+				}
 			},
 		};
 	}
@@ -651,14 +743,23 @@ class FirmwareAgentToolService extends Disposable implements IFirmwareAgentToolS
 			description: 'Send data to the connected serial port. Useful for interacting with firmware running on the target MCU.',
 			params: {
 				data: { description: 'Data to send (string). A newline (\\r\\n) is appended by default.' },
-				port: { description: 'Optional port path, e.g. "/dev/ttyUSB0". Uses the connected port if omitted.' },
-				baudRate: { description: 'Optional baud rate override. Default: 115200' },
+				noNewline: { description: 'If true, do not append a newline after the data.' },
 			},
 			execute: async (args: Record<string, any>) => {
 				const data = args.data as string;
-				const port = args.port as string | undefined;
+				if (!data) return 'Error: no data provided.';
 
-				return `Serial send: "${data}"\nPort: ${port ?? 'active connection'}\n\nUse the Serial tab in the Firmware Environment for full serial monitor functionality including DTR/RTS control and baud rate auto-detection.`;
+				if (!this._serial.connectionState.isConnected) {
+					return 'Serial port is not connected. Use the Serial tab to connect first, or use fw_serial_connect.';
+				}
+
+				const appendNewline = !args.noNewline;
+				try {
+					await this._serial.send(data, appendNewline);
+					return `Sent ${data.length} bytes${appendNewline ? ' + \\r\\n' : ''} to ${this._serial.connectionState.port ?? 'active port'}.`;
+				} catch (err: any) {
+					return `Serial send failed: ${err.message ?? String(err)}`;
+				}
 			},
 		};
 	}
@@ -666,25 +767,42 @@ class FirmwareAgentToolService extends Disposable implements IFirmwareAgentToolS
 	private _fwSerialMonitor(): IVoidInternalTool {
 		return {
 			name: 'fw_serial_monitor',
-			description: 'Get the current serial connection status and configuration. Reports port, baud rate, and whether the device was last seen connected.',
-			params: {},
-			execute: async () => {
-				const s = this._session.session;
-				if (!s.isActive) { return 'No active firmware session.'; }
+			description: 'Get the current serial connection status, recent output, and byte counters.',
+			params: {
+				lines: { description: 'Number of recent RX lines to return (default: 20, max: 100)' },
+			},
+			execute: async (args: Record<string, any>) => {
+				const state = this._serial.connectionState;
+				const output: string[] = ['Serial Monitor Status:'];
 
-				const lines: string[] = ['Serial Monitor Status:'];
-				if (s.lastSerialConfig) {
-					lines.push(`  Port:      ${s.lastSerialConfig.port}`);
-					lines.push(`  Baud rate: ${s.lastSerialConfig.baudRate}`);
-					lines.push(`  Connected: ${s.serialWasConnected ? 'yes (last seen connected)' : 'no'}`);
+				if (state.isConnected) {
+					output.push(`  Port:      ${state.port}`);
+					output.push(`  Baud rate: ${state.baudRate}`);
+					output.push(`  Type:      ${this._serial.getConnectionType()}`);
+					output.push(`  RX bytes:  ${state.bytesReceived}`);
+					output.push(`  TX bytes:  ${state.bytesTransmitted}`);
+					if (state.connectedSince) {
+						const uptime = Math.round((Date.now() - state.connectedSince) / 1000);
+						output.push(`  Uptime:    ${uptime}s`);
+					}
 				} else {
-					lines.push('  No serial port configured.');
-					lines.push('  Use the Serial tab in the Firmware Environment to connect and monitor output.');
+					output.push('  Not connected.');
+					output.push('  Use fw_serial_connect or the Serial tab to connect.');
+					return output.join('\n');
 				}
-				lines.push('');
-				lines.push('Tip: Use fw_serial_send to send data to the device.');
-				lines.push('     Use the Serial tab for real-time monitoring and RX capture.');
-				return lines.join('\n');
+
+				const count = Math.min(Math.max(Number(args.lines) || 20, 1), 100);
+				const recent = this._serial.rxBuffer.slice(-count);
+				if (recent.length > 0) {
+					output.push('', `Recent output (last ${recent.length} lines):`);
+					for (const line of recent) {
+						output.push(`  [${new Date(line.timestamp).toISOString().slice(11, 23)}] ${line.text}`);
+					}
+				} else {
+					output.push('', '  No data received yet.');
+				}
+
+				return output.join('\n');
 			},
 		};
 	}
@@ -692,18 +810,53 @@ class FirmwareAgentToolService extends Disposable implements IFirmwareAgentToolS
 	private _fwBinarySize(): IVoidInternalTool {
 		return {
 			name: 'fw_binary_size',
-			description: 'Analyze the binary size of the compiled firmware. Shows Flash/RAM usage, section sizes, and usage percentages.',
+			description: 'Analyze the binary size of the compiled firmware. Shows Flash/RAM usage by section with percentages.',
 			params: {
 				elfPath: { description: 'Optional path to the ELF binary. Auto-detected from build output if omitted.' },
 			},
 			execute: async (args: Record<string, any>) => {
 				const s = this._session.session;
-				if (!s.isActive || !s.mcuConfig) return 'No active firmware session.';
+				if (!s.isActive || !s.mcuConfig) return 'No active firmware session with MCU config.';
 
 				const elfPath = args.elfPath as string | undefined;
 				const cfg = s.mcuConfig;
 
-				return `Binary size analysis requested.\nELF: ${elfPath ?? 'auto-detect from build output'}\nTarget: ${cfg.family} ${cfg.variant}\nFlash: ${(cfg.flashSize / 1024).toFixed(0)} KB available\nRAM: ${(cfg.ramSize / 1024).toFixed(0)} KB available\n\nRun arm-none-eabi-size on the ELF binary for detailed section breakdown. The Build tab shows visual Flash/RAM usage bars.`;
+				if (!elfPath && !s.projectInfo?.projectRoot) {
+					return 'No ELF path provided and no workspace root detected. Pass elfPath or run fw_scan_project.';
+				}
+
+				try {
+					const analysis = await this._build.analyzeBinarySize(
+						elfPath ?? 'auto',
+						cfg.flashSize,
+						cfg.ramSize,
+					);
+
+					const lines = [
+						`Binary Size — ${cfg.family} ${cfg.variant}`,
+						'',
+						`  .text (code):    ${(analysis.textSize / 1024).toFixed(1)} KB`,
+						`  .data (init):    ${(analysis.dataSize / 1024).toFixed(1)} KB`,
+						`  .bss  (uninit):  ${(analysis.bssSize / 1024).toFixed(1)} KB`,
+						'',
+						`  Flash usage: ${(analysis.flashUsage / 1024).toFixed(1)} KB / ${(cfg.flashSize / 1024).toFixed(0)} KB (${analysis.flashPercent.toFixed(1)}%)`,
+						`  RAM usage:   ${(analysis.ramUsage / 1024).toFixed(1)} KB / ${(cfg.ramSize / 1024).toFixed(0)} KB (${analysis.ramPercent.toFixed(1)}%)`,
+					];
+
+					if (analysis.flashPercent > 90) lines.push('', '⚠ Flash usage above 90% — consider optimizing code size.');
+					if (analysis.ramPercent > 85) lines.push('', '⚠ RAM usage above 85% — review stack/heap allocations.');
+
+					if (analysis.sections.length > 0) {
+						lines.push('', 'Sections:');
+						for (const sec of analysis.sections) {
+							lines.push(`  ${sec.name.padEnd(16)} ${(sec.size / 1024).toFixed(1)} KB  @ 0x${sec.address.toString(16).padStart(8, '0')}`);
+						}
+					}
+
+					return lines.join('\n');
+				} catch (err: any) {
+					return `Binary size analysis failed: ${err.message ?? String(err)}`;
+				}
 			},
 		};
 	}
@@ -731,9 +884,27 @@ class FirmwareAgentToolService extends Disposable implements IFirmwareAgentToolS
 			params: {
 				query: { description: 'Search query: MCU part number, family, board name, or keyword. E.g. "STM32F407", "nRF52840", "Teensy", "ESP32-S3", "Pico"' },
 			},
-			execute: async () => {
-				const s = this._session.session;
-				return `MCU database contains pre-indexed specifications. Use the Firmware Environment UI to search and select an MCU. The database has entries covering STM32, Nordic nRF, ESP32, RP2040/RP2350, NXP, Microchip SAM/AVR, TI MSP430, RISC-V, and more.\n\nSession MCU: ${s.mcuConfig ? `${s.mcuConfig.family} ${s.mcuConfig.variant}` : 'none selected'}`;
+			execute: async (args: Record<string, any>) => {
+				const query = args.query as string;
+				if (!query) return 'Error: provide a search query (MCU part number, family, or board name).';
+
+				const results = this._mcuDb.search(query, 5);
+				if (results.length === 0) {
+					return `No MCUs found matching "${query}". Try a part number (e.g. "STM32F407"), family (e.g. "nRF52"), or board name (e.g. "Pico").`;
+				}
+
+				const lines = [`MCU search: "${query}" — ${results.length} result${results.length > 1 ? 's' : ''}`, ''];
+				for (const e of results) {
+					lines.push(`${e.variant} (${e.manufacturer})`);
+					lines.push(`  Family: ${e.family} | Core: ${e.core} | Clock: ${e.clockMHz} MHz`);
+					lines.push(`  Flash: ${(e.flashSize / 1024).toFixed(0)} KB | RAM: ${(e.ramSize / 1024).toFixed(0)} KB`);
+					if (e.peripherals.length > 0) lines.push(`  Peripherals: ${e.peripherals.slice(0, 8).join(', ')}${e.peripherals.length > 8 ? '…' : ''}`);
+					if (e.commonBoards.length > 0) lines.push(`  Boards: ${e.commonBoards.join(', ')}`);
+					lines.push('');
+				}
+
+				lines.push(`Database: ${this._mcuDb.count} MCUs across ${this._mcuDb.families.length} families.`);
+				return lines.join('\n');
 			},
 		};
 	}
@@ -1041,6 +1212,60 @@ class FirmwareAgentToolService extends Disposable implements IFirmwareAgentToolS
 				}
 
 				return lines.join('\n');
+			},
+		};
+	}
+
+	// ─── Phase 22: Coordinated capture ───────────────────────────────────────
+
+	private _fwCaptureAll(): IVoidInternalTool {
+		return {
+			name: 'fw_capture_all',
+			description: 'Start a coordinated capture across all connected instruments (logic analyzer, oscilloscope, power analyzer, serial). Triggers simultaneously for time-correlated multi-domain analysis.',
+			params: {
+				duration_ms: { description: 'Capture duration in milliseconds (default: 5000)' },
+				channels: { description: 'Comma-separated channels to capture: "logic-analyzer", "oscilloscope", "power-analyzer", "serial" (default: all)' },
+				trigger: { description: 'Optional trigger: "immediate" (default), or JSON {type: "serial-pattern", pattern: "regex"}' },
+				label: { description: 'Optional label for this capture session' },
+			},
+			execute: async (args: Record<string, any>) => {
+				if (this._coordCapture.isCapturing) return 'A capture is already in progress.';
+
+				const durationMs = Number(args.duration_ms) || 5000;
+				const channelStr = (args.channels as string) ?? 'logic-analyzer,oscilloscope,power-analyzer,serial';
+				const channels = channelStr.split(',').map(c => c.trim()) as any[];
+
+				let trigger: any = { type: 'immediate' };
+				if (args.trigger && args.trigger !== 'immediate') {
+					try {
+						trigger = typeof args.trigger === 'string' ? JSON.parse(args.trigger) : args.trigger;
+					} catch { /* use immediate */ }
+				}
+
+				try {
+					const result = await this._coordCapture.startCapture({
+						durationMs,
+						channels,
+						trigger,
+						label: args.label as string,
+					});
+
+					const lines = [
+						'✓ Coordinated capture complete',
+						`  Duration: ${result.durationMs}ms`,
+						`  Channels: ${result.captures.length}`,
+						'',
+						'Results:',
+					];
+
+					for (const cap of result.captures) {
+						lines.push(`  ${cap.channel}: ${cap.summary}`);
+					}
+
+					return lines.join('\n');
+				} catch (err: any) {
+					return `Capture failed: ${err.message ?? String(err)}`;
+				}
 			},
 		};
 	}

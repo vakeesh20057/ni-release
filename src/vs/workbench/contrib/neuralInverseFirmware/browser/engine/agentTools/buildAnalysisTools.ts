@@ -36,6 +36,10 @@ export function buildBuildAnalysisTools(
 		_fwAnalyzeMapFile(sessionService, fileService),
 		_fwAnalyzeStackUsage(sessionService, fileService),
 		_fwReadElfSymbols(sessionService, fileService),
+		// Phase 3 — real subprocess-backed tools
+		_fwCheckToolchain(buildService, sessionService),
+		_fwDisassemble(buildService, sessionService),
+		_fwLookupSymbols(buildService, sessionService),
 	];
 }
 
@@ -561,6 +565,128 @@ function _nmTypeDesc(type: string): string {
 		case 'U': return 'undef';
 		default: return type;
 	}
+}
+
+
+function _fwCheckToolchain(svc: IBuildSystemService, session: IFirmwareSessionService): IVoidInternalTool {
+	return {
+		name: 'fw_check_toolchain',
+		description: 'Check whether the required build toolchain is installed for the current project type. Returns which tools are found/missing with install instructions.',
+		params: {},
+		execute: async () => {
+			const s = session.session;
+			if (!s.isActive) return 'No active firmware session.';
+			const projectType = s.projectInfo?.projectType ?? 'generic';
+			const result = await svc.checkToolchain(projectType);
+
+			const lines = [`Toolchain check for ${projectType}:`, ''];
+			if (result.available) {
+				lines.push('✓ All required tools are installed.');
+			} else {
+				lines.push(`⚠ ${result.missing.length} required tool(s) missing:`);
+				for (const m of result.missing) {
+					lines.push(`  ✗ ${m.tool} — ${m.purpose}`);
+					lines.push(`    Install: ${m.installHint}`);
+				}
+			}
+			if (result.found.length > 0) {
+				lines.push('', 'Found:');
+				for (const f of result.found) {
+					lines.push(`  ✓ ${f.tool}  ${f.version}  (${f.path})`);
+				}
+			}
+			return lines.join('\n');
+		},
+	};
+}
+
+
+function _fwDisassemble(svc: IBuildSystemService, session: IFirmwareSessionService): IVoidInternalTool {
+	return {
+		name: 'fw_disassemble',
+		description: 'Disassemble a function from the ELF binary using objdump. Shows ARM/RISC-V/Xtensa assembly with addresses and hex encoding. Use to verify compiler output, diagnose hard faults, or inspect ISR code.',
+		params: {
+			symbol: { description: 'Function name to disassemble (e.g. "HAL_UART_IRQHandler", "main", "SysTick_Handler")' },
+			elf_path: { description: 'Optional ELF binary path. Auto-detected from last build if omitted.' },
+		},
+		execute: async (args: Record<string, any>) => {
+			const symbol = args.symbol as string;
+			if (!symbol) return 'Error: provide a symbol (function name) to disassemble.';
+
+			const s = session.session;
+			const elfPath = args.elf_path as string | undefined ?? s.lastBuildResult?.outputPath;
+			if (!elfPath) return 'No ELF path available. Build the project first or provide elf_path.';
+
+			try {
+				const result = await svc.disassemble(elfPath, symbol);
+				if (result.lines.length === 0) return `No disassembly found for symbol "${symbol}". Check the symbol name with fw_lookup_symbols.`;
+
+				const lines = [
+					`${symbol}  @ 0x${result.address.toString(16).padStart(8, '0')}  (${result.sizeBytes} bytes)`,
+					'',
+					'  Address    Mnemonic  Operands',
+					'  ────────── ───────── ───────────────────────────',
+				];
+				for (const l of result.lines.slice(0, 200)) {
+					const addr = `0x${l.address.toString(16).padStart(8, '0')}`;
+					const instr = `${l.mnemonic.padEnd(10)}${l.operands}`;
+					lines.push(`  ${addr}  ${instr}${l.comment ? `  ; ${l.comment}` : ''}`);
+				}
+				if (result.lines.length > 200) lines.push(`  ... (${result.lines.length - 200} more instructions)`);
+
+				return lines.join('\n');
+			} catch (err: any) {
+				return `Disassembly failed: ${err.message ?? err}`;
+			}
+		},
+	};
+}
+
+
+function _fwLookupSymbols(svc: IBuildSystemService, session: IFirmwareSessionService): IVoidInternalTool {
+	return {
+		name: 'fw_lookup_symbols',
+		description: 'Look up ELF symbols by name pattern using nm. Shows functions, global variables, and their addresses. Use to find function addresses, check if a symbol is linked, or inspect the symbol table.',
+		params: {
+			pattern: { description: 'Regex pattern to filter symbols (e.g. "UART", "HAL_.*_Init", "main")' },
+			elf_path: { description: 'Optional ELF binary path. Auto-detected from last build if omitted.' },
+		},
+		execute: async (args: Record<string, any>) => {
+			const pattern = (args.pattern as string) ?? '';
+			const s = session.session;
+			const elfPath = args.elf_path as string | undefined ?? s.lastBuildResult?.outputPath;
+			if (!elfPath) return 'No ELF path available. Build the project first or provide elf_path.';
+
+			try {
+				const symbols = await svc.lookupSymbols(elfPath, pattern);
+				if (symbols.length === 0) return `No symbols matching "${pattern}".`;
+
+				const funcs = symbols.filter(s => s.type === 'function');
+				const objs = symbols.filter(s => s.type === 'object');
+				const other = symbols.filter(s => s.type !== 'function' && s.type !== 'object');
+
+				const lines = [`ELF Symbols matching "${pattern}" (${symbols.length} total):`, ''];
+				if (funcs.length > 0) {
+					lines.push(`Functions (${funcs.length}):`);
+					for (const sym of funcs.slice(0, 30)) {
+						lines.push(`  0x${sym.address.toString(16).padStart(8, '0')}  ${sym.size ? _formatBytes(sym.size).padEnd(8) : '?       '}  ${sym.name}`);
+					}
+					if (funcs.length > 30) lines.push(`  ... ${funcs.length - 30} more`);
+				}
+				if (objs.length > 0) {
+					lines.push('', `Objects (${objs.length}):`);
+					for (const sym of objs.slice(0, 20)) {
+						lines.push(`  0x${sym.address.toString(16).padStart(8, '0')}  ${sym.size ? _formatBytes(sym.size).padEnd(8) : '?       '}  ${sym.name}`);
+					}
+					if (objs.length > 20) lines.push(`  ... ${objs.length - 20} more`);
+				}
+				void other;
+				return lines.join('\n');
+			} catch (err: any) {
+				return `Symbol lookup failed: ${err.message ?? err}`;
+			}
+		},
+	};
 }
 
 

@@ -22,11 +22,11 @@
  * Max 50 checkpoints; auto-prunes oldest when limit reached.
  */
 
-import { Emitter, Event } from '../../../../../../../base/common/event.js';
-import { Disposable } from '../../../../../../../base/common/lifecycle.js';
-import { createDecorator } from '../../../../../../../platform/instantiation/common/instantiation.js';
-import { registerSingleton, InstantiationType } from '../../../../../../../platform/instantiation/common/extensions.js';
-import { IWorkspaceContextService } from '../../../../../../../platform/workspace/common/workspace.js';
+import { Emitter, Event } from '../../../../../../base/common/event.js';
+import { Disposable } from '../../../../../../base/common/lifecycle.js';
+import { createDecorator } from '../../../../../../platform/instantiation/common/instantiation.js';
+import { registerSingleton, InstantiationType } from '../../../../../../platform/instantiation/common/extensions.js';
+import { IWorkspaceContextService } from '../../../../../../platform/workspace/common/workspace.js';
 
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -350,7 +350,7 @@ class CheckpointServiceImpl extends Disposable implements ICheckpointService {
 	private _runGit(args: string[], cwd: string): Promise<string> {
 		return new Promise((resolve, reject) => {
 			const cp = (globalThis as Record<string, unknown>)['require']
-				? ((globalThis as Record<string, unknown>)['require']('child_process') as typeof import('child_process'))
+				? (((globalThis as Record<string, unknown>)['require'] as (m: string) => unknown)('child_process') as typeof import('child_process'))
 				: null;
 
 			if (!cp) { resolve(''); return; }
@@ -359,8 +359,8 @@ class CheckpointServiceImpl extends Disposable implements ICheckpointService {
 			let out = '';
 			let err = '';
 
-			proc.stdout?.on('data', (d: Buffer) => { out += d.toString(); });
-			proc.stderr?.on('data', (d: Buffer) => { err += d.toString(); });
+			proc.stdout?.on('data', (d: unknown) => { out += String(d); });
+			proc.stderr?.on('data', (d: unknown) => { err += String(d); });
 
 			proc.on('close', (code: number) => {
 				if (code !== 0) { reject(new Error(err.trim() || `git ${args[0]} failed`)); }

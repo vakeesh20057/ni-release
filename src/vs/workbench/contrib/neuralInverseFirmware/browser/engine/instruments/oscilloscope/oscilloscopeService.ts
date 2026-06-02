@@ -309,7 +309,7 @@ except ImportError:
 		const data = await this._scpiQueryBinary('SCDP');
 
 		const fs = (globalThis as Record<string, unknown>)['require']
-			? ((globalThis as Record<string, unknown>)['require']('fs') as typeof import('fs'))
+			? ((globalThis as Record<string, unknown>)['require'] as (m: string) => unknown)('fs') as typeof import('fs')
 			: null;
 
 		if (!fs) {
@@ -428,9 +428,8 @@ except ImportError:
 
 	private async _scpiQueryBinary(command: string): Promise<Buffer> {
 		return new Promise((resolve, reject) => {
-			const net = (globalThis as Record<string, unknown>)['require']
-				? ((globalThis as Record<string, unknown>)['require']('net') as typeof import('net'))
-				: null;
+			const _netReq = (globalThis as Record<string, unknown>)['require'] as ((m: string) => unknown) | undefined;
+			const net = _netReq ? (_netReq('net') as typeof import('net')) : null;
 
 			if (!net || !this._host) {
 				reject(new Error('SCPI requires Node.js environment and active connection.'));
@@ -441,7 +440,7 @@ except ImportError:
 			const chunks: Buffer[] = [];
 
 			socket.on('connect', () => socket.write(command + '\n'));
-			socket.on('data', (d: Buffer) => chunks.push(d));
+			socket.on('data', (d: unknown) => chunks.push(Buffer.isBuffer(d) ? d : Buffer.from(String(d))));
 			socket.on('end', () => resolve(Buffer.concat(chunks)));
 			socket.on('error', (e: Error) => reject(e));
 			socket.setTimeout(SCPI_TIMEOUT_MS, () => { socket.destroy(); resolve(Buffer.concat(chunks)); });
@@ -450,9 +449,8 @@ except ImportError:
 
 	private async _scpiSend(command: string, expectResponse = false): Promise<string> {
 		return new Promise((resolve, reject) => {
-			const net = (globalThis as Record<string, unknown>)['require']
-				? ((globalThis as Record<string, unknown>)['require']('net') as typeof import('net'))
-				: null;
+			const _netReq = (globalThis as Record<string, unknown>)['require'] as ((m: string) => unknown) | undefined;
+			const net = _netReq ? (_netReq('net') as typeof import('net')) : null;
 
 			if (!net || !this._host) {
 				reject(new Error('SCPI requires Node.js environment and active connection. Call fw_scope_discover first.'));
@@ -463,7 +461,7 @@ except ImportError:
 			let response = '';
 
 			socket.on('connect', () => socket.write(command));
-			socket.on('data', (d: Buffer) => { response += d.toString(); });
+			socket.on('data', (d: unknown) => { response += String(d); });
 
 			if (expectResponse) {
 				socket.setTimeout(SCPI_TIMEOUT_MS, () => { socket.destroy(); resolve(response.trim()); });
@@ -504,16 +502,15 @@ except ImportError:
 
 	private async _runPython(script: string): Promise<string> {
 		return new Promise((resolve, reject) => {
-			const cp = (globalThis as Record<string, unknown>)['require']
-				? ((globalThis as Record<string, unknown>)['require']('child_process') as typeof import('child_process'))
-				: null;
+			const _cpReqFn = (globalThis as Record<string, unknown>)['require'] as ((m: string) => unknown) | undefined;
+			const cp = _cpReqFn ? (_cpReqFn('child_process') as typeof import('child_process')) : null;
 			if (!cp) { reject(new Error('Requires Node.js.')); return; }
 
 			const proc = cp.spawn('python3', ['-c', script], { timeout: 10000 });
 			let out = '';
 			let err = '';
-			proc.stdout.on('data', (d: Buffer) => { out += d.toString(); });
-			proc.stderr.on('data', (d: Buffer) => { err += d.toString(); });
+			proc.stdout.on('data', (d: unknown) => { out += String(d); });
+			proc.stderr.on('data', (d: unknown) => { err += String(d); });
 			proc.on('close', (code: number) => {
 				if (code !== 0) { reject(new Error(err.trim() || out.trim())); }
 				else { resolve(out.trim()); }

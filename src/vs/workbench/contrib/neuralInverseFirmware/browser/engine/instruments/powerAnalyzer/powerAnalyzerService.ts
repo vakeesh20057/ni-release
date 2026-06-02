@@ -507,7 +507,7 @@ print("stream_complete")
 	private async _runPython(script: string): Promise<string> {
 		return new Promise((resolve, reject) => {
 			const cp = (globalThis as Record<string, unknown>)['require']
-				? (globalThis as Record<string, unknown>)['require']('child_process') as typeof import('child_process')
+				? ((globalThis as Record<string, unknown>)['require'] as (m: string) => unknown)('child_process') as typeof import('child_process')
 				: null;
 
 			if (!cp) {
@@ -519,8 +519,8 @@ print("stream_complete")
 			let stdout = '';
 			let stderr = '';
 
-			proc.stdout.on('data', (d: Buffer) => { stdout += d.toString(); });
-			proc.stderr.on('data', (d: Buffer) => { stderr += d.toString(); });
+			proc.stdout.on('data', (d: unknown) => { stdout += String(d); });
+			proc.stderr.on('data', (d: unknown) => { stderr += String(d); });
 
 			proc.on('close', (code: number) => {
 				if (code !== 0) {

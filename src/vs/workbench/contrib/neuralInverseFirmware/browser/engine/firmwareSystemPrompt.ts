@@ -156,14 +156,41 @@ CRITICAL: These tools are available as NATIVE FUNCTION CALLS. Do NOT use bash to
 - fw_get_timing_constraints(peripheral) — Get setup/hold times, clock limits for a peripheral
 
 **Build & Flash:**
-- fw_build(target?) — Build the firmware project (auto-detects build system)
-- fw_flash(tool?, port?) — Flash firmware to the target MCU (auto-detects flash tool)
-- fw_binary_size(elfPath?) — Analyze Flash/RAM usage of compiled firmware
+- fw_build(target?) — Build the firmware project (auto-detects build system). Returns structured errors/warnings.
+- fw_flash(tool?, port?, verify?) — Flash firmware to the target MCU via the integrated terminal. Reports success/failure.
+- fw_binary_size(elfPath?) — Analyze Flash/RAM usage with section breakdown and warnings
 - fw_scan_project — Scan workspace for firmware project indicators (MCU, build system, RTOS)
 
 **Serial & Debug:**
-- fw_serial_send(data, port?, baudRate?) — Send data to the connected serial port
-- fw_serial_monitor — Get serial connection status and configuration
+- fw_serial_send(data, noNewline?) — Send data to the connected serial port (real transmission)
+- fw_serial_monitor(lines?) — Get live serial status + recent RX output
+
+**Errata & Verification:**
+- fw_errata_search(peripheral?) — Search built-in silicon errata database (7+ MCU families, 30+ bugs)
+- fw_errata_check_operation(peripheral, operation, register?) — Proactively check if planned operation hits known silicon bugs
+- fw_verify_formula(type, params, expected?) — Verify baud rate, PLL, timer, SPI, CAN, PWM calculations against datasheet formulas
+- fw_list_formulas — List all available formula verification types with parameters
+
+**Autonomous Loop:**
+- fw_closed_loop(goal, pass_criteria, max_iterations?, observe_channel?) — Autonomous build→flash→observe→diagnose→fix cycle until pass criteria met
+- fw_closed_loop_status — Check running loop status
+- fw_closed_loop_abort — Stop a running loop
+
+**HIL Testing:**
+- fw_hil_run(test_id | inline spec) — Run a Hardware-in-the-Loop test (build, flash, stimulus, observe, evaluate)
+- fw_hil_define(id, name, stimulus, expectations) — Save a reusable HIL test spec
+- fw_hil_list — List saved HIL tests
+- fw_hil_run_suite(tags?) — Run all HIL tests with pass/fail summary
+
+**RTOS Debugging:**
+- fw_rtos_detect — Detect FreeRTOS/Zephyr/ThreadX on target
+- fw_rtos_threads — List all tasks with state, priority, stack usage
+- fw_rtos_heap — Get heap statistics (free, used, high watermark)
+- fw_rtos_sync — List mutexes, semaphores, queues and their waiters
+- fw_rtos_snapshot — Full kernel state dump (detects priority inversions)
+
+**Coordinated Instruments:**
+- fw_capture_all(duration_ms?, channels?, trigger?) — Trigger scope + LA + power + serial simultaneously for correlated analysis
 
 **Compliance:**
 - fw_misra_check(code, rules?) — Check code for MISRA C:2012 compliance
@@ -193,8 +220,16 @@ const FIRMWARE_WORKFLOW_BLOCK = `# Firmware Development Workflow
 4. **Monitor** — Watch serial output to verify it works
 5. **Debug** — If something's wrong, check registers, errata, timing constraints
 
+For fully autonomous operation, use **fw_closed_loop(goal, pass_criteria)** — it runs the entire
+build→flash→observe→diagnose→fix cycle automatically until pass criteria are met.
+
 Always offer to continue the loop. After writing code, ask "Want me to build and flash this?"
-After flashing, say "Monitoring serial output..." and check serial for expected behavior.
+After flashing, use fw_serial_monitor to check serial for expected behavior.
+
+## Before Configuring Any Peripheral
+1. Call fw_errata_check_operation(peripheral, operation) FIRST
+2. Call fw_verify_formula() if setting timing/clock registers
+3. Then proceed with register configuration
 
 ## Peripheral Configuration Pattern
 When asked to configure a peripheral (e.g. "set up UART1"):

@@ -37,7 +37,7 @@ import { IVoidSettingsService } from '../../../void/common/voidSettingsService.j
 import { IFileService } from '../../../../../platform/files/common/files.js';
 import { URI } from '../../../../../base/common/uri.js';
 import { ISvdFetchService } from '../engine/datasheet/svdFetchService.js';
-import { IPeripheralRegisterMap, COMMON_BAUD_RATES, FirmwareComplianceFramework, IFirmwareSessionData } from '../../common/firmwareTypes.js';
+import { IPeripheralRegisterMap, COMMON_BAUD_RATES, FirmwareComplianceFramework, IFirmwareSessionData, IBuildResult } from '../../common/firmwareTypes.js';
 import { IPinMuxService } from '../engine/pinMux/service.js';
 import { IClockTreeService } from '../engine/clockTree/service.js';
 import { IMemoryLayoutService } from '../engine/memory/service.js';
@@ -50,6 +50,18 @@ import { ISchematicService } from '../engine/schematic/schematicService.js';
 type ISchematicPin = NonNullable<ReturnType<ISchematicService['getPinoutMap']>>['pins'][number];
 import { ICheckpointService } from '../engine/projectConfig/checkpointService.js';
 import { INIMdService } from '../engine/projectConfig/niMdService.js';
+import {
+	IBuildSystemService, IFlashResult, IBinarySizeAnalysis,
+	IStackUsageReport, IElfSymbol, IBuildOutputLine,
+} from '../engine/build/buildSystemService.js';
+import { IRTOSDebugService } from '../engine/rtos/rtosDebugService.js';
+import { IRTOSSnapshot } from '../engine/rtos/rtosTypes.js';
+import { IHILTestService } from '../engine/hil/hilTestService.js';
+import { IHILTestResult, IHILSuiteResult } from '../engine/hil/hilTypes.js';
+import { IClosedLoopService } from '../engine/closedLoop/closedLoopService.js';
+import { IClosedLoopIteration, ClosedLoopPhase } from '../engine/closedLoop/closedLoopTypes.js';
+import { ICoordinatedCaptureService } from '../engine/instruments/coordinatedCaptureService.js';
+import { IErrataService } from '../engine/errata/errataService.js';
 
 
 // ─── DOM helpers (no innerHTML — Trusted Types compliant) ─────────────────────
@@ -73,7 +85,7 @@ function $t<K extends SafeHTMLTag>(tag: K, text: string, css?: string): HTMLElem
 
 const FIRMWARE_PART_ID = 'workbench.parts.neuralInverseFirmware';
 
-type TabId = 'dashboard' | 'pinout' | 'architecture' | 'datasheets' | 'registers' | 'serial' | 'compliance' | 'build' | 'hw-tools' | 'instruments';
+type TabId = 'dashboard' | 'pinout' | 'architecture' | 'datasheets' | 'registers' | 'serial' | 'compliance' | 'build' | 'hw-tools' | 'instruments' | 'rtos' | 'hil' | 'closed-loop';
 
 const TABS: Array<{ id: TabId; label: string }> = [
 	{ id: 'dashboard',   label: 'Dashboard' },
@@ -86,6 +98,9 @@ const TABS: Array<{ id: TabId; label: string }> = [
 	{ id: 'serial',      label: 'Serial' },
 	{ id: 'compliance',  label: 'Compliance' },
 	{ id: 'build',       label: 'Build' },
+	{ id: 'rtos',        label: 'RTOS' },
+	{ id: 'hil',         label: 'HIL Tests' },
+	{ id: 'closed-loop', label: 'Auto Loop' },
 ];
 
 // ─── Part ─────────────────────────────────────────────────────────────────────
@@ -143,10 +158,18 @@ export class FirmwarePart extends Part {
 		@ISchematicService private readonly _schematicSvc: ISchematicService,
 		@ICheckpointService private readonly _checkpointSvc: ICheckpointService,
 		@INIMdService private readonly _niMdSvc: INIMdService,
+		@IRTOSDebugService private readonly _rtosSvc: IRTOSDebugService,
+		@IHILTestService private readonly _hilSvc: IHILTestService,
+		@IClosedLoopService private readonly _closedLoopSvc: IClosedLoopService,
+		@ICoordinatedCaptureService private readonly _coordCaptureSvc: ICoordinatedCaptureService,
+		@IErrataService private readonly _errataSvc: IErrataService,
+		@IBuildSystemService private readonly _buildSvc: IBuildSystemService,
 	) {
 		super(FIRMWARE_PART_ID, { hasTitle: false }, themeService, storageService, layoutService);
 		void this._schematicSvc;
 		void this._niMdSvc;
+		void this._coordCaptureSvc;
+		void this._errataSvc;
 	}
 
 	protected override createContentArea(parent: HTMLElement): HTMLElement {
@@ -499,6 +522,9 @@ export class FirmwarePart extends Part {
 			case 'serial':       this._renderSerial(root); break;
 			case 'compliance':   this._renderCompliance(root); break;
 			case 'build':        this._renderBuild(root); break;
+			case 'rtos':         this._renderRTOS(root); break;
+			case 'hil':          this._renderHIL(root); break;
+			case 'closed-loop':  this._renderClosedLoop(root); break;
 		}
 	}
 
@@ -4359,65 +4385,721 @@ export class FirmwarePart extends Part {
 
 	// ─── Build ────────────────────────────────────────────────────────────────
 
+	// \u2500\u2500\u2500 Build tab state \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+	private _buildOutputLines: string[] = [];
+	private _lastFlashResult: IFlashResult | undefined;
+	private _lastBinaryAnalysis: IBinarySizeAnalysis | undefined;
+	private _lastStackReport: IStackUsageReport | undefined;
+	private _lastSymbols: IElfSymbol[] = [];
+	private _buildSubTab: 'output' | 'diagnostics' | 'size' | 'symbols' | 'disasm' | 'stack' | 'toolchain' | 'flash' = 'output';
+
 	private _renderBuild(root: HTMLElement): void {
 		const s = this._session.session;
-		const scroll = $e('div', 'flex:1;overflow-y:auto;padding:20px;');
-		root.appendChild(scroll);
+		const projectType = s.projectInfo?.projectType ?? 'generic';
+		const buildSystem = s.projectInfo?.buildSystem ?? s.buildSystem ?? projectType;
 
-		scroll.appendChild($t('h3', 'Build & Flash', 'margin:0 0 16px;font-size:15px;font-weight:700;'));
+		// \u2500\u2500 Full-height panel \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+		const panel = $e('div', 'flex:1;display:flex;flex-direction:column;overflow:hidden;min-height:0;');
+		root.appendChild(panel);
 
-		// Build actions row
-		const actRow = $e('div', 'display:flex;gap:8px;margin-bottom:20px;flex-wrap:wrap;');
-		actRow.appendChild(this._btn('Build Project', true, () => { }, 'font-size:12px;padding:6px 16px;'));
-		actRow.appendChild(this._btn('Flash Device', false, () => { }, 'font-size:12px;padding:6px 16px;'));
-		actRow.appendChild(this._btn('Analyze Binary Size', false, () => { }, 'font-size:12px;padding:6px 16px;'));
-		actRow.appendChild(this._btn('Clean', false, () => { }, 'font-size:12px;padding:6px 16px;'));
-		scroll.appendChild(actRow);
+		// \u2500\u2500 Toolbar \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+		const toolbar = $e('div', [
+			'padding:0 10px', 'height:36px', 'display:flex', 'align-items:center', 'gap:6px',
+			'border-bottom:1px solid var(--vscode-widget-border)', 'flex-shrink:0', 'flex-wrap:wrap',
+		].join(';'));
 
-		// Last build result
-		if (s.lastBuildResult) {
-			const b = s.lastBuildResult;
-			const resultCard = $e('div', [
-				'border:1px solid var(--vscode-widget-border,var(--vscode-panel-border))',
-				'border-radius:7px', 'overflow:hidden', 'margin-bottom:14px',
-			].join(';'));
-			const resultHdr = $e('div', [
-				'padding:8px 14px',
-				'background:var(--vscode-sideBarSectionHeader-background)',
-				'display:flex', 'align-items:center', 'gap:10px',
-			].join(';'));
-			resultHdr.appendChild($t('span', b.success ? 'Last Build: SUCCESS' : 'Last Build: FAILED', [
-				'font-size:12px', 'font-weight:700',
-				'color:' + (b.success ? '#4caf50' : 'var(--vscode-errorForeground,#f48771)'),
-			].join(';')));
-			resultHdr.appendChild($t('span', `${b.durationMs}ms \u00b7 ${b.errors.length} errors \u00b7 ${b.warnings.length} warnings`,
-				'font-size:11px;color:var(--vscode-descriptionForeground);'));
-			resultCard.appendChild(resultHdr);
+		// Project badge
+		toolbar.appendChild($t('span', buildSystem.toUpperCase(), [
+			'font-size:9px', 'font-weight:700', 'padding:2px 7px', 'border-radius:3px',
+			'background:var(--vscode-badge-background)', 'color:var(--vscode-badge-foreground)',
+			'flex-shrink:0',
+		].join(';')));
 
-			const resultBody = $e('div', [
-				'padding:10px 14px',
-				'font-family:var(--vscode-editor-font-family,monospace)',
-				'font-size:11px', 'line-height:1.6',
-				'background:var(--vscode-terminal-background,var(--vscode-editor-background))',
-				'max-height:200px', 'overflow-y:auto',
-			].join(';'));
-			for (const err of b.errors.slice(0, 10)) {
-				resultBody.appendChild($t('div', `${err.file}:${err.line}: error: ${err.message}`,
-					'color:var(--vscode-errorForeground,#f48771);'));
-			}
-			for (const w of b.warnings.slice(0, 5)) {
-				resultBody.appendChild($t('div', `${w.file}:${w.line}: warning: ${w.message}`,
-					'color:var(--vscode-editorWarning-foreground,#ffcc02);'));
-			}
-			resultCard.appendChild(resultBody);
-			scroll.appendChild(resultCard);
-		} else {
-			scroll.appendChild(this._emptyState(
-				'No Build Results',
-				'Run a build to see output, errors, and warnings here.',
-				s.projectInfo ? `Detected project type: ${s.projectInfo.projectType}` : 'No project detected yet.',
-			));
+		const mkBtn = (label: string, primary: boolean): HTMLButtonElement => {
+			const btn = $e('button', [
+				'padding:3px 11px', 'border-radius:3px', 'cursor:pointer', 'font-size:11px',
+				'font-weight:600', 'white-space:nowrap', 'flex-shrink:0',
+				primary
+					? 'background:var(--vscode-button-background);color:var(--vscode-button-foreground);border:none;'
+					: 'background:transparent;color:var(--vscode-foreground);border:1px solid var(--vscode-widget-border);',
+			].join(';')) as HTMLButtonElement;
+			btn.textContent = label;
+			return btn;
+		};
+
+		const buildBtn = mkBtn('Build', true);
+		const flashBtn = mkBtn('Flash', false);
+		const cleanBtn = mkBtn('Clean', false);
+		const abortBtn = mkBtn('Abort', false);
+		abortBtn.style.color = 'var(--vscode-errorForeground)';
+		abortBtn.style.borderColor = 'var(--vscode-errorForeground)';
+		abortBtn.title = 'Abort running build/flash';
+
+		// Build target input
+		const targetInput = $e('input', [
+			'width:100px', 'padding:2px 6px', 'font-size:10px', 'border-radius:3px',
+			'background:var(--vscode-input-background)', 'color:var(--vscode-input-foreground)',
+			'border:1px solid var(--vscode-input-border,var(--vscode-widget-border))', 'flex-shrink:0',
+		].join(';')) as HTMLInputElement;
+		targetInput.placeholder = 'target (opt)';
+
+		const statusLabel = $t('span', '', 'font-size:10px;color:var(--vscode-descriptionForeground);margin-left:4px;');
+		const elapsedLabel = $t('span', '', 'font-size:10px;color:var(--vscode-descriptionForeground);margin-left:auto;flex-shrink:0;');
+
+		toolbar.appendChild(buildBtn);
+		toolbar.appendChild(flashBtn);
+		toolbar.appendChild(cleanBtn);
+		toolbar.appendChild(abortBtn);
+		toolbar.appendChild(targetInput);
+		toolbar.appendChild(statusLabel);
+		toolbar.appendChild(elapsedLabel);
+		panel.appendChild(toolbar);
+
+		// \u2500\u2500 Command preview bar \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+		const cmdBar = $e('div', [
+			'padding:3px 12px', 'font-size:9px', 'font-family:var(--vscode-editor-font-family,monospace)',
+			'color:var(--vscode-descriptionForeground)', 'background:var(--vscode-sideBarSectionHeader-background)',
+			'border-bottom:1px solid var(--vscode-widget-border)', 'flex-shrink:0', 'overflow:hidden',
+			'text-overflow:ellipsis', 'white-space:nowrap',
+		].join(';'));
+		const updateCmdBar = (target?: string): void => {
+			const bc = this._buildSvc.getBuildCommand(projectType, target || undefined);
+			const fc = this._buildSvc.getFlashCommand(projectType);
+			cmdBar.textContent = `build: ${bc.join(' ')}   \u2502   flash: ${fc.join(' ')}`;
+		};
+		updateCmdBar();
+		targetInput.addEventListener('input', () => updateCmdBar(targetInput.value));
+		panel.appendChild(cmdBar);
+
+		// \u2500\u2500 Sub-tab bar \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+		type SubTab = typeof this._buildSubTab;
+		const subTabs: Array<{ id: SubTab; label: string }> = [
+			{ id: 'output',      label: 'Output' },
+			{ id: 'diagnostics', label: 'Diagnostics' },
+			{ id: 'size',        label: 'Binary Size' },
+			{ id: 'symbols',     label: 'Symbols' },
+			{ id: 'disasm',      label: 'Disassembly' },
+			{ id: 'stack',       label: 'Stack Usage' },
+			{ id: 'toolchain',   label: 'Toolchain' },
+			{ id: 'flash',       label: 'Flash Tools' },
+		];
+
+		const tabBar = $e('div', [
+			'display:flex', 'align-items:stretch', 'border-bottom:1px solid var(--vscode-widget-border)',
+			'background:var(--vscode-editorGroupHeader-tabsBackground)', 'flex-shrink:0', 'overflow-x:auto',
+		].join(';'));
+		const tabBtnMap = new Map<SubTab, HTMLButtonElement>();
+		const content = $e('div', 'flex:1;display:flex;flex-direction:column;overflow:hidden;min-height:0;');
+
+		const activateSubTab = (id: SubTab): void => {
+			this._buildSubTab = id;
+			tabBtnMap.forEach((btn, tid) => {
+				const active = tid === id;
+				btn.style.color = active ? 'var(--vscode-tab-activeForeground)' : 'var(--vscode-tab-inactiveForeground)';
+				btn.style.borderBottom = active ? '2px solid var(--vscode-tab-activeBorderTop,var(--vscode-focusBorder))' : '2px solid transparent';
+				btn.style.background = active ? 'var(--vscode-tab-activeBackground)' : 'transparent';
+			});
+			renderSubTab(id);
+		};
+
+		for (const st of subTabs) {
+			const btn = $e('button', [
+				'padding:0 14px', 'height:33px', 'border:none', 'cursor:pointer', 'font-size:11px',
+				'font-weight:500', 'white-space:nowrap', 'flex-shrink:0', 'color:var(--vscode-tab-inactiveForeground)',
+				'border-bottom:2px solid transparent',
+			].join(';')) as HTMLButtonElement;
+			btn.textContent = st.label;
+			btn.addEventListener('click', () => activateSubTab(st.id));
+			tabBtnMap.set(st.id, btn);
+			tabBar.appendChild(btn);
 		}
+		panel.appendChild(tabBar);
+		panel.appendChild(content);
+
+		// \u2500\u2500 Sub-tab renderers \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+
+		const renderSubTab = (id: SubTab): void => {
+			content.textContent = '';
+			switch (id) {
+				case 'output':      renderOutput(); break;
+				case 'diagnostics': renderDiagnostics(); break;
+				case 'size':        renderSize(); break;
+				case 'symbols':     renderSymbols(); break;
+				case 'disasm':      renderDisasm(); break;
+				case 'stack':       renderStack(); break;
+				case 'toolchain':   void renderToolchain(); break;
+				case 'flash':       void renderFlashTools(); break;
+			}
+		};
+
+		// \u2500\u2500 OUTPUT \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+		let outputEl: HTMLElement;
+		const renderOutput = (): void => {
+			const wrap = $e('div', 'flex:1;display:flex;flex-direction:column;overflow:hidden;min-height:0;');
+			const clearBtn = $e('button', [
+				'position:absolute', 'top:6px', 'right:10px', 'border:none', 'background:transparent',
+				'color:var(--vscode-descriptionForeground)', 'cursor:pointer', 'font-size:10px', 'z-index:1',
+			].join(';')) as HTMLButtonElement;
+			clearBtn.textContent = 'Clear';
+			clearBtn.addEventListener('click', () => { this._buildOutputLines = []; repaintOutput(); });
+
+			const rel = $e('div', 'flex:1;position:relative;overflow:hidden;min-height:0;');
+			rel.appendChild(clearBtn);
+			outputEl = $e('div', [
+				'flex:1', 'height:100%', 'overflow-y:auto', 'padding:8px 12px',
+				'font-family:var(--vscode-editor-font-family,monospace)', 'font-size:11px', 'line-height:1.65',
+				'background:var(--vscode-terminal-background,#1e1e1e)',
+				'color:var(--vscode-terminal-foreground,#cccccc)',
+				'white-space:pre-wrap', 'word-break:break-all',
+			].join(';'));
+			rel.appendChild(outputEl);
+			wrap.appendChild(rel);
+			content.appendChild(wrap);
+			repaintOutput();
+		};
+
+		const repaintOutput = (): void => {
+			if (!outputEl) return;
+			outputEl.textContent = '';
+			if (this._buildOutputLines.length === 0) {
+				outputEl.appendChild($t('div', 'Build output will appear here...', 'opacity:0.4;'));
+				return;
+			}
+			const frag = document.createDocumentFragment();
+			for (const line of this._buildOutputLines.slice(-2000)) {
+				const el = $e('div', '');
+				el.textContent = line;
+				if (/\berror[:\s]/i.test(line)) el.style.color = 'var(--vscode-errorForeground,#f48771)';
+				else if (/\bwarning[:\s]/i.test(line)) el.style.color = 'var(--vscode-editorWarning-foreground,#ffcc02)';
+				else if (line.startsWith('$') || line.startsWith('>')) el.style.color = 'var(--vscode-terminal-ansiCyan,#80cbc4)';
+				else if (/^\u2713|^\u2717/.test(line)) el.style.color = line.startsWith('\u2713') ? '#4caf50' : 'var(--vscode-errorForeground)';
+				frag.appendChild(el);
+			}
+			outputEl.appendChild(frag);
+			outputEl.scrollTop = outputEl.scrollHeight;
+		};
+
+		// \u2500\u2500 DIAGNOSTICS \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+		const renderDiagnostics = (): void => {
+			const result = this._buildSvc.lastBuildResult ?? s.lastBuildResult;
+			if (!result) {
+				content.appendChild(this._emptyState('No Diagnostics', 'Run a build to see structured errors and warnings.'));
+				return;
+			}
+
+			const wrap = $e('div', 'flex:1;display:flex;flex-direction:column;overflow:hidden;');
+			// Summary strip
+			const sumRow = $e('div', [
+				'padding:6px 14px', 'display:flex', 'gap:16px', 'align-items:center', 'flex-shrink:0',
+				'border-bottom:1px solid var(--vscode-widget-border)',
+				'background:var(--vscode-sideBarSectionHeader-background)',
+			].join(';'));
+			const c = result.success ? '#4caf50' : 'var(--vscode-errorForeground)';
+			sumRow.appendChild($t('span', result.success ? '\u2713 SUCCESS' : '\u2717 FAILED', `font-size:11px;font-weight:700;color:${c};`));
+			sumRow.appendChild($t('span', `${result.durationMs}ms`, 'font-size:10px;color:var(--vscode-descriptionForeground);'));
+			sumRow.appendChild($t('span', `${result.errors.length} error${result.errors.length !== 1 ? 's' : ''}`, `font-size:11px;font-weight:600;color:${result.errors.length > 0 ? 'var(--vscode-errorForeground)' : '#4caf50'};`));
+			sumRow.appendChild($t('span', `${result.warnings.length} warning${result.warnings.length !== 1 ? 's' : ''}`, `font-size:11px;color:${result.warnings.length > 0 ? 'var(--vscode-editorWarning-foreground)' : 'var(--vscode-descriptionForeground)'};`));
+			if (result.outputPath) sumRow.appendChild($t('span', result.outputPath.split('/').pop()!, 'font-size:10px;color:var(--vscode-descriptionForeground);margin-left:auto;'));
+			wrap.appendChild(sumRow);
+
+			const diagScroll = $e('div', 'flex:1;overflow-y:auto;');
+			wrap.appendChild(diagScroll);
+			content.appendChild(wrap);
+
+			const mkDiagRow = (sev: 'error' | 'warning', file: string, line: number, col: number | undefined, message: string, code?: string): HTMLElement => {
+				const row = $e('div', 'display:flex;align-items:flex-start;gap:8px;padding:5px 12px;border-bottom:1px solid var(--vscode-widget-border);cursor:pointer;');
+				row.addEventListener('mouseenter', () => { row.style.background = 'var(--vscode-list-hoverBackground)'; });
+				row.addEventListener('mouseleave', () => { row.style.background = ''; });
+
+				const badge = $t('span', sev === 'error' ? 'E' : 'W', [
+					'font-size:8px', 'font-weight:700', 'padding:1px 4px', 'border-radius:2px', 'flex-shrink:0', 'margin-top:1px',
+					sev === 'error'
+						? 'background:var(--vscode-errorForeground);color:#fff;'
+						: 'background:var(--vscode-editorWarning-foreground);color:#000;',
+				].join(';'));
+				row.appendChild(badge);
+
+				const info = $e('div', 'min-width:0;flex:1;');
+				const msgLine = $e('div', 'display:flex;align-items:baseline;gap:6px;flex-wrap:wrap;');
+				msgLine.appendChild($t('span', message, `font-size:11px;color:${sev === 'error' ? 'var(--vscode-errorForeground)' : 'var(--vscode-editorWarning-foreground)'};`));
+				if (code) msgLine.appendChild($t('span', `[${code}]`, 'font-size:9px;color:var(--vscode-descriptionForeground);'));
+				info.appendChild(msgLine);
+				const locLine = $t('span', `${file}:${line}${col ? ':' + col : ''}`, 'font-size:9px;color:var(--vscode-descriptionForeground);font-family:var(--vscode-editor-font-family,monospace);');
+				info.appendChild(locLine);
+				row.appendChild(info);
+				return row;
+			};
+
+			for (const err of result.errors) diagScroll.appendChild(mkDiagRow('error', err.file, err.line, err.column, err.message, err.code));
+			for (const w of result.warnings) diagScroll.appendChild(mkDiagRow('warning', w.file, w.line, w.column, w.message, w.code));
+
+			if (result.errors.length === 0 && result.warnings.length === 0) {
+				diagScroll.appendChild($t('div', 'No errors or warnings.', 'padding:20px;color:var(--vscode-descriptionForeground);font-size:11px;'));
+			}
+		};
+
+		// \u2500\u2500 BINARY SIZE \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+		const renderSize = (): void => {
+			const a = this._lastBinaryAnalysis;
+			const mcuFlash = s.mcuConfig?.flashSize ?? 0;
+			const mcuRam = s.mcuConfig?.ramSize ?? 0;
+
+			const wrap = $e('div', 'flex:1;display:flex;flex-direction:column;overflow:hidden;');
+			const hdr = $e('div', 'padding:6px 14px;border-bottom:1px solid var(--vscode-widget-border);display:flex;align-items:center;justify-content:space-between;flex-shrink:0;background:var(--vscode-sideBarSectionHeader-background);');
+			hdr.appendChild($t('span', 'BINARY SIZE', 'font-size:10px;font-weight:700;letter-spacing:.05em;color:var(--vscode-descriptionForeground);'));
+			const analyzeBtn = mkBtn('Analyze', false);
+			analyzeBtn.style.fontSize = '10px';
+			analyzeBtn.style.padding = '2px 8px';
+			analyzeBtn.addEventListener('click', async () => {
+				analyzeBtn.disabled = true;
+				analyzeBtn.textContent = 'Running...';
+				statusLabel.textContent = 'Analyzing binary...';
+				const elfPath = s.lastBuildResult?.outputPath ?? 'auto';
+				this._lastBinaryAnalysis = await this._buildSvc.analyzeBinarySize(elfPath, mcuFlash, mcuRam);
+				analyzeBtn.textContent = 'Analyze';
+				analyzeBtn.disabled = false;
+				statusLabel.textContent = '';
+				renderSubTab('size');
+			});
+			hdr.appendChild(analyzeBtn);
+			wrap.appendChild(hdr);
+
+			if (!a || (a.flashUsage === 0 && a.sections.length === 0)) {
+				const empty = $e('div', 'flex:1;display:flex;align-items:center;justify-content:center;');
+				empty.appendChild($t('div', 'Click Analyze to run arm-none-eabi-size on the ELF binary.', 'color:var(--vscode-descriptionForeground);font-size:12px;'));
+				wrap.appendChild(empty);
+				content.appendChild(wrap);
+				return;
+			}
+
+			const body = $e('div', 'flex:1;overflow-y:auto;padding:14px;');
+			wrap.appendChild(body);
+			content.appendChild(wrap);
+
+			const mkBar = (label: string, used: number, total: number, pct: number): HTMLElement => {
+				const el = $e('div', 'margin-bottom:14px;');
+				const top = $e('div', 'display:flex;justify-content:space-between;margin-bottom:4px;');
+				top.appendChild($t('span', label, 'font-size:11px;font-weight:600;'));
+				top.appendChild($t('span', `${(used / 1024).toFixed(1)} KB / ${total ? (total / 1024).toFixed(0) + ' KB' : '?'}  (${pct.toFixed(1)}%)`, 'font-size:10px;color:var(--vscode-descriptionForeground);'));
+				el.appendChild(top);
+				const outer = $e('div', 'height:18px;background:var(--vscode-input-background);border-radius:3px;overflow:hidden;');
+				const color = pct > 90 ? 'var(--vscode-errorForeground)' : pct > 75 ? 'var(--vscode-editorWarning-foreground)' : 'var(--vscode-progressBar-background)';
+				outer.appendChild($e('div', `height:100%;width:${Math.min(pct, 100)}%;background:${color};border-radius:3px;transition:width .4s;`));
+				el.appendChild(outer);
+				if (pct > 90) el.appendChild($t('div', `\u26a0 Only ${(total - used) / 1024 < 1 ? Math.round(total - used) + ' B' : ((total - used) / 1024).toFixed(1) + ' KB'} remaining`, 'font-size:10px;color:var(--vscode-errorForeground);margin-top:3px;'));
+				return el;
+			};
+
+			body.appendChild(mkBar('Flash', a.flashUsage, mcuFlash, mcuFlash > 0 ? a.flashPercent : 0));
+			body.appendChild(mkBar('RAM', a.ramUsage, mcuRam, mcuRam > 0 ? a.ramPercent : 0));
+
+			// Section breakdown
+			if (a.sections.length > 0 || a.textSize > 0) {
+				body.appendChild($t('div', 'SECTIONS', 'font-size:10px;font-weight:700;letter-spacing:.05em;color:var(--vscode-descriptionForeground);margin:16px 0 8px;'));
+				const tbl = $e('div', 'font-family:var(--vscode-editor-font-family,monospace);font-size:11px;border:1px solid var(--vscode-widget-border);border-radius:3px;overflow:hidden;');
+				const hdrRow = $e('div', 'display:grid;grid-template-columns:130px 90px 90px 120px;padding:4px 10px;background:var(--vscode-sideBarSectionHeader-background);font-size:10px;font-weight:700;color:var(--vscode-descriptionForeground);');
+				hdrRow.appendChild($t('span', 'Section', ''));
+				hdrRow.appendChild($t('span', 'Size', ''));
+				hdrRow.appendChild($t('span', 'Addr', ''));
+				tbl.appendChild(hdrRow);
+
+				const sections = a.sections.length > 0 ? a.sections : [
+					{ name: '.text', size: a.textSize, address: 0x08000000 },
+					{ name: '.data', size: a.dataSize, address: 0x20000000 },
+					{ name: '.bss',  size: a.bssSize,  address: 0x20000000 + a.dataSize },
+				];
+				for (const sec of sections.filter(sec => sec.size > 0)) {
+					const row = $e('div', 'display:grid;grid-template-columns:130px 90px 120px;padding:4px 10px;border-top:1px solid var(--vscode-widget-border);');
+					row.appendChild($t('span', sec.name, ''));
+					row.appendChild($t('span', sec.size >= 1024 ? `${(sec.size / 1024).toFixed(1)} KB` : `${sec.size} B`, ''));
+					row.appendChild($t('span', `0x${sec.address.toString(16).toUpperCase().padStart(8, '0')}`, 'color:var(--vscode-descriptionForeground);'));
+					tbl.appendChild(row);
+				}
+				body.appendChild(tbl);
+			}
+		};
+
+		// \u2500\u2500 SYMBOLS \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+		const renderSymbols = (): void => {
+			const wrap = $e('div', 'flex:1;display:flex;flex-direction:column;overflow:hidden;');
+			const hdr = $e('div', 'padding:6px 10px;border-bottom:1px solid var(--vscode-widget-border);display:flex;gap:6px;align-items:center;flex-shrink:0;background:var(--vscode-sideBarSectionHeader-background);');
+			const searchInput = $e('input', 'flex:1;padding:3px 7px;font-size:10px;background:var(--vscode-input-background);color:var(--vscode-input-foreground);border:1px solid var(--vscode-input-border,var(--vscode-widget-border));border-radius:3px;') as HTMLInputElement;
+			searchInput.placeholder = 'Search symbols (regex)...';
+			const searchBtn = mkBtn('Search', true);
+			searchBtn.style.fontSize = '10px';
+			searchBtn.style.padding = '2px 8px';
+			hdr.appendChild(searchInput);
+			hdr.appendChild(searchBtn);
+			wrap.appendChild(hdr);
+
+			const body = $e('div', 'flex:1;overflow-y:auto;');
+			wrap.appendChild(body);
+			content.appendChild(wrap);
+
+			const renderSymTable = (syms: IElfSymbol[]): void => {
+				body.textContent = '';
+				if (syms.length === 0) {
+					body.appendChild($t('div', 'No symbols found.', 'padding:16px;color:var(--vscode-descriptionForeground);font-size:11px;'));
+					return;
+				}
+				const tbl = $e('div', 'font-family:var(--vscode-editor-font-family,monospace);font-size:11px;');
+				const hdrRow = $e('div', 'display:grid;grid-template-columns:110px 70px 50px 60px 1fr;padding:4px 10px;background:var(--vscode-sideBarSectionHeader-background);font-size:10px;font-weight:700;color:var(--vscode-descriptionForeground);position:sticky;top:0;');
+				for (const col of ['Address', 'Size', 'Bind', 'Type', 'Name']) hdrRow.appendChild($t('span', col, ''));
+				tbl.appendChild(hdrRow);
+				for (const sym of syms.slice(0, 500)) {
+					const row = $e('div', 'display:grid;grid-template-columns:110px 70px 50px 60px 1fr;padding:3px 10px;border-top:1px solid var(--vscode-widget-border);');
+					row.appendChild($t('span', `0x${sym.address.toString(16).padStart(8, '0')}`, ''));
+					row.appendChild($t('span', sym.size !== undefined ? (sym.size >= 1024 ? `${(sym.size / 1024).toFixed(1)}K` : `${sym.size}`) : '\u2014', 'color:var(--vscode-descriptionForeground);'));
+					row.appendChild($t('span', sym.binding, 'color:var(--vscode-descriptionForeground);'));
+					const typeColors: Record<string, string> = { function: '#4fc3f7', object: '#81c784', section: '#ffb74d', file: '#9e9e9e', unknown: '#616161' };
+					row.appendChild($t('span', sym.type, `color:${typeColors[sym.type] ?? '#616161'};`));
+					row.appendChild($t('span', sym.name, 'overflow:hidden;text-overflow:ellipsis;white-space:nowrap;'));
+					tbl.appendChild(row);
+				}
+				if (syms.length > 500) tbl.appendChild($t('div', `... ${syms.length - 500} more symbols`, 'padding:6px 10px;color:var(--vscode-descriptionForeground);font-size:10px;'));
+				body.appendChild(tbl);
+			};
+
+			if (this._lastSymbols.length > 0) renderSymTable(this._lastSymbols);
+			else body.appendChild($t('div', 'Enter a pattern and click Search to look up ELF symbols.', 'padding:16px;color:var(--vscode-descriptionForeground);font-size:11px;'));
+
+			const doSearch = async (): Promise<void> => {
+				const elfPath = s.lastBuildResult?.outputPath;
+				if (!elfPath) { body.textContent = ''; body.appendChild($t('div', 'Build the project first \u2014 ELF not available.', 'padding:16px;color:var(--vscode-errorForeground);font-size:11px;')); return; }
+				searchBtn.disabled = true;
+				searchBtn.textContent = '...';
+				this._lastSymbols = await this._buildSvc.lookupSymbols(elfPath, searchInput.value);
+				renderSymTable(this._lastSymbols);
+				searchBtn.textContent = 'Search';
+				searchBtn.disabled = false;
+			};
+			searchBtn.addEventListener('click', () => { void doSearch(); });
+			searchInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') void doSearch(); });
+		};
+
+		// \u2500\u2500 DISASSEMBLY \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+		const renderDisasm = (): void => {
+			const wrap = $e('div', 'flex:1;display:flex;flex-direction:column;overflow:hidden;');
+			const hdr = $e('div', 'padding:6px 10px;border-bottom:1px solid var(--vscode-widget-border);display:flex;gap:6px;align-items:center;flex-shrink:0;background:var(--vscode-sideBarSectionHeader-background);');
+			const symInput = $e('input', 'flex:1;padding:3px 7px;font-size:10px;background:var(--vscode-input-background);color:var(--vscode-input-foreground);border:1px solid var(--vscode-input-border,var(--vscode-widget-border));border-radius:3px;') as HTMLInputElement;
+			symInput.placeholder = 'Function name (e.g. HAL_UART_IRQHandler)';
+			const disasmBtn = mkBtn('Disassemble', true);
+			disasmBtn.style.fontSize = '10px';
+			disasmBtn.style.padding = '2px 8px';
+			hdr.appendChild(symInput);
+			hdr.appendChild(disasmBtn);
+			wrap.appendChild(hdr);
+
+			const body = $e('div', [
+				'flex:1', 'overflow-y:auto', 'padding:8px 12px',
+				'font-family:var(--vscode-editor-font-family,monospace)', 'font-size:11px', 'line-height:1.6',
+				'background:var(--vscode-terminal-background,#1e1e1e)', 'color:var(--vscode-terminal-foreground,#ccc)',
+			].join(';'));
+			body.appendChild($t('div', 'Enter a function name and click Disassemble.', 'opacity:0.4;'));
+			wrap.appendChild(body);
+			content.appendChild(wrap);
+
+			const doDisasm = async (): Promise<void> => {
+				const sym = symInput.value.trim();
+				if (!sym) return;
+				const elfPath = s.lastBuildResult?.outputPath;
+				if (!elfPath) { body.textContent = ''; body.appendChild($t('div', 'Build project first.', 'color:var(--vscode-errorForeground);')); return; }
+				disasmBtn.disabled = true;
+				disasmBtn.textContent = '...';
+				body.textContent = '';
+				try {
+					const result = await this._buildSvc.disassemble(elfPath, sym);
+					if (result.lines.length === 0) {
+						body.appendChild($t('div', `Symbol "${sym}" not found in ELF. Use Symbols tab to search.`, 'color:var(--vscode-errorForeground);'));
+					} else {
+						body.appendChild($t('div', `${sym}  @  0x${result.address.toString(16).padStart(8, '0')}  \u2014  ${result.sizeBytes} bytes  /  ${result.lines.length} instructions`, 'color:var(--vscode-terminal-ansiCyan,#80cbc4);margin-bottom:8px;'));
+						for (const line of result.lines) {
+							const row = $e('div', 'display:flex;gap:16px;');
+							row.appendChild($t('span', `0x${line.address.toString(16).padStart(8, '0')}`, 'color:#616161;flex-shrink:0;'));
+							row.appendChild($t('span', line.mnemonic, 'color:#e3b96a;flex-shrink:0;width:60px;'));
+							const ops = $t('span', line.operands, 'color:var(--vscode-terminal-foreground,#ccc);');
+							if (line.comment) ops.title = line.comment;
+							row.appendChild(ops);
+							if (line.comment) row.appendChild($t('span', `; ${line.comment}`, 'color:#616161;font-size:10px;'));
+							body.appendChild(row);
+						}
+					}
+				} catch (err: any) {
+					body.appendChild($t('div', err.message ?? String(err), 'color:var(--vscode-errorForeground);'));
+				}
+				disasmBtn.textContent = 'Disassemble';
+				disasmBtn.disabled = false;
+			};
+			disasmBtn.addEventListener('click', () => { void doDisasm(); });
+			symInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') void doDisasm(); });
+		};
+
+		// \u2500\u2500 STACK USAGE \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+		const renderStack = (): void => {
+			const wrap = $e('div', 'flex:1;display:flex;flex-direction:column;overflow:hidden;');
+			const hdr = $e('div', 'padding:6px 14px;border-bottom:1px solid var(--vscode-widget-border);display:flex;align-items:center;justify-content:space-between;flex-shrink:0;background:var(--vscode-sideBarSectionHeader-background);');
+			hdr.appendChild($t('span', 'STACK USAGE', 'font-size:10px;font-weight:700;letter-spacing:.05em;color:var(--vscode-descriptionForeground);'));
+			const analyzeStackBtn = mkBtn('Analyze', false);
+			analyzeStackBtn.style.fontSize = '10px';
+			analyzeStackBtn.style.padding = '2px 8px';
+			hdr.appendChild(analyzeStackBtn);
+			wrap.appendChild(hdr);
+
+			const body = $e('div', 'flex:1;overflow-y:auto;padding:10px 14px;');
+			wrap.appendChild(body);
+			content.appendChild(wrap);
+
+			const renderReport = (r: IStackUsageReport): void => {
+				body.textContent = '';
+				if (r.functions.length === 0) {
+					body.appendChild($t('div', 'No .su files found. Build with -fstack-usage flag (add to CFLAGS) to enable stack analysis.', 'color:var(--vscode-descriptionForeground);font-size:11px;'));
+					return;
+				}
+
+				// Summary
+				body.appendChild($t('div', `Max stack depth: ${r.maxStack} bytes \u2014 ${r.maxStackFunction}`, `font-size:12px;font-weight:600;color:${r.maxStack > 512 ? 'var(--vscode-editorWarning-foreground)' : '#4caf50'};margin-bottom:12px;`));
+
+				// Table sorted by stack depth desc
+				const sorted = [...r.functions].sort((a, b) => b.bytes - a.bytes);
+				const tbl = $e('div', 'font-family:var(--vscode-editor-font-family,monospace);font-size:10px;border:1px solid var(--vscode-widget-border);border-radius:3px;overflow:hidden;');
+				const hdrRow = $e('div', 'display:grid;grid-template-columns:70px 160px 1fr;padding:4px 8px;background:var(--vscode-sideBarSectionHeader-background);font-size:9px;font-weight:700;color:var(--vscode-descriptionForeground);');
+				for (const col of ['Bytes', 'Qualifier', 'Function']) hdrRow.appendChild($t('span', col, ''));
+				tbl.appendChild(hdrRow);
+
+				for (const fn of sorted.slice(0, 100)) {
+					const row = $e('div', 'display:grid;grid-template-columns:70px 160px 1fr;padding:3px 8px;border-top:1px solid var(--vscode-widget-border);align-items:center;');
+					const sizeColor = fn.bytes > 256 ? 'var(--vscode-errorForeground)' : fn.bytes > 128 ? 'var(--vscode-editorWarning-foreground)' : '';
+					row.appendChild($t('span', String(fn.bytes), sizeColor ? `font-weight:700;color:${sizeColor};` : ''));
+					const qualColor: Record<string, string> = { 'static': '#4caf50', 'dynamic': '#ff9800', 'dynamic,bounded': '#ff9800', 'unbounded': '#f44336' };
+					row.appendChild($t('span', fn.qualifier, `color:${qualColor[fn.qualifier] ?? '#9e9e9e'};font-size:9px;`));
+					row.appendChild($t('span', fn.function, 'overflow:hidden;text-overflow:ellipsis;white-space:nowrap;'));
+					tbl.appendChild(row);
+				}
+				if (sorted.length > 100) tbl.appendChild($t('div', `... ${sorted.length - 100} more`, 'padding:4px 8px;color:var(--vscode-descriptionForeground);'));
+				body.appendChild(tbl);
+			};
+
+			if (this._lastStackReport) renderReport(this._lastStackReport);
+			else body.appendChild($t('div', 'Click Analyze to scan .su stack-usage files from last build.', 'color:var(--vscode-descriptionForeground);font-size:11px;'));
+
+			analyzeStackBtn.addEventListener('click', async () => {
+				if (!s.projectInfo?.projectRoot) { body.textContent = ''; body.appendChild($t('div', 'No project root.', 'color:var(--vscode-errorForeground);')); return; }
+				analyzeStackBtn.disabled = true;
+				analyzeStackBtn.textContent = '...';
+				this._lastStackReport = await this._buildSvc.analyzeStackUsage(s.projectInfo.projectRoot);
+				if (this._lastStackReport) renderReport(this._lastStackReport);
+				analyzeStackBtn.textContent = 'Analyze';
+				analyzeStackBtn.disabled = false;
+			});
+		};
+
+		// \u2500\u2500 TOOLCHAIN \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+		const renderToolchain = async (): Promise<void> => {
+			const loadingEl = $t('div', 'Checking toolchain...', 'padding:16px;color:var(--vscode-descriptionForeground);font-size:11px;');
+			content.appendChild(loadingEl);
+
+			const result = await this._buildSvc.checkToolchain(projectType);
+			content.textContent = '';
+
+			const wrap = $e('div', 'flex:1;overflow-y:auto;padding:14px;');
+			content.appendChild(wrap);
+
+			const banner = $e('div', `padding:10px 14px;border-radius:4px;margin-bottom:14px;background:${result.available ? 'rgba(76,175,80,0.1)' : 'rgba(244,67,54,0.1)'};border:1px solid ${result.available ? 'rgba(76,175,80,0.3)' : 'rgba(244,67,54,0.3)'};`);
+			banner.appendChild($t('div', result.available ? '\u2713 Toolchain Ready' : '\u2717 Toolchain Incomplete', `font-size:12px;font-weight:700;color:${result.available ? '#4caf50' : '#f44336'};`));
+			banner.appendChild($t('div', `Project type: ${projectType}`, 'font-size:10px;color:var(--vscode-descriptionForeground);margin-top:2px;'));
+			wrap.appendChild(banner);
+
+			if (result.missing.length > 0) {
+				wrap.appendChild($t('div', 'MISSING TOOLS', 'font-size:10px;font-weight:700;letter-spacing:.05em;color:var(--vscode-errorForeground);margin-bottom:8px;'));
+				for (const m of result.missing) {
+					const card = $e('div', 'padding:10px 12px;border:1px solid var(--vscode-widget-border);border-radius:3px;margin-bottom:6px;');
+					card.appendChild($t('div', m.tool, 'font-size:11px;font-weight:600;font-family:var(--vscode-editor-font-family,monospace);'));
+					card.appendChild($t('div', m.purpose, 'font-size:10px;color:var(--vscode-descriptionForeground);margin:2px 0;'));
+					card.appendChild($t('div', m.installHint, 'font-size:10px;font-family:var(--vscode-editor-font-family,monospace);color:var(--vscode-terminal-ansiCyan,#80cbc4);'));
+					wrap.appendChild(card);
+				}
+			}
+
+			if (result.found.length > 0) {
+				wrap.appendChild($t('div', 'INSTALLED', 'font-size:10px;font-weight:700;letter-spacing:.05em;color:var(--vscode-descriptionForeground);margin:12px 0 8px;'));
+				for (const f of result.found) {
+					const row = $e('div', 'display:flex;align-items:center;gap:10px;padding:4px 0;border-bottom:1px solid var(--vscode-widget-border);');
+					row.appendChild($e('div', 'width:7px;height:7px;border-radius:50%;background:#4caf50;flex-shrink:0;'));
+					row.appendChild($t('span', f.tool, 'font-size:11px;font-weight:500;font-family:var(--vscode-editor-font-family,monospace);'));
+					row.appendChild($t('span', f.version, 'font-size:10px;color:var(--vscode-descriptionForeground);'));
+					row.appendChild($t('span', f.path, 'font-size:9px;color:var(--vscode-descriptionForeground);margin-left:auto;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:200px;'));
+					wrap.appendChild(row);
+				}
+			}
+		};
+
+		// \u2500\u2500 FLASH TOOLS \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+		const renderFlashTools = async (): Promise<void> => {
+			const loadingEl = $t('div', 'Detecting flash tools...', 'padding:16px;color:var(--vscode-descriptionForeground);font-size:11px;');
+			content.appendChild(loadingEl);
+
+			const tools = await this._buildSvc.detectFlashTools();
+			content.textContent = '';
+
+			const wrap = $e('div', 'flex:1;overflow-y:auto;');
+			content.appendChild(wrap);
+
+			if (this._lastFlashResult) {
+				const fr = this._lastFlashResult;
+				const banner = $e('div', `padding:8px 14px;margin-bottom:1px;background:${fr.success ? 'rgba(76,175,80,0.1)' : 'rgba(244,67,54,0.1)'};border-bottom:1px solid var(--vscode-widget-border);display:flex;align-items:center;gap:10px;`);
+				banner.appendChild($t('span', `Last flash: ${fr.success ? '\u2713 OK' : '\u2717 FAILED'}`, `font-size:11px;font-weight:600;color:${fr.success ? '#4caf50' : '#f44336'};`));
+				banner.appendChild($t('span', fr.tool, 'font-size:10px;color:var(--vscode-descriptionForeground);'));
+				banner.appendChild($t('span', `${fr.durationMs}ms`, 'font-size:10px;color:var(--vscode-descriptionForeground);'));
+				if (fr.verified !== undefined) banner.appendChild($t('span', fr.verified ? 'Verified \u2713' : 'Verify FAILED \u2717', `font-size:10px;color:${fr.verified ? '#4caf50' : '#f44336'};`));
+				wrap.appendChild(banner);
+			}
+
+			const hdr = $e('div', 'padding:6px 14px;background:var(--vscode-sideBarSectionHeader-background);');
+			hdr.appendChild($t('span', `FLASH TOOLS  (${tools.length} detected)`, 'font-size:10px;font-weight:700;letter-spacing:.05em;color:var(--vscode-descriptionForeground);'));
+			wrap.appendChild(hdr);
+
+			if (tools.length === 0) {
+				wrap.appendChild($t('div', 'No flash tools found on PATH. Install openocd, esptool, nrfjprog, or a similar tool.', 'padding:16px;color:var(--vscode-descriptionForeground);font-size:11px;'));
+			}
+			for (const tool of tools) {
+				const row = $e('div', 'display:grid;grid-template-columns:160px 1fr auto;align-items:center;gap:10px;padding:7px 14px;border-bottom:1px solid var(--vscode-widget-border);');
+				row.appendChild($t('span', tool.name, 'font-size:11px;font-weight:600;font-family:var(--vscode-editor-font-family,monospace);'));
+				row.appendChild($t('span', tool.path, 'font-size:10px;color:var(--vscode-descriptionForeground);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;'));
+				const rightCol = $e('div', 'display:flex;flex-direction:column;align-items:flex-end;gap:2px;flex-shrink:0;');
+				if (tool.version) rightCol.appendChild($t('span', tool.version, 'font-size:9px;color:var(--vscode-descriptionForeground);'));
+				const ifBadges = $e('div', 'display:flex;gap:3px;');
+				for (const iface of tool.supportedInterfaces) {
+					ifBadges.appendChild($t('span', iface, 'font-size:8px;font-weight:700;padding:1px 5px;border-radius:3px;background:var(--vscode-badge-background);color:var(--vscode-badge-foreground);'));
+				}
+				rightCol.appendChild(ifBadges);
+				row.appendChild(rightCol);
+				wrap.appendChild(row);
+			}
+		};
+
+		// \u2500\u2500 BUILD / FLASH BUTTON HANDLERS \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+		let buildStartTime = 0;
+		let timerInterval: ReturnType<typeof setInterval> | undefined;
+
+		const startTimer = (): void => {
+			buildStartTime = Date.now();
+			timerInterval = setInterval(() => {
+				elapsedLabel.textContent = `${((Date.now() - buildStartTime) / 1000).toFixed(1)}s`;
+			}, 100);
+		};
+		const stopTimer = (): void => {
+			if (timerInterval) { clearInterval(timerInterval); timerInterval = undefined; }
+			elapsedLabel.textContent = `${((Date.now() - buildStartTime) / 1000).toFixed(1)}s`;
+		};
+
+		buildBtn.addEventListener('click', async () => {
+			if (!s.projectInfo?.projectRoot) {
+				this._notify.notify({ severity: Severity.Warning, message: 'No project detected. Open a firmware workspace and run fw_scan_project.' });
+				return;
+			}
+			buildBtn.disabled = true;
+			statusLabel.textContent = 'Building...';
+			startTimer();
+			this._buildOutputLines.push(`$ ${this._buildSvc.getBuildCommand(projectType, targetInput.value || undefined).join(' ')}`);
+			if (this._buildSubTab === 'output') repaintOutput();
+			else activateSubTab('output');
+
+			try {
+				const result = await this._buildSvc.build(s.projectInfo.projectRoot, projectType, targetInput.value || undefined);
+				this._buildOutputLines.push(result.success ? `\u2713 Build complete (${result.durationMs}ms)` : `\u2717 Build failed \u2014 ${result.errors.length} error(s)`);
+				repaintOutput();
+				if (!result.success) activateSubTab('diagnostics');
+			} catch (err: any) {
+				this._buildOutputLines.push(`\u2717 ${err.message ?? err}`);
+				repaintOutput();
+			}
+			stopTimer();
+			statusLabel.textContent = '';
+			buildBtn.disabled = false;
+		});
+
+		flashBtn.addEventListener('click', async () => {
+			if (!s.projectInfo?.projectRoot) {
+				this._notify.notify({ severity: Severity.Warning, message: 'No project detected.' });
+				return;
+			}
+			flashBtn.disabled = true;
+			statusLabel.textContent = 'Flashing...';
+			startTimer();
+			this._buildOutputLines.push(`$ ${this._buildSvc.getFlashCommand(projectType).join(' ')}`);
+			if (this._buildSubTab !== 'output') activateSubTab('output');
+
+			try {
+				const result = await this._buildSvc.flash(s.projectInfo.projectRoot, projectType);
+				this._lastFlashResult = result;
+				this._buildOutputLines.push(result.success
+					? `\u2713 Flash complete (${result.tool}, ${result.durationMs}ms)${result.verified === true ? ' \u2014 verified' : result.verified === false ? ' \u2014 VERIFY FAILED' : ''}`
+					: `\u2717 Flash failed: ${result.message}`);
+				repaintOutput();
+			} catch (err: any) {
+				this._buildOutputLines.push(`\u2717 ${err.message ?? err}`);
+				repaintOutput();
+			}
+			stopTimer();
+			statusLabel.textContent = '';
+			flashBtn.disabled = false;
+		});
+
+		cleanBtn.addEventListener('click', async () => {
+			if (!s.projectInfo?.projectRoot) return;
+			cleanBtn.disabled = true;
+			statusLabel.textContent = 'Cleaning...';
+			startTimer();
+			const cmds = this._buildSvc.getBuildCommand(projectType);
+			this._buildOutputLines.push(`$ clean`);
+			if (this._buildSubTab !== 'output') activateSubTab('output');
+
+			try {
+				await this._buildSvc.clean(s.projectInfo.projectRoot, projectType);
+				this._buildOutputLines.push('\u2713 Clean complete');
+				repaintOutput();
+			} catch (err: any) {
+				this._buildOutputLines.push(`\u2717 ${err.message ?? err}`);
+				repaintOutput();
+			}
+			void cmds;
+			stopTimer();
+			statusLabel.textContent = '';
+			cleanBtn.disabled = false;
+		});
+
+		abortBtn.addEventListener('click', () => {
+			this._buildSvc.abort();
+			statusLabel.textContent = 'Aborted';
+			stopTimer();
+			buildBtn.disabled = false;
+			flashBtn.disabled = false;
+			cleanBtn.disabled = false;
+		});
+
+		// \u2500\u2500 Live output streaming \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+		this._buildSvc.onBuildOutput((line: IBuildOutputLine) => {
+			this._buildOutputLines.push(line.text);
+			if (this._buildOutputLines.length > 5000) this._buildOutputLines.splice(0, 1000);
+			if (this._buildSubTab === 'output') repaintOutput();
+		});
+
+		this._buildSvc.onBuildCompleted((_result: IBuildResult) => {
+			statusLabel.textContent = '';
+			stopTimer();
+			buildBtn.disabled = false;
+			if (this._buildSubTab === 'diagnostics') renderSubTab('diagnostics');
+		});
+
+		this._buildSvc.onFlashCompleted((result: IFlashResult) => {
+			this._lastFlashResult = result;
+			statusLabel.textContent = '';
+			stopTimer();
+			flashBtn.disabled = false;
+		});
+
+		// \u2500\u2500 Initial render \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+		activateSubTab(this._buildSubTab);
 	}
 
 
@@ -4468,6 +5150,972 @@ export class FirmwarePart extends Part {
 			wrap.appendChild($t('div', note, 'font-size:11px;color:var(--vscode-descriptionForeground);opacity:0.6;margin-top:12px;'));
 		}
 		return wrap;
+	}
+
+	// ─── RTOS Tab ────────────────────────────────────────────────────────────────
+
+	private _rtosSnapshot: IRTOSSnapshot | undefined;
+	private _rtosHeapHistory: number[] = [];    // heap used % rolling 60-sample
+	private _rtosLiveTimer: ReturnType<typeof setInterval> | null = null;
+
+	private _renderRTOS(root: HTMLElement): void {
+		const panel = $e('div', 'flex:1;display:flex;flex-direction:column;overflow:hidden;');
+		root.appendChild(panel);
+
+		// ── Top bar ───────────────────────────────────────────────────────────
+		const topBar = $e('div', 'display:flex;align-items:center;gap:8px;padding:6px 12px;border-bottom:1px solid var(--vscode-widget-border);flex-shrink:0;background:var(--vscode-sideBarSectionHeader-background);');
+
+		// RTOS type + status dot
+		const statusDot = $e('div', 'width:8px;height:8px;border-radius:50%;background:#616161;flex-shrink:0;');
+		const rtosTypeLbl = $t('span', 'No RTOS', 'font-size:11px;font-weight:700;font-family:monospace;');
+		const tickLbl = $t('span', '', 'font-size:10px;color:var(--vscode-descriptionForeground);margin-left:4px;');
+		topBar.appendChild(statusDot); topBar.appendChild(rtosTypeLbl); topBar.appendChild(tickLbl);
+		topBar.appendChild($e('div', 'flex:1;'));
+
+		// Live toggle
+		const liveDot = $e('div', 'width:6px;height:6px;border-radius:50%;background:#616161;flex-shrink:0;');
+		const liveBtn = $e('div', 'display:flex;align-items:center;gap:5px;padding:3px 8px;border-radius:3px;border:1px solid var(--vscode-widget-border);cursor:pointer;font-size:10px;');
+		liveBtn.appendChild(liveDot); liveBtn.appendChild($t('span', 'Live', ''));
+		let liveOn = false;
+
+		// Interval selector
+		const intervalSel = $e('select', 'font-size:10px;padding:2px 4px;background:var(--vscode-dropdown-background);color:var(--vscode-dropdown-foreground);border:1px solid var(--vscode-dropdown-border,var(--vscode-widget-border));border-radius:3px;') as HTMLSelectElement;
+		for (const [label, ms] of [['500ms','500'],['1s','1000'],['2s','2000'],['5s','5000']]) {
+			const o = $e('option') as HTMLOptionElement; o.value = ms!; o.textContent = label!;
+			if (ms === '1000') o.selected = true;
+			intervalSel.appendChild(o);
+		}
+
+		const snapshotBtn = $e('div', 'padding:3px 10px;border-radius:3px;border:1px solid var(--vscode-widget-border);cursor:pointer;font-size:10px;background:var(--vscode-button-background);color:var(--vscode-button-foreground);');
+		snapshotBtn.textContent = 'Snapshot';
+		const detectBtn = $e('div', 'padding:3px 10px;border-radius:3px;border:1px solid var(--vscode-widget-border);cursor:pointer;font-size:10px;');
+		detectBtn.textContent = 'Detect';
+
+		topBar.appendChild(liveBtn); topBar.appendChild(intervalSel);
+		topBar.appendChild(detectBtn); topBar.appendChild(snapshotBtn);
+		panel.appendChild(topBar);
+
+		// ── Two-column layout: left=threads, right=heap+sync+timers ──────────
+		const body = $e('div', 'flex:1;display:flex;overflow:hidden;');
+		panel.appendChild(body);
+
+		// Left: threads (60% width)
+		const leftPane = $e('div', 'flex:0 0 60%;display:flex;flex-direction:column;border-right:1px solid var(--vscode-widget-border);overflow:hidden;');
+		body.appendChild(leftPane);
+
+		// Right: stats panels (40% width)
+		const rightPane = $e('div', 'flex:1;display:flex;flex-direction:column;overflow-y:auto;');
+		body.appendChild(rightPane);
+
+		// ── Left: CPU canvas + thread table ──────────────────────────────────
+		const cpuSection = $e('div', 'flex-shrink:0;border-bottom:1px solid var(--vscode-widget-border);');
+		const cpuHdr = $e('div', 'padding:5px 10px;display:flex;align-items:center;justify-content:space-between;');
+		cpuHdr.appendChild($t('span', 'CPU / THREAD', 'font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;color:var(--vscode-descriptionForeground);'));
+		cpuSection.appendChild(cpuHdr);
+		const cpuCanvas = $e('canvas', 'display:block;width:100%;') as HTMLCanvasElement;
+		cpuSection.appendChild(cpuCanvas);
+		leftPane.appendChild(cpuSection);
+
+		// Thread table
+		const threadWrap = $e('div', 'flex:1;overflow-y:auto;');
+		leftPane.appendChild(threadWrap);
+
+		// ── Right: Heap canvas + stat cards + sync + timers ──────────────────
+		// Heap canvas
+		const heapSection = $e('div', 'border-bottom:1px solid var(--vscode-widget-border);flex-shrink:0;');
+		const heapHdr = $e('div', 'padding:5px 10px;display:flex;align-items:center;justify-content:space-between;');
+		heapHdr.appendChild($t('span', 'HEAP', 'font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;color:var(--vscode-descriptionForeground);'));
+		const heapPctLbl = $t('span', '', 'font-size:10px;font-family:monospace;');
+		heapHdr.appendChild(heapPctLbl);
+		heapSection.appendChild(heapHdr);
+		const heapCanvas = $e('canvas', 'display:block;width:100%;') as HTMLCanvasElement;
+		heapSection.appendChild(heapCanvas);
+		// Heap stat row
+		const heapStatRow = $e('div', 'display:grid;grid-template-columns:1fr 1fr 1fr 1fr;padding:6px 10px;gap:4px;');
+		heapSection.appendChild(heapStatRow);
+		rightPane.appendChild(heapSection);
+
+		// Sync primitives section
+		const syncSection = $e('div', 'border-bottom:1px solid var(--vscode-widget-border);flex-shrink:0;');
+		const syncHdr = $e('div', 'padding:5px 10px;');
+		syncHdr.appendChild($t('span', 'SYNC PRIMITIVES', 'font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;color:var(--vscode-descriptionForeground);'));
+		syncSection.appendChild(syncHdr);
+		const syncBody = $e('div', '');
+		syncSection.appendChild(syncBody);
+		rightPane.appendChild(syncSection);
+
+		// Timers section
+		const timersSection = $e('div', 'flex-shrink:0;');
+		const timersHdr = $e('div', 'padding:5px 10px;');
+		timersHdr.appendChild($t('span', 'TIMERS', 'font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;color:var(--vscode-descriptionForeground);'));
+		timersSection.appendChild(timersHdr);
+		const timersBody = $e('div', '');
+		timersSection.appendChild(timersBody);
+		rightPane.appendChild(timersSection);
+
+		// ── Canvas draw helpers ───────────────────────────────────────────────
+		const STATE_COLOR: Record<string,string> = {
+			running:'#4caf50', ready:'#2196f3', blocked:'#ff9800',
+			suspended:'#546e7a', deleted:'#f44336', unknown:'#616161',
+		};
+
+		const drawCpuCanvas = (snap: IRTOSSnapshot) => {
+			const DPR = window.devicePixelRatio || 1;
+			const W = cpuCanvas.parentElement!.clientWidth || 400;
+			const H = 56;
+			cpuCanvas.width = W*DPR; cpuCanvas.height = H*DPR; cpuCanvas.style.height = H+'px';
+			const ctx = cpuCanvas.getContext('2d')!;
+			ctx.scale(DPR, DPR);
+			ctx.fillStyle = '#0d1117'; ctx.fillRect(0,0,W,H);
+
+			const pad = 8; const barH = 12; const gap = 4;
+			const labelW = 70; const barW = W - labelW - pad*2 - 40;
+
+			for (let i = 0; i < Math.min(snap.threads.length, 4); i++) {
+				const t = snap.threads[i]!;
+				const y = pad + i * (barH + gap);
+				const col = STATE_COLOR[t.state] || '#546e7a';
+				const pct = t.cpuPercent !== undefined ? t.cpuPercent : 0;
+
+				// Label
+				ctx.fillStyle = 'rgba(255,255,255,0.55)'; ctx.font = '9px system-ui'; ctx.textAlign = 'right';
+				const lbl = t.name.length > 9 ? t.name.slice(0,8)+'..' : t.name;
+				ctx.fillText(lbl, labelW, y+barH-2);
+
+				// Bar track
+				ctx.fillStyle = 'rgba(255,255,255,0.06)'; ctx.fillRect(labelW+4, y, barW, barH);
+				// Bar fill
+				ctx.fillStyle = col; ctx.fillRect(labelW+4, y, barW*pct/100, barH);
+				// Pct label
+				ctx.fillStyle = 'rgba(255,255,255,0.45)'; ctx.font = '8px monospace'; ctx.textAlign = 'left';
+				ctx.fillText(`${pct.toFixed(0)}%`, labelW+4+barW+4, y+barH-2);
+			}
+			if (snap.threads.length > 4) {
+				ctx.fillStyle = 'rgba(255,255,255,0.2)'; ctx.font = '8px system-ui'; ctx.textAlign = 'left';
+				ctx.fillText(`+${snap.threads.length-4} more`, labelW+4, pad+4*(barH+gap)+barH-2);
+			}
+		};
+
+		const HEAP_SAMPLES = 60;
+		const drawHeapCanvas = (snap: IRTOSSnapshot) => {
+			if (!snap.heap) { heapCanvas.style.display='none'; return; }
+			heapCanvas.style.display='block';
+			const DPR = window.devicePixelRatio || 1;
+			const W = heapCanvas.parentElement!.clientWidth || 400;
+			const H = 44;
+			heapCanvas.width = W*DPR; heapCanvas.height = H*DPR; heapCanvas.style.height = H+'px';
+			const ctx = heapCanvas.getContext('2d')!;
+			ctx.scale(DPR, DPR);
+			ctx.fillStyle = '#0d1117'; ctx.fillRect(0,0,W,H);
+
+			const pct = snap.heap.totalSize > 0 ? snap.heap.usedSize/snap.heap.totalSize*100 : 0;
+			// Push history
+			this._rtosHeapHistory.push(pct);
+			if (this._rtosHeapHistory.length > HEAP_SAMPLES) this._rtosHeapHistory.shift();
+
+			const pad = 6; const lineW = W - pad*2;
+			// Draw history sparkline
+			if (this._rtosHeapHistory.length > 1) {
+				const step = lineW / (HEAP_SAMPLES-1);
+				const startIdx = Math.max(0, HEAP_SAMPLES - this._rtosHeapHistory.length);
+				ctx.beginPath();
+				for (let i = 0; i < this._rtosHeapHistory.length; i++) {
+					const x = pad + (startIdx + i) * step;
+					const y = H - pad - (this._rtosHeapHistory[i]!/100) * (H - pad*2);
+					if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+				}
+				const color = pct > 90 ? '#f48771' : pct > 75 ? '#e0a84e' : '#4caf50';
+				ctx.strokeStyle = color; ctx.lineWidth = 1.5; ctx.stroke();
+				// Fill under
+				ctx.lineTo(pad + (startIdx + this._rtosHeapHistory.length-1)*step, H-pad);
+				ctx.lineTo(pad + startIdx*step, H-pad); ctx.closePath();
+				ctx.fillStyle = color+'22'; ctx.fill();
+			}
+			// Current pct label
+			const col = pct > 90 ? '#f48771' : pct > 75 ? '#e0a84e' : '#4caf50';
+			heapPctLbl.textContent = `${pct.toFixed(1)}%`;
+			heapPctLbl.style.color = col;
+
+			// Stat cells
+			while (heapStatRow.firstChild) heapStatRow.removeChild(heapStatRow.firstChild);
+			const mkStat = (lbl:string, val:string, c?:string) => {
+				const el=$e('div','text-align:center;');
+				el.appendChild($t('div',val,`font-size:11px;font-weight:700;font-family:monospace;${c?'color:'+c:''}`));
+				el.appendChild($t('div',lbl,'font-size:8px;color:var(--vscode-descriptionForeground);text-transform:uppercase;letter-spacing:0.04em;margin-top:1px;'));
+				return el;
+			};
+			const h = snap.heap;
+			heapStatRow.appendChild(mkStat('Used', `${(h.usedSize/1024).toFixed(1)}K`, col));
+			heapStatRow.appendChild(mkStat('Free', `${(h.freeSize/1024).toFixed(1)}K`));
+			heapStatRow.appendChild(mkStat('Min Free', `${(h.minimumEverFree/1024).toFixed(1)}K`));
+			heapStatRow.appendChild(mkStat('Largest', `${(h.largestFreeBlock/1024).toFixed(1)}K`));
+		};
+
+		// ── Thread table render ───────────────────────────────────────────────
+		const renderThreadTable = (snap: IRTOSSnapshot) => {
+			while (threadWrap.firstChild) threadWrap.removeChild(threadWrap.firstChild);
+			if (!snap.threads.length) {
+				threadWrap.appendChild($t('div','No threads — connect debugger and take snapshot','font-size:11px;color:var(--vscode-descriptionForeground);padding:20px;text-align:center;'));
+				return;
+			}
+			const tbl = $e('div','font-size:10px;font-family:monospace;');
+			// Header
+			const th = $e('div','display:grid;grid-template-columns:28px 1fr 72px 32px 100px 52px;gap:6px;padding:4px 10px;background:var(--vscode-sideBarSectionHeader-background);color:var(--vscode-descriptionForeground);font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:0.04em;position:sticky;top:0;');
+			['ID','Name','State','Pri','Stack','CPU'].forEach(h=>th.appendChild($t('span',h)));
+			tbl.appendChild(th);
+
+			for (const t of snap.threads) {
+				const stateCol = STATE_COLOR[t.state] || '#616161';
+				const stackPct = t.stackSize > 0 ? t.stackUsed/t.stackSize*100 : 0;
+				const stackCol = stackPct > 90 ? '#f48771' : stackPct > 70 ? '#e0a84e' : '#4caf50';
+				const cpuPct = t.cpuPercent !== undefined ? t.cpuPercent : -1;
+				const row = $e('div',`display:grid;grid-template-columns:28px 1fr 72px 32px 100px 52px;gap:6px;padding:4px 10px;border-top:1px solid var(--vscode-widget-border);align-items:center;`);
+
+				// ID
+				row.appendChild($t('span',String(t.id),'color:var(--vscode-descriptionForeground);'));
+				// Name
+				row.appendChild($t('span',t.name,'font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;'));
+				// State badge
+				const stateBadge = $e('div','display:flex;align-items:center;gap:3px;');
+				stateBadge.appendChild($e('div',`width:6px;height:6px;border-radius:50%;background:${stateCol};flex-shrink:0;`));
+				stateBadge.appendChild($t('span',t.state,'font-size:9px;'));
+				row.appendChild(stateBadge);
+				// Priority
+				row.appendChild($t('span',String(t.priority),'text-align:center;'));
+				// Stack bar
+				const stackEl = $e('div','display:flex;align-items:center;gap:3px;');
+				const sTrack = $e('div','flex:1;height:6px;background:rgba(255,255,255,0.06);border-radius:2px;overflow:hidden;');
+				sTrack.appendChild($e('div',`height:100%;width:${Math.min(stackPct,100)}%;background:${stackCol};border-radius:2px;transition:width 0.3s;`));
+				stackEl.appendChild(sTrack);
+				stackEl.appendChild($t('span',`${stackPct.toFixed(0)}%`,`font-size:8px;color:${stackCol};width:22px;`));
+				row.appendChild(stackEl);
+				// CPU
+				row.appendChild($t('span', cpuPct >= 0 ? `${cpuPct.toFixed(1)}%` : '--', `font-size:9px;color:${cpuPct>50?'#f48771':cpuPct>20?'#e0a84e':'var(--vscode-descriptionForeground)'};`));
+
+				tbl.appendChild(row);
+			}
+			threadWrap.appendChild(tbl);
+		};
+
+		// ── Sync primitives render ────────────────────────────────────────────
+		const SYNC_COLOR: Record<string,string> = {
+			mutex:'#7b1fa2', semaphore:'#1565c0', queue:'#e65100',
+			'event-group':'#1b5e20', timer:'#0277bd',
+		};
+		const renderSync = (snap: IRTOSSnapshot) => {
+			while (syncBody.firstChild) syncBody.removeChild(syncBody.firstChild);
+			if (!snap.syncPrimitives.length) {
+				syncBody.appendChild($t('div','None','font-size:10px;color:var(--vscode-descriptionForeground);padding:4px 10px 8px;'));
+				return;
+			}
+			for (const p of snap.syncPrimitives) {
+				const col = SYNC_COLOR[p.type] || '#546e7a';
+				const row = $e('div','display:flex;align-items:center;gap:8px;padding:4px 10px;border-top:1px solid var(--vscode-widget-border);');
+				const pill = $e('div',`font-size:8px;font-weight:700;padding:1px 5px;border-radius:2px;background:${col}22;color:${col};flex-shrink:0;font-family:monospace;`);
+				pill.textContent = p.type.slice(0,3).toUpperCase();
+				row.appendChild(pill);
+				row.appendChild($t('span',p.name,'font-size:10px;font-family:monospace;font-weight:600;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;'));
+				row.appendChild($t('span',p.value,'font-size:10px;color:var(--vscode-descriptionForeground);'));
+				if (p.waiters.length > 0) {
+					const wEl = $e('div','display:flex;align-items:center;gap:3px;flex-shrink:0;');
+					wEl.appendChild($e('div','width:6px;height:6px;border-radius:50%;background:#ff9800;'));
+					wEl.appendChild($t('span',`${p.waiters.length} waiting`,'font-size:9px;color:#ff9800;'));
+					row.appendChild(wEl);
+				}
+				syncBody.appendChild(row);
+			}
+		};
+
+		// ── Timers render ─────────────────────────────────────────────────────
+		const renderTimers = (snap: IRTOSSnapshot) => {
+			while (timersBody.firstChild) timersBody.removeChild(timersBody.firstChild);
+			if (!snap.timers.length) {
+				timersBody.appendChild($t('div','None','font-size:10px;color:var(--vscode-descriptionForeground);padding:4px 10px 8px;'));
+				return;
+			}
+			for (const tm of snap.timers) {
+				const row = $e('div','display:grid;grid-template-columns:1fr 60px 50px 40px;gap:6px;padding:4px 10px;border-top:1px solid var(--vscode-widget-border);align-items:center;font-size:10px;font-family:monospace;');
+				row.appendChild($t('span',tm.name,'font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;'));
+				row.appendChild($t('span',`${tm.periodTicks}t`,'color:var(--vscode-descriptionForeground);'));
+				row.appendChild($t('span',tm.isAutoReload?'auto':'one-shot','font-size:9px;color:var(--vscode-descriptionForeground);'));
+				const actEl = $e('div','display:flex;align-items:center;gap:3px;');
+				actEl.appendChild($e('div',`width:6px;height:6px;border-radius:50%;background:${tm.isActive?'#4caf50':'#546e7a'};`));
+				row.appendChild(actEl);
+				timersBody.appendChild(row);
+			}
+		};
+
+		// ── Main render ───────────────────────────────────────────────────────
+		const renderSnapshot = (snap: IRTOSSnapshot) => {
+			this._rtosSnapshot = snap;
+			// Update top bar
+			statusDot.style.background = snap.rtosType === 'none' ? '#616161' : '#4caf50';
+			rtosTypeLbl.textContent = snap.rtosType === 'none' ? 'No RTOS' : snap.rtosType;
+			tickLbl.textContent = snap.tickCount ? `tick: ${snap.tickCount}` : '';
+			// Draw canvases
+			drawCpuCanvas(snap);
+			drawHeapCanvas(snap);
+			// Render sections
+			renderThreadTable(snap);
+			renderSync(snap);
+			renderTimers(snap);
+		};
+
+		// Empty state
+		if (!this._rtosSnapshot) {
+			const emptyEl = $t('div','Connect debugger and click Snapshot to read RTOS state','font-size:11px;color:var(--vscode-descriptionForeground);padding:20px;text-align:center;');
+			threadWrap.appendChild(emptyEl);
+		} else {
+			renderSnapshot(this._rtosSnapshot);
+		}
+
+		// Resize observers for canvases
+		const ro = new ResizeObserver(() => {
+			if (this._rtosSnapshot) { drawCpuCanvas(this._rtosSnapshot); drawHeapCanvas(this._rtosSnapshot); }
+		});
+		ro.observe(cpuCanvas.parentElement!); ro.observe(heapCanvas.parentElement!);
+
+		// ── Event handlers ────────────────────────────────────────────────────
+		detectBtn.addEventListener('click', async () => {
+			detectBtn.textContent = 'Detecting...';
+			const rtos = await this._rtosSvc.detect();
+			rtosTypeLbl.textContent = rtos === 'none' ? 'No RTOS' : rtos;
+			statusDot.style.background = rtos === 'none' ? '#616161' : '#4caf50';
+			detectBtn.textContent = 'Detect';
+			if (rtos === 'none') {
+				this._notify.notify({ severity: Severity.Warning, message: 'No RTOS detected. Ensure debugger is connected and target is halted.' });
+			}
+		});
+
+		snapshotBtn.addEventListener('click', async () => {
+			snapshotBtn.textContent = 'Reading...';
+			try {
+				const snap = await this._rtosSvc.snapshot();
+				renderSnapshot(snap);
+			} catch (err: unknown) {
+				const msg = err instanceof Error ? err.message : String(err);
+				this._notify.notify({ severity: Severity.Error, message: `RTOS snapshot failed: ${msg}` });
+			}
+			snapshotBtn.textContent = 'Snapshot';
+		});
+
+		// Live polling
+		liveBtn.addEventListener('click', () => {
+			liveOn = !liveOn;
+			liveDot.style.background = liveOn ? '#4caf50' : '#616161';
+			if (liveOn) {
+				const poll = () => {
+					this._rtosSvc.snapshot().then(snap => renderSnapshot(snap)).catch(() => {});
+					this._rtosLiveTimer = setTimeout(poll, parseInt(intervalSel.value));
+				};
+				this._rtosLiveTimer = setTimeout(poll, parseInt(intervalSel.value));
+			} else {
+				if (this._rtosLiveTimer) { clearTimeout(this._rtosLiveTimer); this._rtosLiveTimer = null; }
+			}
+		});
+
+		intervalSel.addEventListener('change', () => {
+			if (liveOn) {
+				if (this._rtosLiveTimer) { clearTimeout(this._rtosLiveTimer); this._rtosLiveTimer = null; }
+				liveBtn.click(); liveBtn.click(); // restart with new interval
+			}
+		});
+
+		// Service-push updates
+		this._rtosSvc.onSnapshotUpdated(snap => renderSnapshot(snap));
+	}
+
+	// ─── HIL Tests Tab ───────────────────────────────────────────────────────────
+
+	private _renderHIL(root: HTMLElement): void {
+		const panel = $e('div', 'flex:1;display:flex;flex-direction:column;overflow:hidden;');
+		root.appendChild(panel);
+
+		// ── Top bar ───────────────────────────────────────────────────────────
+		const topBar = $e('div', 'display:flex;align-items:center;gap:8px;padding:6px 12px;border-bottom:1px solid var(--vscode-widget-border);flex-shrink:0;background:var(--vscode-sideBarSectionHeader-background);');
+		topBar.appendChild($t('span', 'HIL Tests', 'font-size:11px;font-weight:700;'));
+
+		// Summary pills (updated after each run)
+		const summaryPills = $e('div', 'display:flex;gap:6px;margin-left:8px;');
+		topBar.appendChild(summaryPills);
+		topBar.appendChild($e('div', 'flex:1;'));
+
+		// Filter
+		const filterIn = $e('input', 'padding:3px 7px;font-size:10px;background:var(--vscode-input-background);color:var(--vscode-input-foreground);border:1px solid var(--vscode-input-border,var(--vscode-widget-border));border-radius:3px;outline:none;width:120px;') as HTMLInputElement;
+		filterIn.placeholder = 'Filter tests...';
+		topBar.appendChild(filterIn);
+
+		const refreshBtn = $e('div', 'padding:3px 8px;border-radius:3px;border:1px solid var(--vscode-widget-border);cursor:pointer;font-size:10px;');
+		refreshBtn.textContent = 'Refresh';
+		const runAllBtn = $e('div', 'padding:3px 10px;border-radius:3px;cursor:pointer;font-size:10px;font-weight:600;background:var(--vscode-button-background);color:var(--vscode-button-foreground);');
+		runAllBtn.textContent = 'Run All';
+		topBar.appendChild(refreshBtn); topBar.appendChild(runAllBtn);
+		panel.appendChild(topBar);
+
+		// ── Body: left=test list, right=detail pane ───────────────────────────
+		const body = $e('div', 'flex:1;display:flex;overflow:hidden;');
+		panel.appendChild(body);
+
+		// Left panel
+		const leftPane = $e('div', 'width:260px;flex-shrink:0;display:flex;flex-direction:column;border-right:1px solid var(--vscode-widget-border);overflow:hidden;');
+		body.appendChild(leftPane);
+
+		const testListEl = $e('div', 'flex:1;overflow-y:auto;');
+		leftPane.appendChild(testListEl);
+
+		// Right panel
+		const rightPane = $e('div', 'flex:1;overflow-y:auto;display:flex;flex-direction:column;');
+		body.appendChild(rightPane);
+
+		// Progress bar at top of right pane (hidden normally)
+		const progressBar = $e('div', 'height:2px;background:var(--vscode-focusBorder);width:0%;transition:width 0.3s;flex-shrink:0;');
+		rightPane.appendChild(progressBar);
+
+		const detailArea = $e('div', 'flex:1;overflow-y:auto;padding:12px 14px;');
+		rightPane.appendChild(detailArea);
+
+		// State
+		let allTests: import('../engine/hil/hilTypes.js').IHILTestSpec[] = [];
+		let testResults = new Map<string, IHILTestResult>();
+		let runningId: string | null = null;
+		let selectedId: string | null = null;
+
+		// ── Test list item renderer ───────────────────────────────────────────
+		const renderTestList = () => {
+			while (testListEl.firstChild) testListEl.removeChild(testListEl.firstChild);
+			const filter = filterIn.value.toLowerCase();
+			const visible = filter ? allTests.filter(t => t.name.toLowerCase().includes(filter) || (t.tags||[]).some(g=>g.toLowerCase().includes(filter))) : allTests;
+
+			if (!visible.length) {
+				testListEl.appendChild($t('div', allTests.length ? 'No tests match filter' : 'No HIL tests found', 'padding:16px 12px;font-size:11px;color:var(--vscode-descriptionForeground);'));
+				if (!allTests.length) testListEl.appendChild($t('div', 'Use fw_hil_define to create tests', 'padding:0 12px;font-size:10px;color:var(--vscode-descriptionForeground);opacity:0.7;'));
+				return;
+			}
+
+			for (const test of visible) {
+				const result = testResults.get(test.id);
+				const isRunning = runningId === test.id;
+				const isSelected = selectedId === test.id;
+
+				const item = $e('div', `display:flex;flex-direction:column;padding:7px 10px;cursor:pointer;border-bottom:1px solid var(--vscode-widget-border);border-left:3px solid transparent;${isSelected ? 'background:var(--vscode-list-activeSelectionBackground,rgba(255,255,255,0.06));border-left-color:var(--vscode-focusBorder);' : ''}`);
+
+				// Row 1: status indicator + name + run button
+				const row1 = $e('div', 'display:flex;align-items:center;gap:6px;');
+
+				// Status indicator
+				const ind = $e('div', 'width:8px;height:8px;border-radius:50%;flex-shrink:0;');
+				if (isRunning) {
+					ind.style.background = '#e0a84e';
+					ind.style.boxShadow = '0 0 4px #e0a84e88';
+				} else if (!result) {
+					ind.style.background = 'rgba(255,255,255,0.15)';
+				} else {
+					ind.style.background = result.passed ? '#4caf50' : '#f44336';
+					if (!result.passed) ind.style.boxShadow = '0 0 4px #f4433688';
+				}
+				row1.appendChild(ind);
+
+				row1.appendChild($t('span', test.name, 'font-size:11px;font-weight:600;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;'));
+
+				if (result) {
+					row1.appendChild($t('span', `${(result.durationMs/1000).toFixed(1)}s`, 'font-size:9px;color:var(--vscode-descriptionForeground);flex-shrink:0;'));
+				}
+
+				const runOneBtn = $e('div', `padding:2px 7px;border-radius:3px;cursor:pointer;font-size:9px;font-weight:600;flex-shrink:0;border:1px solid var(--vscode-widget-border);${isRunning ? 'opacity:0.5;pointer-events:none;' : ''}`);
+				runOneBtn.textContent = isRunning ? '...' : 'Run';
+				row1.appendChild(runOneBtn);
+				item.appendChild(row1);
+
+				// Row 2: meta tags
+				const row2 = $e('div', 'display:flex;gap:5px;margin-top:3px;margin-left:14px;');
+				row2.appendChild($t('span', `${test.stimulus.length}S`, 'font-size:8px;padding:1px 4px;border-radius:2px;background:rgba(255,255,255,0.06);color:var(--vscode-descriptionForeground);font-family:monospace;'));
+				row2.appendChild($t('span', `${test.expectations.length}C`, 'font-size:8px;padding:1px 4px;border-radius:2px;background:rgba(255,255,255,0.06);color:var(--vscode-descriptionForeground);font-family:monospace;'));
+				if (test.tags) {
+					for (const tag of test.tags.slice(0,2)) {
+						row2.appendChild($t('span', tag, 'font-size:8px;padding:1px 4px;border-radius:2px;background:rgba(33,150,243,0.15);color:#64b5f6;'));
+					}
+				}
+				item.appendChild(row2);
+
+				// Row 3: failure reason (if failed)
+				if (result && !result.passed && result.failureReason) {
+					const row3 = $t('div', result.failureReason, 'font-size:9px;color:#ef9a9a;margin-top:3px;margin-left:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;');
+					item.appendChild(row3);
+				}
+
+				item.addEventListener('click', () => { selectedId = test.id; renderTestList(); if(result) showDetail(result); });
+				item.addEventListener('mouseenter', () => { if(!isSelected) item.style.background='var(--vscode-list-hoverBackground)'; });
+				item.addEventListener('mouseleave', () => { if(!isSelected) item.style.background=''; });
+
+				runOneBtn.addEventListener('click', async (e) => {
+					e.stopPropagation();
+					selectedId = test.id;
+					runningId = test.id;
+					renderTestList();
+					progressBar.style.width = '30%';
+					try {
+						const r = await this._hilSvc.runTest(test);
+						testResults.set(test.id, r);
+						progressBar.style.width = '100%';
+						setTimeout(() => { progressBar.style.width = '0%'; }, 600);
+						showDetail(r);
+					} catch (err: unknown) {
+						const msg = err instanceof Error ? err.message : String(err);
+						this._notify.notify({ severity: Severity.Error, message: `HIL test failed: ${msg}` });
+					}
+					runningId = null;
+					renderTestList();
+					updateSummary();
+				});
+
+				testListEl.appendChild(item);
+			}
+		};
+
+		// ── Detail pane ───────────────────────────────────────────────────────
+		const showDetail = (result: IHILTestResult) => {
+			while (detailArea.firstChild) detailArea.removeChild(detailArea.firstChild);
+
+			// Header
+			const ok = result.passed;
+			const hdrEl = $e('div', `padding:10px 12px;border-radius:5px;margin-bottom:10px;background:${ok?'rgba(76,175,80,0.08)':'rgba(244,67,54,0.08)'};border:1px solid ${ok?'rgba(76,175,80,0.25)':'rgba(244,67,54,0.25)'};`);
+			const hRow = $e('div', 'display:flex;align-items:center;gap:8px;');
+			const hDot = $e('div', `width:10px;height:10px;border-radius:50%;background:${ok?'#4caf50':'#f44336'};flex-shrink:0;`);
+			hRow.appendChild(hDot);
+			hRow.appendChild($t('span', result.testName, 'font-size:12px;font-weight:700;'));
+			hRow.appendChild($t('span', ok?'PASS':'FAIL', `font-size:10px;font-weight:700;color:${ok?'#4caf50':'#f44336'};padding:1px 6px;border-radius:3px;border:1px solid ${ok?'rgba(76,175,80,0.4)':'rgba(244,67,54,0.4)'};margin-left:auto;`));
+			hdrEl.appendChild(hRow);
+			// Phase pipeline
+			if (result.buildResult || result.flashResult) {
+				const phases = $e('div', 'display:flex;gap:0;margin-top:8px;border:1px solid var(--vscode-widget-border);border-radius:4px;overflow:hidden;');
+				const mkPhase = (label:string, sub:string, pass:boolean) => {
+					const p = $e('div', `flex:1;padding:5px 8px;background:${pass?'rgba(76,175,80,0.06)':'rgba(244,67,54,0.06)'};border-right:1px solid var(--vscode-widget-border);`);
+					p.appendChild($t('div', label, `font-size:10px;font-weight:700;color:${pass?'#81c784':'#ef9a9a'};`));
+					p.appendChild($t('div', sub, 'font-size:9px;color:var(--vscode-descriptionForeground);'));
+					return p;
+				};
+				if (result.buildResult) phases.appendChild(mkPhase('BUILD', `${result.buildResult.durationMs}ms`, result.buildResult.success));
+				if (result.flashResult) phases.appendChild(mkPhase('FLASH', `${result.flashResult.durationMs}ms`, result.flashResult.success));
+				phases.appendChild(mkPhase('TEST', `${(result.durationMs/1000).toFixed(1)}s`, ok));
+				(phases.lastElementChild as HTMLElement).style.borderRight = 'none';
+				hdrEl.appendChild(phases);
+			}
+			detailArea.appendChild(hdrEl);
+
+			// Expectations — numbered steps with pass/fail
+			if (result.expectationResults.length) {
+				detailArea.appendChild($t('div', 'CHECKS', 'font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;color:var(--vscode-descriptionForeground);margin-bottom:6px;'));
+				for (let i = 0; i < result.expectationResults.length; i++) {
+					const exp = result.expectationResults[i]!;
+					const eRow = $e('div', `display:flex;gap:8px;padding:6px 8px;border-radius:4px;margin-bottom:4px;background:${exp.passed?'rgba(76,175,80,0.04)':'rgba(244,67,54,0.06)'};border:1px solid ${exp.passed?'rgba(76,175,80,0.12)':'rgba(244,67,54,0.2)'};`);
+					// Step number circle
+					const numEl = $e('div', `width:18px;height:18px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:700;flex-shrink:0;background:${exp.passed?'rgba(76,175,80,0.15)':'rgba(244,67,54,0.15)'};color:${exp.passed?'#81c784':'#ef9a9a'};`);
+					numEl.textContent = String(i+1);
+					eRow.appendChild(numEl);
+					const eBody = $e('div', 'flex:1;');
+					eBody.appendChild($t('div', exp.description, 'font-size:10px;font-weight:600;'));
+					if (!exp.passed) {
+						if (exp.actual !== undefined && exp.expected !== undefined) {
+							const diffRow = $e('div', 'display:flex;gap:8px;margin-top:4px;font-size:9px;font-family:monospace;');
+							diffRow.appendChild($t('span', `Expected: ${exp.expected}`, 'color:#81c784;'));
+							diffRow.appendChild($t('span', `Got: ${exp.actual}`, 'color:#ef9a9a;'));
+							eBody.appendChild(diffRow);
+						}
+						if (exp.message) eBody.appendChild($t('div', exp.message, 'font-size:9px;color:#ef9a9a;margin-top:2px;'));
+					}
+					eRow.appendChild(eBody);
+					detailArea.appendChild(eRow);
+				}
+			}
+
+			// Serial capture
+			if (result.serialCapture) {
+				detailArea.appendChild($t('div', 'SERIAL OUTPUT', 'font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;color:var(--vscode-descriptionForeground);margin:10px 0 5px;'));
+				const pre = $e('pre', 'padding:8px;background:#0d1117;color:rgba(255,255,255,0.75);border-radius:4px;font-size:10px;font-family:monospace;overflow-x:auto;max-height:180px;overflow-y:auto;white-space:pre-wrap;word-break:break-all;margin:0;border:1px solid var(--vscode-widget-border);');
+				pre.textContent = result.serialCapture;
+				detailArea.appendChild(pre);
+			}
+		};
+
+		const showSuiteResult = (suite: IHILSuiteResult) => {
+			while (detailArea.firstChild) detailArea.removeChild(detailArea.firstChild);
+			const ok = suite.passedTests === suite.totalTests;
+
+			// Suite summary header
+			const sumEl = $e('div', `padding:10px 12px;border-radius:5px;margin-bottom:12px;background:${ok?'rgba(76,175,80,0.08)':'rgba(244,67,54,0.08)'};border:1px solid ${ok?'rgba(76,175,80,0.25)':'rgba(244,67,54,0.25)'};`);
+			const sr = $e('div', 'display:flex;align-items:center;gap:8px;');
+			sr.appendChild($t('span', suite.suiteName, 'font-size:12px;font-weight:700;'));
+			sr.appendChild($t('span', `${suite.passedTests}/${suite.totalTests} passed`, `font-size:10px;font-weight:700;color:${ok?'#4caf50':'#f44336'};margin-left:auto;`));
+			sumEl.appendChild(sr);
+			sumEl.appendChild($t('div', `${((suite.endTime-suite.startTime)/1000).toFixed(1)}s total`, 'font-size:10px;color:var(--vscode-descriptionForeground);margin-top:3px;'));
+			// Progress bar
+			const barOuter = $e('div', 'height:6px;background:rgba(255,255,255,0.06);border-radius:3px;overflow:hidden;margin-top:8px;');
+			barOuter.appendChild($e('div', `height:100%;width:${suite.totalTests?suite.passedTests/suite.totalTests*100:0}%;background:${ok?'#4caf50':'#f44336'};border-radius:3px;`));
+			sumEl.appendChild(barOuter);
+			detailArea.appendChild(sumEl);
+
+			// Result rows
+			for (const r of suite.results) {
+				const rRow = $e('div', `display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:4px;margin-bottom:3px;background:${r.passed?'rgba(76,175,80,0.04)':'rgba(244,67,54,0.06)'};border:1px solid ${r.passed?'rgba(76,175,80,0.10)':'rgba(244,67,54,0.18)'};cursor:pointer;`);
+				rRow.appendChild($e('div', `width:8px;height:8px;border-radius:50%;background:${r.passed?'#4caf50':'#f44336'};flex-shrink:0;`));
+				rRow.appendChild($t('span', r.testName, 'font-size:11px;font-weight:600;flex:1;'));
+				rRow.appendChild($t('span', `${r.expectationResults.filter(e=>e.passed).length}/${r.expectationResults.length} checks`, 'font-size:9px;color:var(--vscode-descriptionForeground);'));
+				rRow.appendChild($t('span', `${(r.durationMs/1000).toFixed(1)}s`, 'font-size:9px;color:var(--vscode-descriptionForeground);'));
+				rRow.addEventListener('click', () => { selectedId = r.testId; renderTestList(); showDetail(r); });
+				detailArea.appendChild(rRow);
+			}
+		};
+
+		// ── Summary pills ─────────────────────────────────────────────────────
+		const updateSummary = () => {
+			while (summaryPills.firstChild) summaryPills.removeChild(summaryPills.firstChild);
+			if (!testResults.size) return;
+			const passed = [...testResults.values()].filter(r=>r.passed).length;
+			const failed = testResults.size - passed;
+			if (passed) summaryPills.appendChild($t('span', `${passed} pass`, 'font-size:9px;padding:1px 6px;border-radius:3px;background:rgba(76,175,80,0.15);color:#81c784;'));
+			if (failed) summaryPills.appendChild($t('span', `${failed} fail`, 'font-size:9px;padding:1px 6px;border-radius:3px;background:rgba(244,67,54,0.15);color:#ef9a9a;'));
+		};
+
+		// ── Load tests ────────────────────────────────────────────────────────
+		const loadTests = async () => {
+			const tests = await this._hilSvc.loadTests();
+			allTests = tests;
+			renderTestList();
+		};
+
+		// ── Event handlers ────────────────────────────────────────────────────
+		filterIn.addEventListener('input', () => renderTestList());
+
+		refreshBtn.addEventListener('click', () => { void loadTests(); });
+
+		runAllBtn.addEventListener('click', async () => {
+			runAllBtn.textContent = 'Running...';
+			(runAllBtn as HTMLElement & {disabled?:boolean}).disabled = true;
+			progressBar.style.width = '10%';
+			try {
+				const suite = await this._hilSvc.runSuite();
+				suite.results.forEach(r => testResults.set(r.testId, r));
+				progressBar.style.width = '100%';
+				setTimeout(() => { progressBar.style.width = '0%'; }, 600);
+				showSuiteResult(suite);
+				updateSummary();
+				renderTestList();
+			} catch (err: unknown) {
+				const msg = err instanceof Error ? err.message : String(err);
+				this._notify.notify({ severity: Severity.Error, message: `HIL suite failed: ${msg}` });
+				progressBar.style.width = '0%';
+			}
+			runAllBtn.textContent = 'Run All';
+			(runAllBtn as HTMLElement & {disabled?:boolean}).disabled = false;
+		});
+
+		this._hilSvc.onTestCompleted(result => {
+			testResults.set(result.testId, result);
+			renderTestList();
+			updateSummary();
+			if (selectedId === result.testId) showDetail(result);
+		});
+
+		void loadTests();
+	}
+
+	// ─── Closed-Loop (Auto Loop) Tab ─────────────────────────────────────────────
+
+	private _loopIterations: IClosedLoopIteration[] = [];
+	protected _loopCanvas: HTMLCanvasElement | null = null;
+
+	private _renderClosedLoop(root: HTMLElement): void {
+		const panel = $e('div', 'flex:1;display:flex;flex-direction:column;overflow:hidden;background:var(--vscode-editor-background);');
+		root.appendChild(panel);
+
+		const PHASE_COLOR: Record<string,string> = {
+			build:'#1565c0', flash:'#7b1fa2', observe:'#00838f',
+			diagnose:'#e65100', fix:'#ad1457', complete:'#2e7d32', failed:'#b71c1c',
+		};
+		const PHASES: ClosedLoopPhase[] = ['build','flash','observe','diagnose','fix'];
+
+		// ── Compact top bar ──────────────────────────────────────────────────
+		const topBar = $e('div', 'display:flex;align-items:center;gap:8px;padding:6px 14px;border-bottom:1px solid var(--vscode-widget-border);flex-shrink:0;');
+		const statusDot = $e('div', 'width:8px;height:8px;border-radius:50%;background:#616161;flex-shrink:0;transition:background 0.3s;');
+		const statusLbl = $t('span', 'IDLE', 'font-size:10px;font-weight:700;color:var(--vscode-descriptionForeground);min-width:80px;font-family:monospace;');
+		topBar.appendChild(statusDot); topBar.appendChild(statusLbl);
+		topBar.appendChild($e('div','flex:1;'));
+		// iter counter
+		const iterCounter = $t('span', '', 'font-size:10px;color:var(--vscode-descriptionForeground);font-family:monospace;');
+		topBar.appendChild(iterCounter);
+		panel.appendChild(topBar);
+
+		// Progress bar
+		const progressBar = $e('div', 'height:2px;background:var(--vscode-focusBorder);width:0%;transition:width 0.5s;flex-shrink:0;');
+		panel.appendChild(progressBar);
+
+		// ── Goal + pass in single inline row ─────────────────────────────────
+		const configBar = $e('div', 'display:flex;align-items:center;gap:8px;padding:8px 14px;border-bottom:1px solid var(--vscode-widget-border);flex-shrink:0;flex-wrap:wrap;');
+
+		const mkInput = (ph:string, w:string) => {
+			const el = $e('input', `padding:5px 9px;font-size:11px;background:var(--vscode-input-background);color:var(--vscode-input-foreground);border:1px solid var(--vscode-input-border,var(--vscode-widget-border));border-radius:3px;outline:none;width:${w};`) as HTMLInputElement;
+			el.placeholder = ph;
+			return el;
+		};
+		const goalInput   = mkInput('Goal — e.g. Blink LED on PA5 at 1 Hz', '280px');
+		const criteriaInput = mkInput('Pass — serial contains e.g. BLINK OK', '220px');
+		const maxIterInput  = mkInput('Max', '42px'); maxIterInput.value='10'; maxIterInput.title='Max iterations';
+		const channelSel = $e('select','padding:4px 6px;font-size:10px;background:var(--vscode-dropdown-background);color:var(--vscode-dropdown-foreground);border:1px solid var(--vscode-dropdown-border,var(--vscode-widget-border));border-radius:3px;') as HTMLSelectElement;
+		for(const ch of ['serial','rtt','itm']){const o=$e('option') as HTMLOptionElement;o.value=ch;o.textContent=ch.toUpperCase();channelSel.appendChild(o);}
+
+		const abortBtn = $e('div','padding:4px 10px;border-radius:3px;cursor:pointer;font-size:10px;border:1px solid rgba(244,67,54,0.35);color:#ef9a9a;display:none;flex-shrink:0;');
+		abortBtn.textContent='Abort';
+		const startBtn = $e('div','padding:4px 14px;border-radius:3px;cursor:pointer;font-size:10px;font-weight:600;background:var(--vscode-button-background);color:var(--vscode-button-foreground);flex-shrink:0;');
+		startBtn.textContent='Start Loop';
+
+		configBar.appendChild($t('span','Goal','font-size:9px;font-weight:700;color:var(--vscode-descriptionForeground);flex-shrink:0;'));
+		configBar.appendChild(goalInput);
+		configBar.appendChild($t('span','Pass','font-size:9px;font-weight:700;color:var(--vscode-descriptionForeground);flex-shrink:0;'));
+		configBar.appendChild(criteriaInput);
+		configBar.appendChild(maxIterInput);
+		configBar.appendChild(channelSel);
+		configBar.appendChild(abortBtn);
+		configBar.appendChild(startBtn);
+		panel.appendChild(configBar);
+
+		// ── Canvas pipeline diagram (hero area) ──────────────────────────────
+		const canvasWrap = $e('div', 'flex:1;display:flex;flex-direction:column;overflow:hidden;background:#0d1117;');
+		const canvas = $e('canvas', 'display:block;width:100%;height:100%;') as HTMLCanvasElement;
+		this._loopCanvas = canvas;
+		canvasWrap.appendChild(canvas);
+		panel.appendChild(canvasWrap);
+
+
+		// ── Canvas draw ───────────────────────────────────────────────────────
+		const drawPipeline = () => {
+			const DPR = window.devicePixelRatio || 1;
+			const W = canvas.parentElement!.clientWidth || 800;
+			const H = Math.max(200, canvas.parentElement!.clientHeight || 400);
+			canvas.width = W*DPR; canvas.height = H*DPR;
+			const ctx = canvas.getContext('2d')!;
+			ctx.scale(DPR, DPR);
+			ctx.fillStyle = '#0d1117'; ctx.fillRect(0,0,W,H);
+
+			const iters = this._loopIterations;
+			const maxIter = parseInt(maxIterInput.value) || 10;
+			const pad = 16;
+			const hdrH = 28;          // phase header row height
+			const iterRowH = 52;      // height per iteration row
+
+			// Phase column geometry
+			const numCols = PHASES.length;
+			const colW = (W - pad*2) / numCols;
+
+			// ── Phase header row ──────────────────────────────────────────────
+			for(let i=0; i<numCols; i++){
+				const ph = PHASES[i]!;
+				const col = PHASE_COLOR[ph] || '#546e7a';
+				const cx = pad + i*colW;
+				const cw = colW;
+
+				// Column background tint
+				ctx.fillStyle = col+'0a'; ctx.fillRect(cx, 0, cw, H);
+
+				// Header label
+				ctx.fillStyle = col+'cc'; ctx.font='bold 10px monospace'; ctx.textAlign='center';
+				ctx.fillText(ph.toUpperCase(), cx+cw/2, 18);
+
+				// Separator
+				if(i>0){
+					ctx.strokeStyle='rgba(255,255,255,0.06)'; ctx.lineWidth=1;
+					ctx.beginPath(); ctx.moveTo(cx,0); ctx.lineTo(cx,H); ctx.stroke();
+				}
+			}
+
+			// Header separator line
+			ctx.strokeStyle='rgba(255,255,255,0.08)'; ctx.lineWidth=1;
+			ctx.beginPath(); ctx.moveTo(pad,hdrH); ctx.lineTo(W-pad,hdrH); ctx.stroke();
+
+			// ── Empty state ───────────────────────────────────────────────────
+			if(!iters.length){
+				ctx.fillStyle='rgba(255,255,255,0.18)'; ctx.font='13px system-ui'; ctx.textAlign='center';
+				ctx.fillText('Enter goal above and click Start Loop', W/2, H/2-8);
+				ctx.fillStyle='rgba(255,255,255,0.08)'; ctx.font='10px system-ui';
+				ctx.fillText('Build  Flash  Observe  Diagnose  Fix — repeats until pass criteria met', W/2, H/2+14);
+				return;
+			}
+
+			// ── Iteration rows ────────────────────────────────────────────────
+			const visibleRows = Math.floor((H - hdrH - 20) / iterRowH);
+			const visIters = iters.slice(-visibleRows);
+
+			for(let ri=0; ri<visIters.length; ri++){
+				const iter = visIters[ri]!;
+				const rowY = hdrH + ri*iterRowH;
+				const isLatest = ri === visIters.length-1;
+				const allPassed = iter.passCriteriaMet.every(Boolean);
+				const resultOk = iter.phase==='complete' && allPassed;
+				const resultFail = iter.phase==='failed';
+
+				// Row background — latest iteration highlighted
+				if(isLatest){
+					ctx.fillStyle='rgba(255,255,255,0.025)'; ctx.fillRect(pad, rowY, W-pad*2, iterRowH);
+				}
+				// Row bottom border
+				ctx.strokeStyle='rgba(255,255,255,0.05)'; ctx.lineWidth=0.5;
+				ctx.beginPath(); ctx.moveTo(pad,rowY+iterRowH); ctx.lineTo(W-pad,rowY+iterRowH); ctx.stroke();
+
+				// Iter number (left margin)
+				const numX = 8;
+				ctx.fillStyle = isLatest?'rgba(255,255,255,0.55)':'rgba(255,255,255,0.20)';
+				ctx.font = (isLatest?'bold ':'')+'10px monospace'; ctx.textAlign='center';
+				ctx.fillText('#'+iter.index, numX, rowY+iterRowH/2+4);
+
+				// Phase state in each column
+				const phaseIdx = PHASES.indexOf(iter.phase);
+				for(let pi=0; pi<PHASES.length; pi++){
+					const ph = PHASES[pi]!;
+					const col = PHASE_COLOR[ph] || '#546e7a';
+					const cx = pad + pi*colW + colW/2;
+					const cy = rowY + iterRowH*0.35;
+					const done = pi < phaseIdx || iter.phase==='complete';
+					const active = pi===phaseIdx && iter.phase!=='complete' && iter.phase!=='failed';
+					const failed2 = resultFail && pi===phaseIdx;
+
+					const r = isLatest ? 7 : 5;
+					ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI*2);
+					ctx.fillStyle = done ? col : active ? col : failed2 ? '#f44336' : 'rgba(255,255,255,0.06)';
+					ctx.fill();
+					if(active){
+						ctx.strokeStyle=col; ctx.lineWidth=1.5;
+						// Pulse ring
+						ctx.beginPath(); ctx.arc(cx, cy, r+3, 0, Math.PI*2);
+						ctx.strokeStyle=col+'44'; ctx.stroke();
+					}
+					// Connector line to next done phase
+					if(pi>0 && done){
+						const prevCol = PHASE_COLOR[PHASES[pi-1]!] || '#546e7a';
+						const prevCX = pad+(pi-1)*colW+colW/2;
+						ctx.strokeStyle=prevCol+'55'; ctx.lineWidth=1.5; ctx.setLineDash([]);
+						ctx.beginPath(); ctx.moveTo(prevCX+r+2,cy); ctx.lineTo(cx-r-2,cy); ctx.stroke();
+					}
+
+					// Text label under dot for latest row
+					if(isLatest && (done||active)){
+						let subtext = '';
+						if(ph==='build' && iter.buildResult) subtext = iter.buildResult.success?'ok':`${iter.buildResult.errorCount}err`;
+						if(ph==='flash' && iter.flashResult) subtext = iter.flashResult.success?'ok':'fail';
+						if(ph==='observe' && iter.observation) subtext = iter.observation.data.trim().split('\n').pop()?.slice(0,12) || '';
+						if(ph==='diagnose' && iter.diagnosis) subtext = iter.diagnosis.slice(0,16);
+						if(ph==='fix' && iter.fix) subtext = iter.fix.file.split('/').pop()?.slice(0,12) || '';
+						if(subtext){
+							ctx.fillStyle = col+'bb'; ctx.font='8px monospace'; ctx.textAlign='center';
+							ctx.fillText(subtext, cx, rowY+iterRowH*0.72);
+						}
+					}
+				}
+
+				// Result dot + duration (right side)
+				if(resultOk || resultFail){
+					const rx = W-pad-6;
+					ctx.beginPath(); ctx.arc(rx, rowY+iterRowH*0.35, 5, 0, Math.PI*2);
+					ctx.fillStyle = resultOk?'#4caf50':'#f44336'; ctx.fill();
+				}
+				if(iter.endTime){
+					ctx.fillStyle='rgba(255,255,255,0.25)'; ctx.font='8px monospace'; ctx.textAlign='right';
+					ctx.fillText(`${((iter.endTime-iter.startTime)/1000).toFixed(1)}s`, W-pad, rowY+iterRowH*0.65);
+				}
+			}
+
+			// ── Stats footer ──────────────────────────────────────────────────
+			const passed = iters.filter(i=>i.phase==='complete'&&i.passCriteriaMet.every(Boolean)).length;
+			const failed = iters.filter(i=>i.phase==='failed').length;
+			const bY = H - 10;
+			ctx.fillStyle='rgba(255,255,255,0.12)'; ctx.font='8px system-ui'; ctx.textAlign='left';
+			ctx.fillText(`${iters.length}/${maxIter} iters`, pad, bY);
+			if(passed>0){ctx.fillStyle='#4caf50'; ctx.fillText(`${passed} pass`, pad+70, bY);}
+			if(failed>0){ctx.fillStyle='#f44336'; ctx.fillText(`${failed} fail`, pad+110, bY);}
+		};
+
+		// renderLog is now integrated into drawPipeline canvas
+		const renderLog = () => {
+			// all rendering on canvas
+		};
+
+		// ── Status helpers ────────────────────────────────────────────────────
+		const setStatus = (label:string, col:string, dotBg:string) => {
+			statusLbl.textContent=label; statusLbl.style.color=col;
+			statusDot.style.background=dotBg;
+			statusDot.style.boxShadow=(dotBg==='#616161')?'none':`0 0 5px ${dotBg}88`;
+		};
+
+		// Resize
+		const ro = new ResizeObserver(()=>drawPipeline());
+		ro.observe(canvasWrap);
+		drawPipeline();
+
+		// ── Events ────────────────────────────────────────────────────────────
+		startBtn.addEventListener('click', async () => {
+			const goal=goalInput.value.trim();
+			if(!goal){this._notify.notify({severity:Severity.Warning,message:'Enter a goal.'});return;}
+			const crit=criteriaInput.value.trim();
+			const passCriteria=crit
+				?[{type:'serial-contains' as const,value:crit,description:crit}]
+				:[{type:'no-build-errors' as const,value:'',description:'Build succeeds'}];
+
+			this._loopIterations=[];
+			startBtn.style.opacity='0.5'; startBtn.style.pointerEvents='none';
+			abortBtn.style.display='';
+			setStatus('RUNNING','#4caf50','#4caf50');
+			progressBar.style.width='4%';
+			drawPipeline(); renderLog();
+
+			try{
+				const result=await this._closedLoopSvc.start({
+					goal, passCriteria,
+					maxIterations:parseInt(maxIterInput.value)||10,
+					timeoutMs:300_000,
+					observeChannels:[channelSel.value as 'serial'|'rtt'|'itm'],
+					autoFix:true,
+				});
+				progressBar.style.width='100%';
+				setTimeout(()=>{progressBar.style.width='0%';},700);
+				setStatus(result.success?'PASSED':'FAILED',result.success?'#4caf50':'#f44336',result.success?'#4caf50':'#f44336');
+			}catch(err:unknown){
+				const msg=err instanceof Error?err.message:String(err);
+				this._notify.notify({severity:Severity.Error,message:`Loop error: ${msg}`});
+				setStatus('ERROR','#ef9a9a','#f44336');
+				progressBar.style.width='0%';
+			}
+			startBtn.style.opacity=''; startBtn.style.pointerEvents='';
+			abortBtn.style.display='none';
+		});
+
+		abortBtn.addEventListener('click',()=>{
+			this._closedLoopSvc.abort();
+			setStatus('ABORTED','#e0a84e','#ff9800');
+			progressBar.style.width='0%';
+			startBtn.style.opacity=''; startBtn.style.pointerEvents='';
+			abortBtn.style.display='none';
+		});
+
+		this._closedLoopSvc.onIterationCompleted(iter=>{
+			this._loopIterations.push(iter);
+			const maxIter=parseInt(maxIterInput.value)||10;
+			iterCounter.textContent=`${iter.index}/${maxIter}`;
+			progressBar.style.width=`${Math.min(95,iter.index/maxIter*100)}%`;
+			drawPipeline(); renderLog();
+		});
+
+		this._closedLoopSvc.onPhaseChanged(({iteration,phase})=>{
+			const col=PHASE_COLOR[phase]||'#4caf50';
+			setStatus(`#${iteration} ${phase.toUpperCase()}`,col,col);
+		});
+	}
+
+\tprotected _loopPhaseBadge(phase: ClosedLoopPhase): HTMLElement {
+		const colors: Record<string, string> = {
+			build:'#1565c0', flash:'#6a1b9a', observe:'#00838f',
+			diagnose:'#e65100', fix:'#880e4f', complete:'#1b5e20', failed:'#b71c1c',
+		};
+		const c = colors[phase] || '#546e7a';
+		const el = $t('span', phase.toUpperCase(), `font-size:9px;font-weight:700;padding:2px 6px;border-radius:3px;background:${c}20;color:${c};font-family:monospace;`);
+		return el;
 	}
 }
 

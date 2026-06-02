@@ -23,9 +23,9 @@
  *   Gold  (#ffc107)  — power/ground
  */
 
-import { Disposable } from '../../../../../../../base/common/lifecycle.js';
-import { createDecorator } from '../../../../../../../platform/instantiation/common/instantiation.js';
-import { registerSingleton, InstantiationType } from '../../../../../../../platform/instantiation/common/extensions.js';
+import { Disposable } from '../../../../../../base/common/lifecycle.js';
+import { createDecorator } from '../../../../../../platform/instantiation/common/instantiation.js';
+import { registerSingleton, InstantiationType } from '../../../../../../platform/instantiation/common/extensions.js';
 import { IFirmwareSessionService } from '../../firmwareSessionService.js';
 import { getAFDatabaseForFamily, filterAFDatabaseForVariant } from '../pinMux/stm32AfDatabase.js';
 
@@ -97,7 +97,7 @@ const PACKAGE_DEFS: Record<string, IPackageDef> = {
 
 // ─── Power/debug pin patterns ─────────────────────────────────────────────────
 
-const POWER_SIGNALS = ['VDD', 'VSS', 'VDDA', 'VSSA', 'NRST', 'BOOT', 'VBAT', 'VCC', 'GND', 'AVDD', 'AVSS'];
+
 const DEBUG_SIGNALS = ['SWDIO', 'SWCLK', 'JTMS', 'JTCK', 'JTDI', 'JTDO', 'JNTRST', 'SWO', 'TRACECLK'];
 
 
