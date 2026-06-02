@@ -14,6 +14,7 @@ import { IVoidSettingsService } from '../../common/voidSettingsService.js';
 import { ProviderName, SettingName, displayInfoOfProviderName } from '../../common/voidSettingsTypes.js';
 import { IDetectedCredential, AUTO_CONNECT_STORAGE_KEY } from './autoConnectTypes.js';
 import { detectAllCredentials } from './envVarDetector.js';
+import { IExternalCommandExecutor } from '../externalCommandExecutor.js';
 
 
 export interface IAutoConnectService {
@@ -55,6 +56,7 @@ export class AutoConnectService extends Disposable implements IAutoConnectServic
 		@IStorageService private readonly _storageService: IStorageService,
 		@INotificationService private readonly _notificationService: INotificationService,
 		@IFileService private readonly _fileService: IFileService,
+		@IExternalCommandExecutor private readonly _commandExecutor: IExternalCommandExecutor,
 	) {
 		super();
 		this._loadPersistedState();
@@ -86,7 +88,9 @@ export class AutoConnectService extends Disposable implements IAutoConnectServic
 	private _runDetection(): void {
 		if (this._neverAskAgain) return;
 
-		detectAllCredentials(this._fileService).then(all => {
+		this._resolveGhToken().then(ghToken => {
+			return detectAllCredentials(this._fileService, ghToken);
+		}).then(all => {
 			const newCredentials = all.filter(c =>
 				!this._appliedProviders.has(c.providerName) &&
 				!this._dismissedProviders.has(c.providerName)
@@ -132,10 +136,24 @@ export class AutoConnectService extends Disposable implements IAutoConnectServic
 	}
 
 	async detectCredentials(): Promise<IDetectedCredential[]> {
-		const all = await detectAllCredentials(this._fileService);
+		const ghToken = await this._resolveGhToken();
+		const all = await detectAllCredentials(this._fileService, ghToken);
 		this._detectedCredentials = all;
 		this._onDidDetectCredentials.fire(all);
 		return all;
+	}
+
+	private async _resolveGhToken(): Promise<string | undefined> {
+		try {
+			const output = await this._commandExecutor.execute('gh-token', 'gh auth token', 5000, 1024);
+			const token = output.trim();
+			if (token && token.startsWith('gh') && !token.includes(' ')) {
+				return token;
+			}
+		} catch {
+			// gh not installed or not logged in — fall through
+		}
+		return undefined;
 	}
 
 	async applyCredentials(credentials: IDetectedCredential[]): Promise<void> {

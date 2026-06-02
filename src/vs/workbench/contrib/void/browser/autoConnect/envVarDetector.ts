@@ -254,22 +254,76 @@ export async function detectGcpCredentials(fileService: IFileService): Promise<I
 	return null;
 }
 
+// --- GitHub CLI: ~/.config/gh/hosts.yml or external token ---
+
+export async function detectGitHubCliCredentials(fileService: IFileService, externalToken?: string): Promise<IDetectedCredential | null> {
+	const home = getHomedir();
+
+	// Strategy 1: token provided externally (from `gh auth token` shell-out)
+	if (externalToken && externalToken.trim().length >= 4) {
+		let user = '';
+		if (home) {
+			const hostsContent = await readFileSafe(fileService, `${home}/.config/gh/hosts.yml`);
+			if (hostsContent) {
+				const userMatch = hostsContent.match(/user:\s*(.+)/);
+				if (userMatch) user = userMatch[1].trim();
+			}
+		}
+		return {
+			providerName: 'githubModels',
+			source: 'cli-auth',
+			settings: { apiKey: externalToken.trim() },
+			maskedDisplay: user ? `gh cli (${user})` : maskKey(externalToken.trim()),
+		};
+	}
+
+	// Strategy 2: token stored in hosts.yml directly (older gh versions / non-keychain)
+	if (!home) return null;
+
+	const hostsPath = `${home}/.config/gh/hosts.yml`;
+	const content = await readFileSafe(fileService, hostsPath);
+	if (!content) return null;
+
+	const tokenMatch = content.match(/oauth_token:\s*(.+)/);
+	if (!tokenMatch) return null;
+
+	const token = tokenMatch[1].trim();
+	if (!token || token.length < 4) return null;
+
+	let user = '';
+	const userMatch = content.match(/user:\s*(.+)/);
+	if (userMatch) user = userMatch[1].trim();
+
+	return {
+		providerName: 'githubModels',
+		source: 'cli-auth',
+		settings: { apiKey: token },
+		maskedDisplay: user ? `gh cli (${user})` : maskKey(token),
+	};
+}
+
 // --- Aggregate ---
 
-export async function detectAllCredentials(fileService: IFileService): Promise<IDetectedCredential[]> {
+export async function detectAllCredentials(fileService: IFileService, ghCliToken?: string): Promise<IDetectedCredential[]> {
 	const results: IDetectedCredential[] = [];
 
 	results.push(...await detectEnvVarCredentials(fileService));
 
-	const [aws, azure, gcp] = await Promise.all([
+	const [aws, azure, gcp, ghCli] = await Promise.all([
 		detectAwsCredentials(fileService),
 		detectAzureCredentials(fileService),
 		detectGcpCredentials(fileService),
+		detectGitHubCliCredentials(fileService, ghCliToken),
 	]);
 
 	if (aws) results.push(aws);
 	if (azure) results.push(azure);
 	if (gcp) results.push(gcp);
+
+	// Only add GitHub CLI credential if env-var detection didn't already find githubModels
+	if (ghCli && !results.some(r => r.providerName === 'githubModels')) {
+		results.push(ghCli);
+	}
 
 	return results;
 }

@@ -894,6 +894,7 @@ const AutoDetectCredentials = () => {
 			<div className='font-mono text-xs opacity-70 leading-relaxed'>
 				ANTHROPIC_API_KEY, OPENAI_API_KEY, DEEPSEEK_API_KEY, GOOGLE_API_KEY, GROQ_API_KEY, XAI_API_KEY, MISTRAL_API_KEY, OPENROUTER_API_KEY, GITHUB_TOKEN, FIREWORKS_API_KEY, CEREBRAS_API_KEY, AWS_ACCESS_KEY_ID, AZURE_OPENAI_API_KEY, GOOGLE_APPLICATION_CREDENTIALS
 			</div>
+			<p className='mt-2 opacity-70'>GitHub Models also detected via <code className='font-mono text-xs bg-void-bg-2 px-1 py-0.5 rounded'>gh auth login</code> (GitHub CLI).</p>
 		</div>
 	</div>
 }
