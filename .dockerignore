@@ -1,0 +1,10 @@
+# Exclude heavy dirs not needed in image build context
+node_modules
+.git
+.github
+.build
+test
+tests
+src
+build
+scripts
