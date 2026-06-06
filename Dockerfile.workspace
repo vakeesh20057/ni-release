@@ -45,9 +45,10 @@ RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
     && apt-get install -y nodejs \
     && rm -rf /var/lib/apt/lists/*
 
-RUN groupadd -g 1000 coder 2>/dev/null || true && \
-    useradd -u 1000 -g coder -m -s /bin/bash coder 2>/dev/null || \
-    usermod -u 1000 -g 1000 -s /bin/bash $(getent passwd 1000 | cut -d: -f1) 2>/dev/null || true
+# Ubuntu 24.04 ships with 'ubuntu' user at uid/gid 1000 — rename to 'coder'
+RUN usermod -l coder ubuntu && groupmod -n coder ubuntu && \
+    usermod -d /home/coder -m coder && \
+    chsh -s /bin/bash coder
 
 COPY --from=builder /build/out-build /app/out
 COPY --from=builder /build/extensions /app/extensions
