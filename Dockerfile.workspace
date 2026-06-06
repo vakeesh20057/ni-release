@@ -53,11 +53,9 @@ COPY --from=builder /build/out-build /app/out
 COPY --from=builder /build/extensions /app/extensions
 COPY --from=builder /build/resources /app/resources
 COPY --from=builder /build/package.json /build/product.json /app/
+COPY --from=builder /build/node_modules /app/node_modules
 
-# Production node_modules only
-WORKDIR /app
-COPY --from=builder /build/package-lock.json ./
-RUN npm ci --omit=dev --ignore-scripts --legacy-peer-deps && chown -R coder:coder /app
+RUN chown -R coder:coder /app
 
 USER coder
 WORKDIR /home/coder
