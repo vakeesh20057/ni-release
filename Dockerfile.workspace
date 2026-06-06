@@ -20,7 +20,7 @@ COPY . .
 
 RUN npm config set fetch-retry-mintimeout 20000 \
     && npm config set fetch-retries 5 \
-    && npm ci --ignore-scripts
+    && npm ci
 
 ENV NODE_OPTIONS="--max-old-space-size=8192"
 RUN npm run buildreact
