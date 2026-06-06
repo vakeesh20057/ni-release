@@ -33,7 +33,7 @@ RUN sed -i 's/emitError: true, transpileOnly: false/emitError: false, transpileO
 RUN node node_modules/.bin/gulp compile-build-without-mangling
 
 # Web bundle (produces out-vscode-web/ — the browser workbench)
-RUN node node_modules/.bin/gulp bundle-vscode-web
+RUN node node_modules/.bin/gulp vscode-web-ci
 
 # Extensions
 RUN node node_modules/.bin/gulp compile-extensions-build
