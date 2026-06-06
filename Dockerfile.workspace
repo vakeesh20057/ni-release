@@ -66,6 +66,11 @@ COPY --from=builder /build/resources /app/resources
 COPY --from=builder /build/package.json /build/product.json /app/
 COPY --from=builder /build/node_modules /app/node_modules
 
+# Merge web bundle CSS into the server out path where serve-web expects it
+RUN cp /app/out-vscode-web/vs/workbench/workbench.web.main.internal.css \
+       /app/out/vs/code/browser/workbench/workbench.css 2>/dev/null || true && \
+    cp -r /app/out-vscode-web/media /app/out/vs/code/browser/workbench/media 2>/dev/null || true
+
 RUN chown -R coder:coder /app
 
 USER coder
