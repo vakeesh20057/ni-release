@@ -18,6 +18,7 @@ RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
 WORKDIR /build
 COPY . .
 
+RUN git init && git config user.email "build@neuralinverse.com" && git config user.name "build"
 RUN npm config set fetch-retry-mintimeout 20000 \
     && npm config set fetch-retries 5 \
     && npm ci
