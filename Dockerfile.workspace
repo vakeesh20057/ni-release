@@ -1,4 +1,5 @@
-# Neural Inverse workspace image — full source build
+# Neural Inverse workspace image
+# Uses code-server as the web shell, backed by the NI-compiled VS Code.
 # Build: az acr build --registry neuralinverseregistry -t ni-workspace:latest -f Dockerfile.workspace .
 
 FROM ubuntu:22.04 AS builder
@@ -10,7 +11,6 @@ RUN apt-get update -qq && apt-get install -y \
     libx11-dev libxkbfile-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# Node 20
 RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
     && apt-get install -y nodejs \
     && rm -rf /var/lib/apt/lists/*
@@ -25,10 +25,17 @@ RUN npm config set fetch-retry-mintimeout 20000 \
 
 ENV NODE_OPTIONS="--max-old-space-size=8192"
 RUN npm run buildreact
-# Patch emitError to false so upstream TS errors don't abort the build
-RUN sed -i 's/emitError: true, transpileOnly: false/emitError: false, transpileOnly: false/g' node_modules/.bin/../../build/lib/compilation.js 2>/dev/null || \
-    sed -i 's/emitError: true, transpileOnly: false/emitError: false, transpileOnly: false/g' build/lib/compilation.js || true
+
+# Patch emitError to false so upstream TS type errors don't abort the build
+RUN sed -i 's/emitError: true, transpileOnly: false/emitError: false, transpileOnly: false/g' build/lib/compilation.js || true
+
+# Server-side build (produces out-build/)
 RUN node node_modules/.bin/gulp compile-build-without-mangling
+
+# Web bundle (produces out-vscode-web/ — the browser workbench)
+RUN node node_modules/.bin/gulp bundle-vscode-web
+
+# Extensions
 RUN node node_modules/.bin/gulp compile-extensions-build
 
 # ---------------------------------------------------------------------------
@@ -50,7 +57,10 @@ RUN usermod -l coder ubuntu && groupmod -n coder ubuntu && \
     usermod -d /home/coder -m coder && \
     chsh -s /bin/bash coder
 
+# Server runtime
 COPY --from=builder /build/out-build /app/out
+# Browser workbench bundle
+COPY --from=builder /build/out-vscode-web /app/out-vscode-web
 COPY --from=builder /build/extensions /app/extensions
 COPY --from=builder /build/resources /app/resources
 COPY --from=builder /build/package.json /build/product.json /app/
