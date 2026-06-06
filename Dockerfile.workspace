@@ -49,15 +49,15 @@ RUN groupadd -g 1000 coder 2>/dev/null || true && \
     useradd -u 1000 -g coder -m -s /bin/bash coder 2>/dev/null || \
     usermod -u 1000 -g 1000 -s /bin/bash $(getent passwd 1000 | cut -d: -f1) 2>/dev/null || true
 
-COPY --from=builder --chown=coder:coder /build/out-build /app/out
-COPY --from=builder --chown=coder:coder /build/extensions /app/extensions
-COPY --from=builder --chown=coder:coder /build/resources /app/resources
-COPY --from=builder --chown=coder:coder /build/package.json /build/product.json /app/
+COPY --from=builder /build/out-build /app/out
+COPY --from=builder /build/extensions /app/extensions
+COPY --from=builder /build/resources /app/resources
+COPY --from=builder /build/package.json /build/product.json /app/
 
 # Production node_modules only
 WORKDIR /app
 COPY --from=builder /build/package-lock.json ./
-RUN npm ci --omit=dev --ignore-scripts --legacy-peer-deps && chown -R coder:coder /app/node_modules
+RUN npm ci --omit=dev --ignore-scripts --legacy-peer-deps && chown -R coder:coder /app
 
 USER coder
 WORKDIR /home/coder
