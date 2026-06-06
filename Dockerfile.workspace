@@ -1,0 +1,48 @@
+# Neural Inverse workspace image — pre-built out/ + extensions/
+# Build: az acr build --registry neuralinverseregistry -t ni-workspace:latest -f Dockerfile.workspace .
+
+FROM ubuntu:22.04
+
+ENV DEBIAN_FRONTEND=noninteractive
+RUN apt-get update -qq && apt-get install -y \
+    curl git ca-certificates \
+    libsecret-1-0 libkrb5-3 \
+    libx11-6 libxkbfile1 libnss3 \
+    && rm -rf /var/lib/apt/lists/*
+
+# Node 20
+RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
+    && apt-get install -y nodejs \
+    && rm -rf /var/lib/apt/lists/*
+
+# Non-root user matching Coder conventions
+RUN groupadd -g 1000 coder && useradd -u 1000 -g coder -m -s /bin/bash coder
+
+WORKDIR /app
+
+# Copy pre-built output and manifests (node_modules excluded via .dockerignore)
+COPY --chown=coder:coder out ./out
+COPY --chown=coder:coder extensions ./extensions
+COPY --chown=coder:coder resources ./resources
+COPY --chown=coder:coder package.json package-lock.json product.json ./
+
+# Install only production dependencies inside the image
+RUN npm ci --omit=dev --ignore-scripts \
+    && chown -R coder:coder /app/node_modules
+
+USER coder
+WORKDIR /home/coder
+
+EXPOSE 13337
+
+# NEURALINVERSE_AGENT_TOKEN and NEURALINVERSE_AGENT_URL injected by Coder template.
+CMD ["sh", "-c", \
+  "curl -fsSL \"${NEURALINVERSE_AGENT_URL:-https://cloud.neuralinverse.com}/api/v2/init-script/linux/amd64\" \
+     | NEURALINVERSE_AGENT_TOKEN=\"$NEURALINVERSE_AGENT_TOKEN\" sh & \
+   node /app/out/server-main.js \
+     serve-web \
+     --host 0.0.0.0 \
+     --port 13337 \
+     --without-connection-token \
+     --server-data-dir /home/coder/.neuralinverse-server \
+   "]
