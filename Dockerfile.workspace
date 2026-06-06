@@ -1,6 +1,33 @@
-# Neural Inverse workspace image — pre-built out/ + extensions/
+# Neural Inverse workspace image — full source build
 # Build: az acr build --registry neuralinverseregistry -t ni-workspace:latest -f Dockerfile.workspace .
 
+FROM ubuntu:22.04 AS builder
+
+ENV DEBIAN_FRONTEND=noninteractive
+RUN apt-get update -qq && apt-get install -y \
+    curl git ca-certificates python3 make g++ \
+    libsecret-1-dev libkrb5-dev \
+    libx11-dev libxkbfile-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# Node 20
+RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
+    && apt-get install -y nodejs \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /build
+COPY . .
+
+RUN npm config set fetch-retry-mintimeout 20000 \
+    && npm config set fetch-retries 5 \
+    && npm ci --ignore-scripts
+
+ENV NODE_OPTIONS="--max-old-space-size=8192"
+RUN npm run buildreact
+RUN node node_modules/.bin/gulp compile-build-without-mangling
+RUN node node_modules/.bin/gulp compile-extensions-build
+
+# ---------------------------------------------------------------------------
 FROM ubuntu:22.04
 
 ENV DEBIAN_FRONTEND=noninteractive
@@ -10,29 +37,24 @@ RUN apt-get update -qq && apt-get install -y \
     libx11-6 libxkbfile1 libnss3 \
     && rm -rf /var/lib/apt/lists/*
 
-# Node 20
 RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
     && apt-get install -y nodejs \
     && rm -rf /var/lib/apt/lists/*
 
-# Non-root user matching Coder conventions
 RUN groupadd -g 1000 coder && useradd -u 1000 -g coder -m -s /bin/bash coder
 
+COPY --from=builder --chown=coder:coder /build/out /app/out
+COPY --from=builder --chown=coder:coder /build/extensions /app/extensions
+COPY --from=builder --chown=coder:coder /build/resources /app/resources
+COPY --from=builder --chown=coder:coder /build/package.json /build/product.json /app/
+
+# Production node_modules only
 WORKDIR /app
-
-# Copy pre-built output and manifests (node_modules excluded via .dockerignore)
-COPY --chown=coder:coder out ./out
-COPY --chown=coder:coder extensions ./extensions
-COPY --chown=coder:coder resources ./resources
-COPY --chown=coder:coder package.json package-lock.json product.json ./
-
-# Install only production dependencies inside the image
-RUN npm ci --omit=dev --ignore-scripts \
-    && chown -R coder:coder /app/node_modules
+COPY --from=builder /build/package-lock.json ./
+RUN npm ci --omit=dev --ignore-scripts && chown -R coder:coder /app/node_modules
 
 USER coder
 WORKDIR /home/coder
-
 EXPOSE 13337
 
 # NEURALINVERSE_AGENT_TOKEN and NEURALINVERSE_AGENT_URL injected by Coder template.
