@@ -6,7 +6,7 @@
 import { IVoidInternalTool } from '../../../../void/browser/voidInternalToolService.js';
 import { IFirmwareSessionService } from '../../firmwareSessionService.js';
 import { ILogicAnalyzerService } from '../instruments/logicAnalyzer/logicAnalyzerService.js';
-import { ILogicChannel, IProtocolConfig, IDecodedFrame, LogicProtocol } from '../instruments/logicAnalyzer/logicAnalyzerTypes.js';
+import { ILogicChannel, IProtocolConfig, LogicProtocol } from '../instruments/logicAnalyzer/logicAnalyzerTypes.js';
 
 
 export function buildLogicAnalyzerTools(
@@ -275,7 +275,7 @@ function _fwLaExport(la: ILogicAnalyzerService): IVoidInternalTool {
 
 			// Write via Node.js fs (available in VS Code extension host)
 			const fs = (globalThis as Record<string, unknown>)['require']
-				? ((globalThis as Record<string, unknown>)['require']('fs') as typeof import('fs'))
+				? (((globalThis as Record<string, unknown>)['require'] as (m: string) => unknown)('fs') as typeof import('fs'))
 				: null;
 
 			if (fs) {
@@ -293,18 +293,4 @@ function _fwLaExport(la: ILogicAnalyzerService): IVoidInternalTool {
 			].join('\n');
 		},
 	};
-}
-
-
-// ─── Helpers ─────────────────────────────────────────────────────────────────
-
-function _formatFrameTable(frames: IDecodedFrame[]): string {
-	const lines: string[] = [];
-	for (const f of frames) {
-		const ts = `${f.timestamp.toFixed(6)}s`;
-		const addr = f.address !== undefined ? ` addr=0x${f.address.toString(16).toUpperCase().padStart(2, '0')}` : '';
-		const err = f.error ? ` [ERR: ${f.error}]` : '';
-		lines.push(`  ${ts.padEnd(14)}${f.protocol.toUpperCase().padEnd(8)}${addr.padEnd(12)}${f.dataHex}  "${f.dataAscii}"${err}`);
-	}
-	return lines.join('\n');
 }
