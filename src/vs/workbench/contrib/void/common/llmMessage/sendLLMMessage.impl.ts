@@ -5,14 +5,15 @@
 
 // disable foreign import complaints
 /* eslint-disable */
-import Anthropic from '@anthropic-ai/sdk';
-import { Ollama } from 'ollama';
-import OpenAI, { ClientOptions, AzureOpenAI } from 'openai';
-import { MistralCore } from '@mistralai/mistralai/core.js';
-import { fimComplete } from '@mistralai/mistralai/funcs/fimComplete.js';
-import { Tool as GeminiTool, FunctionDeclaration, GoogleGenAI, ThinkingConfig, Schema, Type } from '@google/genai';
-// google-auth-library and @aws-sdk/* use Node.js crypto — not available in browser.
-// These providers are stubbed out in the web copy; they throw at runtime if invoked.
+// Import from the pre-built browser bundle (scripts/build-llm-bundle.mjs).
+// This avoids bundling Node-only CJS modules (node-fetch, node:fs, google-auth-library, etc.)
+// into the VS Code web bundle where they cause "Dynamic require" errors.
+import { Anthropic, Ollama, OpenAI, AzureOpenAI, MistralCore, fimComplete, GoogleGenAI, Type } from '../../browser/llmMessage/llmSdkBundle.js';
+// ClientOptions type only — no runtime import needed
+type ClientOptions = ConstructorParameters<typeof OpenAI>[0];
+// Tool types from @google/genai — these are just interfaces, safe to re-declare
+type GeminiTool = any; type FunctionDeclaration = any; type ThinkingConfig = any; type Schema = any;
+// google-auth-library and @aws-sdk/* are Node.js-only — stub them out.
 const GoogleAuth = class { async getAccessToken() { throw new Error('Google Vertex not supported in web mode'); } };
 const BedrockRuntimeClient = class { send() { throw new Error('AWS Bedrock not supported in web mode'); } };
 const ConverseStreamCommand = class {};

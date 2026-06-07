@@ -31,35 +31,11 @@ RUN npm run buildreact
 # Patch emitError so upstream TS type errors don't abort the build
 RUN sed -i 's/emitError: true, transpileOnly: false/emitError: false, transpileOnly: false/g' build/lib/compilation.js || true
 
-# Patch SDK packages to use browser-safe shims before the gulp bundle step.
-# esbuild resolves the CJS main entry (via require.resolve) which loads Node-only shims.
-# Fix 1: @anthropic-ai/sdk and openai — redirect runtime-node.js -> runtime.js (web shim)
-RUN for f in \
-      node_modules/@anthropic-ai/sdk/_shims/auto/runtime-node.js \
-      node_modules/@anthropic-ai/sdk/_shims/auto/runtime-node.mjs \
-      node_modules/openai/_shims/auto/runtime-node.js \
-      node_modules/openai/_shims/auto/runtime-node.mjs; do \
-    [ -f "$f" ] && printf '%s\n' \
-      '"use strict";' \
-      'Object.defineProperty(exports,"__esModule",{value:true});' \
-      'var web=require("./runtime.js");' \
-      'Object.keys(web).forEach(function(k){if(k!=="default"&&!Object.prototype.hasOwnProperty.call(exports,k)){Object.defineProperty(exports,k,{enumerable:true,get:function(){return web[k];}});}});' \
-      > "$f"; \
-  done || true
-# Fix 2: @google/genai — redirect node entry to neutral entry (no google-auth-library)
-RUN printf '%s\n' '"use strict";' 'module.exports = require("../index.js");' \
-    > node_modules/@google/genai/dist/node/index.js || true
-# Fix 3: ollama — redirect main index to browser entry (no node:fs),
-# then strip the whatwg-fetch polyfill require (browser has native fetch)
-RUN node -e " \
-  var fs=require('fs'); \
-  var b=fs.readFileSync('node_modules/ollama/dist/browser.cjs','utf8'); \
-  b=b.replace(/require\(['\"]whatwg-fetch['\"]\);?/g,''); \
-  fs.writeFileSync('node_modules/ollama/dist/index.cjs', b); \
-  var bm=fs.readFileSync('node_modules/ollama/dist/browser.mjs','utf8'); \
-  bm=bm.replace(/import\s+['\"]whatwg-fetch['\"];?/g,''); \
-  fs.writeFileSync('node_modules/ollama/dist/index.mjs', bm); \
-" || true
+# Pre-bundle LLM SDKs into a single browser-compatible ESM file.
+# This avoids injecting Node-only CJS helpers (__values, __await etc.) into the
+# VS Code web bundle, which causes "symbol already declared" esbuild errors.
+# Output: src/vs/workbench/contrib/void/browser/llmMessage/llmSdkBundle.js
+RUN npm run build-llm-bundle
 
 # Step 1: Compile TS (with errors patched to warnings)
 RUN node node_modules/.bin/gulp compile-build-without-mangling
