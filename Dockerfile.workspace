@@ -58,6 +58,7 @@ RUN usermod -l coder ubuntu && groupmod -n coder ubuntu && \
 
 # Copy the bundled+minified reh-web output (server + browser all-in-one)
 COPY --from=builder /build/out-vscode-reh-web-min /app
+COPY --from=builder /build/product.json /product.json
 COPY --from=builder /build/extensions /app/extensions
 COPY --from=builder /build/node_modules /app/node_modules
 
