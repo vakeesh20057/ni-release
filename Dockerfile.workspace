@@ -46,7 +46,10 @@ RUN for f in \
       'Object.keys(web).forEach(function(k){if(k!=="default"&&!Object.prototype.hasOwnProperty.call(exports,k)){Object.defineProperty(exports,k,{enumerable:true,get:function(){return web[k];}});}});' \
       > "$f"; \
   done || true
-# Fix 2: ollama — redirect main index to browser entry (no node:fs),
+# Fix 2: @google/genai — redirect node entry to neutral entry (no google-auth-library)
+RUN printf '%s\n' '"use strict";' 'module.exports = require("../index.js");' \
+    > node_modules/@google/genai/dist/node/index.js || true
+# Fix 3: ollama — redirect main index to browser entry (no node:fs),
 # then strip the whatwg-fetch polyfill require (browser has native fetch)
 RUN node -e " \
   var fs=require('fs'); \
