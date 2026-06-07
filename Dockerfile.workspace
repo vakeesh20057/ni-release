@@ -37,6 +37,10 @@ RUN node node_modules/.bin/gulp minify-vscode-reh-web
 # Extensions
 RUN node node_modules/.bin/gulp compile-extensions-build
 
+# Copy CSS files from unbundled output into the bundled output (the esbuild bundler
+# externalizes CSS imports, so the browser loads them at runtime)
+RUN cd out-build && find . -name "*.css" -exec sh -c 'mkdir -p "/build/out-vscode-reh-web-min/$(dirname "$1")" && cp "$1" "/build/out-vscode-reh-web-min/$1"' _ {} \;
+
 # ---------------------------------------------------------------------------
 FROM ubuntu:24.04
 
@@ -69,6 +73,7 @@ COPY --from=builder /build/package.json /ide/package.json
 COPY --from=builder /build/resources /ide/resources
 COPY --from=builder /build/extensions /ide/extensions
 COPY --from=builder /build/node_modules /ide/node_modules
+
 
 RUN chown -R coder:coder /ide
 
