@@ -1,4 +1,4 @@
-# Neural Inverse workspace image
+# Neural Inverse Cloud Workspace Image
 # Build: az acr build --registry neuralinverseregistry -t ni-workspace:latest -f Dockerfile.workspace .
 
 FROM ubuntu:22.04 AS builder
@@ -17,7 +17,10 @@ RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
 WORKDIR /build
 COPY . .
 
-RUN git init && git config user.email "build@neuralinverse.com" && git config user.name "build"
+# Git init with a commit so the build can derive a commit hash for product.json
+RUN git init && git add -A && git config user.email "build@neuralinverse.com" \
+    && git config user.name "build" && git commit -m "build" --allow-empty
+
 RUN npm config set fetch-retry-mintimeout 20000 \
     && npm config set fetch-retries 5 \
     && npm ci
@@ -25,21 +28,21 @@ RUN npm config set fetch-retry-mintimeout 20000 \
 ENV NODE_OPTIONS="--max-old-space-size=8192"
 RUN npm run buildreact
 
-# Patch emitError to false so upstream TS type errors don't abort the build
+# Patch emitError so upstream TS type errors don't abort the build
 RUN sed -i 's/emitError: true, transpileOnly: false/emitError: false, transpileOnly: false/g' build/lib/compilation.js || true
 
-# Compile TS to unbundled JS (prerequisite for bundling)
+# Step 1: Compile TS (with errors patched to warnings)
 RUN node node_modules/.bin/gulp compile-build-without-mangling
 
-# Bundle + minify for serve-web (produces out-vscode-reh-web/ then out-vscode-reh-web-min/)
-RUN node node_modules/.bin/gulp minify-vscode-reh-web
-
-# Extensions
+# Step 2: Build extensions
 RUN node node_modules/.bin/gulp compile-extensions-build
 
-# Copy CSS files from unbundled output into the bundled output (the esbuild bundler
-# externalizes CSS imports, so the browser loads them at runtime)
-RUN cd out-build && find . -name "*.css" -exec sh -c 'mkdir -p "/build/out-vscode-reh-web-min/$(dirname "$1")" && cp "$1" "/build/out-vscode-reh-web-min/$1"' _ {} \;
+# Step 3: Bundle + minify
+RUN node node_modules/.bin/gulp minify-vscode-reh-web
+
+# Step 4: Package into correct directory structure (the step we were missing)
+# The -ci variant skips compilation (already done) and runs: native extensions + node download + packageTask
+RUN node node_modules/.bin/gulp vscode-reh-web-linux-x64-min-ci
 
 # ---------------------------------------------------------------------------
 FROM ubuntu:24.04
@@ -60,20 +63,16 @@ RUN usermod -l coder ubuntu && groupmod -n coder ubuntu && \
     usermod -d /home/coder -m coder && \
     chsh -s /bin/bash coder
 
-# Layout must match VS Code's expected structure:
-#   /ide/          ← APP_ROOT (dirname of _VSCODE_FILE_ROOT)
-#   /ide/out/      ← _VSCODE_FILE_ROOT (dirname of server-main.js)
-#   /ide/product.json, package.json ← required at APP_ROOT
-#   /ide/resources/ ← static assets (icons, manifest)
-#   /ide/extensions/ ← built-in extensions
-#   /ide/node_modules/ ← runtime deps
-COPY --from=builder /build/out-vscode-reh-web-min /ide/out
-COPY --from=builder /build/product.json /ide/product.json
-COPY --from=builder /build/package.json /ide/package.json
-COPY --from=builder /build/resources /ide/resources
-COPY --from=builder /build/extensions /ide/extensions
-COPY --from=builder /build/node_modules /ide/node_modules
-
+# The packageTask outputs to BUILD_ROOT (parent of /build), with correct structure:
+#   /ide/out/          - bundled+minified server+browser code
+#   /ide/product.json  - with commit+date injected
+#   /ide/package.json  - from remote/package.json
+#   /ide/node_modules/ - production deps only
+#   /ide/extensions/   - built extensions
+#   /ide/resources/    - favicon, icons, manifest
+#   /ide/bin/          - launcher scripts
+#   /ide/node          - node binary
+COPY --from=builder /vscode-reh-web-linux-x64 /ide
 
 RUN chown -R coder:coder /ide
 
@@ -81,11 +80,10 @@ USER coder
 WORKDIR /home/coder
 EXPOSE 13337
 
-# NEURALINVERSE_AGENT_TOKEN and NEURALINVERSE_AGENT_URL injected by Coder template.
 CMD ["sh", "-c", \
   "curl -fsSL \"${NEURALINVERSE_AGENT_URL:-https://cloud.neuralinverse.com}/api/v2/init-script/linux/amd64\" \
      | NEURALINVERSE_AGENT_TOKEN=\"$NEURALINVERSE_AGENT_TOKEN\" sh & \
-   node /ide/out/server-main.js \
+   /ide/node /ide/out/server-main.js \
      --host 0.0.0.0 \
      --port 13337 \
      --without-connection-token \
