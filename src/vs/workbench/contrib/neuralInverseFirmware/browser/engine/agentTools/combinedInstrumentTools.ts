@@ -226,8 +226,8 @@ async function _scenarioI2CNack(
 	args: Record<string, unknown>,
 ): Promise<string> {
 	const sdaChannel = typeof args.sdaChannel === 'number' ? args.sdaChannel : 0;
-	const sclChannel = typeof args.sclChannel === 'number' ? args.sclChannel : 1;
-	const baudRate = typeof args.i2cBaudRate === 'number' ? args.i2cBaudRate : 400000;
+	const sclCh = typeof args.sclChannel === 'number' ? args.sclChannel : 1;
+	
 
 	const results: string[] = [
 		`=== I2C NACK Hunt ===`,

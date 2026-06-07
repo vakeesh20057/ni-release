@@ -6,7 +6,7 @@
 import { IVoidInternalTool } from '../../../../void/browser/voidInternalToolService.js';
 import { IFirmwareSessionService } from '../../firmwareSessionService.js';
 import { IRTTService } from '../serial/rttService.js';
-import { IITMService, DEFAULT_ITM_CONFIG } from '../serial/itmService.js';
+import { IITMService } from '../serial/itmService.js';
 
 
 export function buildRTTTools(

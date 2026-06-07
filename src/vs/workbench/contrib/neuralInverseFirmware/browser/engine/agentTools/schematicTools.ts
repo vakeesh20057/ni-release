@@ -162,9 +162,8 @@ function _fwPinoutExport(schematic: ISchematicService): IVoidInternalTool {
 			if (format === 'svg') {
 				const svg = schematic.exportSVG();
 
-				const fs = (globalThis as Record<string, unknown>)['require']
-					? ((globalThis as Record<string, unknown>)['require']('fs') as typeof import('fs'))
-					: null;
+				const _fsReq = (globalThis as Record<string, unknown>)['require'] as ((m: string) => unknown) | undefined;
+				const fs = _fsReq ? (_fsReq('fs') as typeof import('fs')) : null;
 
 				if (fs) {
 					const dir = path.substring(0, path.lastIndexOf('/'));

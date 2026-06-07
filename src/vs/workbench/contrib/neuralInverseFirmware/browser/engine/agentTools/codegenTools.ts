@@ -552,7 +552,6 @@ function _generateDMAConfig(
 		].join('\n');
 	}
 	if (fam.startsWith('RP20')) {
-		const ch = 0;
 		return [
 			`/* RP2040 DMA for ${periph} — ${dir} (pico-sdk) */`,
 			`#include "hardware/dma.h"`,
