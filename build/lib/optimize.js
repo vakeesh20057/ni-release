@@ -119,7 +119,7 @@ function bundleESMTask(opts) {
                     });
                     // Bundle LLM SDK packages into the web output so they work in the browser
                     // (these are fetch-based and have no Node.js runtime dependencies)
-                    const llmSdkFilter = /^(@anthropic-ai\/sdk|openai|ollama|@mistralai\/mistralai|@google\/genai)(\/.+)?$/;
+                    const llmSdkFilter = /^(@anthropic-ai\/sdk|openai|ollama|@mistralai\/mistralai|@google\/genai|@google-cloud\/.+)(\/.+)?$/;
                     build.onResolve({ filter: llmSdkFilter }, (args) => {
                         return { path: require.resolve(args.path, { paths: [REPO_ROOT_PATH] }), external: false };
                     });

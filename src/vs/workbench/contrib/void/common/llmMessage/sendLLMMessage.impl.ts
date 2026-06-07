@@ -11,9 +11,12 @@ import OpenAI, { ClientOptions, AzureOpenAI } from 'openai';
 import { MistralCore } from '@mistralai/mistralai/core.js';
 import { fimComplete } from '@mistralai/mistralai/funcs/fimComplete.js';
 import { Tool as GeminiTool, FunctionDeclaration, GoogleGenAI, ThinkingConfig, Schema, Type } from '@google/genai';
-import { GoogleAuth } from 'google-auth-library'
-import { BedrockRuntimeClient, ConverseStreamCommand } from '@aws-sdk/client-bedrock-runtime';
-import { defaultProvider as awsDefaultProvider } from '@aws-sdk/credential-provider-node';
+// google-auth-library and @aws-sdk/* use Node.js crypto — not available in browser.
+// These providers are stubbed out in the web copy; they throw at runtime if invoked.
+const GoogleAuth = class { async getAccessToken() { throw new Error('Google Vertex not supported in web mode'); } };
+const BedrockRuntimeClient = class { send() { throw new Error('AWS Bedrock not supported in web mode'); } };
+const ConverseStreamCommand = class {};
+const awsDefaultProvider = () => { throw new Error('AWS credentials not supported in web mode'); };
 /* eslint-enable */
 
 import { AnthropicLLMChatMessage, GeminiLLMChatMessage, LLMChatMessage, LLMFIMMessage, ModelListParams, OllamaModelResponse, OnError, OnFinalMessage, OnText, RawToolCallObj, RawToolParamsObj } from '../sendLLMMessageTypes.js';
