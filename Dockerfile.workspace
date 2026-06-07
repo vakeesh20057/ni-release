@@ -56,16 +56,21 @@ RUN usermod -l coder ubuntu && groupmod -n coder ubuntu && \
     usermod -d /home/coder -m coder && \
     chsh -s /bin/bash coder
 
-# Copy the bundled+minified reh-web output (server + browser all-in-one)
-COPY --from=builder /build/out-vscode-reh-web-min /app
-COPY --from=builder /build/product.json /product.json
-COPY --from=builder /build/package.json /package.json
-COPY --from=builder /build/extensions /app/extensions
-COPY --from=builder /build/node_modules /app/node_modules
+# Layout must match VS Code's expected structure:
+#   /ide/          ← APP_ROOT (dirname of _VSCODE_FILE_ROOT)
+#   /ide/out/      ← _VSCODE_FILE_ROOT (dirname of server-main.js)
+#   /ide/product.json, package.json ← required at APP_ROOT
+#   /ide/resources/ ← static assets (icons, manifest)
+#   /ide/extensions/ ← built-in extensions
+#   /ide/node_modules/ ← runtime deps
+COPY --from=builder /build/out-vscode-reh-web-min /ide/out
+COPY --from=builder /build/product.json /ide/product.json
+COPY --from=builder /build/package.json /ide/package.json
+COPY --from=builder /build/resources /ide/resources
+COPY --from=builder /build/extensions /ide/extensions
+COPY --from=builder /build/node_modules /ide/node_modules
 
-RUN ln -s /app /out
-COPY --from=builder /build/resources /resources
-RUN chown -R coder:coder /app
+RUN chown -R coder:coder /ide
 
 USER coder
 WORKDIR /home/coder
@@ -75,7 +80,7 @@ EXPOSE 13337
 CMD ["sh", "-c", \
   "curl -fsSL \"${NEURALINVERSE_AGENT_URL:-https://cloud.neuralinverse.com}/api/v2/init-script/linux/amd64\" \
      | NEURALINVERSE_AGENT_TOKEN=\"$NEURALINVERSE_AGENT_TOKEN\" sh & \
-   cd /app && node server-main.js \
+   node /ide/out/server-main.js \
      --host 0.0.0.0 \
      --port 13337 \
      --without-connection-token \
