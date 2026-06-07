@@ -118,18 +118,12 @@ function bundleESMTask(opts: IBundleESMTaskOpts): NodeJS.ReadWriteStream {
 						return { path: path.join(REPO_ROOT_PATH, 'node_modules', 'minimist', 'index.js'), external: false };
 					});
 					// Bundle LLM SDK packages into the web output so they work in the browser.
-					// Use build.resolve() with conditions:['browser'] so the SDK's browser export
-					// condition is respected (e.g. @anthropic-ai/sdk picks web-runtime not node-runtime).
-					const llmSdkFilter = /^(@anthropic-ai\/sdk|openai|ollama|@mistralai\/mistralai|@google\/genai|@google-cloud\/.+)(\/.+)?$/;
-					build.onResolve({ filter: llmSdkFilter }, async (args) => {
-						if (args.pluginData?.skipLLMSdkOverride) { return undefined; } // avoid infinite loop
-						const result = await build.resolve(args.path, {
-							resolveDir: args.resolveDir || path.join(REPO_ROOT_PATH, 'node_modules'),
-							kind: args.kind,
-							pluginData: { skipLLMSdkOverride: true },
-						});
-						if (result.errors.length > 0) { return { errors: result.errors }; }
-						return { path: result.path, external: false };
+					// require.resolve picks the CJS main entry which esbuild then bundles.
+					// The Anthropic SDK node-runtime shim is redirected to web-runtime by
+					// the llm-sdk-bundle.js pre-bundle step (see Dockerfile.workspace).
+					const llmSdkFilter = /^(@anthropic-ai\/sdk|openai|ollama|@mistralai\/mistralai|@google\/genai)(\/.+)?$/;
+					build.onResolve({ filter: llmSdkFilter }, (args) => {
+						return { path: require.resolve(args.path, { paths: [REPO_ROOT_PATH] }), external: false };
 					});
 				},
 			};

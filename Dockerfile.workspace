@@ -31,6 +31,20 @@ RUN npm run buildreact
 # Patch emitError so upstream TS type errors don't abort the build
 RUN sed -i 's/emitError: true, transpileOnly: false/emitError: false, transpileOnly: false/g' build/lib/compilation.js || true
 
+# Patch @anthropic-ai/sdk to use the browser-safe shim instead of the Node shim.
+# esbuild bundles the CJS main entry which loads runtime-node.js -> node-fetch (Node-only).
+# Overwrite runtime-node.js and types-node files to re-export the browser-safe runtime instead.
+RUN for f in \
+      node_modules/@anthropic-ai/sdk/_shims/auto/runtime-node.js \
+      node_modules/@anthropic-ai/sdk/_shims/auto/runtime-node.mjs; do \
+    [ -f "$f" ] && printf '%s\n' \
+      '"use strict";' \
+      'Object.defineProperty(exports,"__esModule",{value:true});' \
+      'var web=require("./runtime.js");' \
+      'Object.keys(web).forEach(function(k){if(k!=="default"&&!Object.prototype.hasOwnProperty.call(exports,k)){Object.defineProperty(exports,k,{enumerable:true,get:function(){return web[k];}});}});' \
+      > "$f"; \
+  done || true
+
 # Step 1: Compile TS (with errors patched to warnings)
 RUN node node_modules/.bin/gulp compile-build-without-mangling
 
