@@ -1,0 +1,136 @@
+/*--------------------------------------------------------------------------------------
+ *  Copyright 2026 Neural Inverse Inc. All rights reserved.
+ *  Licensed under the Apache License, Version 2.0. See LICENSE.txt for more information.
+ *--------------------------------------------------------------------------------------*/
+
+import { SendLLMMessageParams, OnText, OnFinalMessage, OnError } from '../sendLLMMessageTypes.js';
+import { IMetricsService } from '../metricsService.js';
+import { displayInfoOfProviderName } from '../voidSettingsTypes.js';
+import { sendLLMMessageToProviderImplementation } from './sendLLMMessage.impl.js';
+
+
+export const sendLLMMessage = async ({
+	messagesType,
+	messages: messages_,
+	onText: onText_,
+	onFinalMessage: onFinalMessage_,
+	onError: onError_,
+	abortRef: abortRef_,
+	logging: { loggingName, loggingExtras },
+	settingsOfProvider,
+	modelSelection,
+	modelSelectionOptions,
+	overridesOfModel,
+	chatMode,
+	separateSystemMessage,
+	mcpTools,
+	allowedToolNames,
+}: SendLLMMessageParams,
+
+	metricsService: IMetricsService
+) => {
+
+
+	const { providerName, modelName } = modelSelection
+
+	// only captures number of messages and message "shape", no actual code, instructions, prompts, etc
+	const captureLLMEvent = (eventId: string, extras?: object) => {
+
+
+		metricsService.capture(eventId, {
+			providerName,
+			modelName,
+			customEndpointURL: settingsOfProvider[providerName]?.endpoint,
+			numModelsAtEndpoint: settingsOfProvider[providerName]?.models?.length,
+			...messagesType === 'chatMessages' ? {
+				numMessages: messages_?.length,
+			} : messagesType === 'FIMMessage' ? {
+				prefixLength: messages_.prefix.length,
+				suffixLength: messages_.suffix.length,
+			} : {},
+			...loggingExtras,
+			...extras,
+		})
+	}
+	let _aborter: (() => void) | null = null
+	let _setAborter = (fn: () => void) => { _aborter = fn }
+	let _didAbort = false
+
+	const onText: OnText = (params) => {
+		if (_didAbort) return
+		onText_(params)
+	}
+
+	const onFinalMessage: OnFinalMessage = (params) => {
+		if (_didAbort) return
+		onFinalMessage_(params)
+	}
+
+	const onError: OnError = ({ message: errorMessage, fullError }) => {
+		if (_didAbort) return
+		console.error('sendLLMMessage onError:', errorMessage)
+		// Log the full stack trace — this is the only place we can capture it before IPC serialization loses it
+		if (fullError instanceof Error && fullError.stack) {
+			console.error('[sendLLMMessage] STACK TRACE:', fullError.stack);
+		} else if (fullError) {
+			console.error('[sendLLMMessage] fullError (no stack):', fullError);
+		}
+
+		// handle failed to fetch errors, which give 0 information by design
+		if (errorMessage === 'TypeError: fetch failed')
+			errorMessage = `Failed to fetch from ${displayInfoOfProviderName(providerName).title}. This likely means you specified the wrong endpoint in Neural Inverse LLM Settings, or your local model provider like Ollama is powered off.`
+
+		captureLLMEvent('LLM Error', { error: errorMessage })
+		onError_({ message: errorMessage, fullError })
+	}
+
+	// we should NEVER call onAbort internally, only from the outside
+	const onAbort = () => {
+		try { _aborter?.() } // aborter sometimes automatically throws an error
+		catch (e) { }
+		_didAbort = true
+	}
+	abortRef_.current = onAbort
+
+
+
+
+	try {
+		const implementation = sendLLMMessageToProviderImplementation[providerName]
+		if (!implementation) {
+			onError({ message: `Error: Provider "${providerName}" not recognized.`, fullError: null })
+			return
+		}
+		const { sendFIM, sendChat } = implementation
+		if (messagesType === 'chatMessages') {
+			await sendChat({ messages: messages_, onText, onFinalMessage, onError, settingsOfProvider, modelSelectionOptions, overridesOfModel, modelName, _setAborter, providerName, separateSystemMessage, chatMode, mcpTools, allowedToolNames })
+			return
+		}
+		if (messagesType === 'FIMMessage') {
+			if (sendFIM) {
+				await sendFIM({ messages: messages_, onText, onFinalMessage, onError, settingsOfProvider, modelSelectionOptions, overridesOfModel, modelName, _setAborter, providerName, separateSystemMessage })
+				return
+			}
+			onError({ message: `Error running Autocomplete with ${providerName} - ${modelName}.`, fullError: null })
+			return
+		}
+		onError({ message: `Error: Message type "${messagesType}" not recognized.`, fullError: null })
+		return
+	}
+
+	catch (error) {
+		// Log full stack trace in main process before it's lost to IPC serialization
+		if (error instanceof Error) {
+			console.error('[sendLLMMessage] FULL STACK TRACE:', error.stack || error);
+			onError({ message: error + '', fullError: error })
+		}
+		else {
+			console.error('[sendLLMMessage] Unexpected error:', error);
+			onError({ message: `Unexpected Error in sendLLMMessage: ${error}`, fullError: error });
+		}
+	}
+
+
+
+}
+

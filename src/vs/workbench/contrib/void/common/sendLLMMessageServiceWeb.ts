@@ -15,7 +15,7 @@ import {
 import { IVoidSettingsService } from './voidSettingsService.js';
 import { IMCPService } from './mcpService.js';
 import { IMetricsService } from './metricsService.js';
-import { sendLLMMessage } from '../electron-main/llmMessage/sendLLMMessage.js';
+import { sendLLMMessage } from './llmMessage/sendLLMMessage.js';
 
 // Web implementation of ILLMMessageService.
 // Calls sendLLMMessage() directly in the browser (no Electron IPC).
@@ -92,7 +92,7 @@ export class LLMMessageServiceWeb extends Disposable implements ILLMMessageServi
 		// Ollama is HTTP-based; dynamically import and call the list function directly
 		const { onSuccess, onError } = params;
 		const { settingsOfProvider } = this.voidSettingsService.state;
-		import('../electron-main/llmMessage/sendLLMMessage.impl.js').then((mod: any) => {
+		import('./llmMessage/sendLLMMessage.impl.js').then((mod: any) => {
 			const listFn = mod.sendLLMMessageToProviderImplementation?.['ollama']?.list;
 			if (!listFn) { onError({ error: 'Ollama list not available', requestId: '' }); return; }
 			listFn({ settingsOfProvider, providerName: 'ollama', onSuccess, onError });
@@ -102,7 +102,7 @@ export class LLMMessageServiceWeb extends Disposable implements ILLMMessageServi
 	openAICompatibleList(params: ServiceModelListParams<OpenaiCompatibleModelResponse>): void {
 		const { onSuccess, onError } = params;
 		const { settingsOfProvider } = this.voidSettingsService.state;
-		import('../electron-main/llmMessage/sendLLMMessage.impl.js').then((mod: any) => {
+		import('./llmMessage/sendLLMMessage.impl.js').then((mod: any) => {
 			const listFn = mod.sendLLMMessageToProviderImplementation?.['openAICompatible']?.list;
 			if (!listFn) { onError({ error: 'OpenAI-compatible list not available', requestId: '' }); return; }
 			listFn({ settingsOfProvider, providerName: 'openAICompatible', onSuccess, onError });

@@ -117,6 +117,12 @@ function bundleESMTask(opts) {
                     build.onResolve({ filter: /^minimist$/ }, () => {
                         return { path: path_1.default.join(REPO_ROOT_PATH, 'node_modules', 'minimist', 'index.js'), external: false };
                     });
+                    // Bundle LLM SDK packages into the web output so they work in the browser
+                    // (these are fetch-based and have no Node.js runtime dependencies)
+                    const llmSdkFilter = /^(@anthropic-ai\/sdk|openai|ollama|@mistralai\/mistralai|@google\/genai)(\/.+)?$/;
+                    build.onResolve({ filter: llmSdkFilter }, (args) => {
+                        return { path: require.resolve(args.path, { paths: [REPO_ROOT_PATH] }), external: false };
+                    });
                 },
             };
             const task = esbuild_1.default.build({
