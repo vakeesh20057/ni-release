@@ -46,12 +46,16 @@ RUN for f in \
       'Object.keys(web).forEach(function(k){if(k!=="default"&&!Object.prototype.hasOwnProperty.call(exports,k)){Object.defineProperty(exports,k,{enumerable:true,get:function(){return web[k];}});}});' \
       > "$f"; \
   done || true
-# Fix 2: ollama — redirect main index to browser entry (no node:fs)
+# Fix 2: ollama — redirect main index to browser entry (no node:fs),
+# then strip the whatwg-fetch polyfill require (browser has native fetch)
 RUN node -e " \
-  var b=require('fs').readFileSync('node_modules/ollama/dist/browser.cjs','utf8'); \
-  require('fs').writeFileSync('node_modules/ollama/dist/index.cjs', b); \
-  var bm=require('fs').readFileSync('node_modules/ollama/dist/browser.mjs','utf8'); \
-  require('fs').writeFileSync('node_modules/ollama/dist/index.mjs', bm); \
+  var fs=require('fs'); \
+  var b=fs.readFileSync('node_modules/ollama/dist/browser.cjs','utf8'); \
+  b=b.replace(/require\(['\"]whatwg-fetch['\"]\);?/g,''); \
+  fs.writeFileSync('node_modules/ollama/dist/index.cjs', b); \
+  var bm=fs.readFileSync('node_modules/ollama/dist/browser.mjs','utf8'); \
+  bm=bm.replace(/import\s+['\"]whatwg-fetch['\"];?/g,''); \
+  fs.writeFileSync('node_modules/ollama/dist/index.mjs', bm); \
 " || true
 
 # Step 1: Compile TS (with errors patched to warnings)
