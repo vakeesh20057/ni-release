@@ -168,6 +168,13 @@ import './contrib/splash/browser/splash.contribution.js';
 // Remote Start Entry for the Web
 import './contrib/remote/browser/remoteStartEntry.contribution.js';
 
+// Neural Inverse — web-compatible service overrides (replace Electron IPC services)
+import './contrib/void/common/metricsServiceWeb.js';
+import './contrib/void/common/voidUpdateServiceWeb.js';
+import './contrib/void/common/mcpServiceWeb.js';
+import './contrib/void/common/sendLLMMessageServiceWeb.js';
+import './contrib/void/browser/voidSCMServiceWeb.js';
+
 //#endregion
 
 
