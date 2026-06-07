@@ -123,17 +123,13 @@ function bundleESMTask(opts) {
                     build.onResolve({ filter: llmSdkFilter }, (args) => {
                         return { path: require.resolve(args.path, { paths: [REPO_ROOT_PATH] }), external: false };
                     });
-                    // Force Anthropic SDK (and other SDKs with Node/browser shim split) to use
-                    // the browser-safe shim — platform:'neutral' doesn't activate 'browser' exports.
-                    build.onResolve({ filter: /\/_shims\/auto\/runtime-node\./ }, (args) => {
-                        return { path: args.path.replace('runtime-node', 'runtime'), external: false };
-                    });
                 },
             };
             const task = esbuild_1.default.build({
                 bundle: true,
                 packages: 'external', // "external all the things", see https://esbuild.github.io/api/#packages
                 platform: 'neutral', // makes esm
+                conditions: ['browser'], // activate browser export conditions for bundled npm packages (e.g. @anthropic-ai/sdk browser shim)
                 format: 'esm',
                 sourcemap: 'external',
                 plugins: [contentsMapper, externalOverride],
