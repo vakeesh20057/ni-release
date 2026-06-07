@@ -3,7 +3,7 @@
  *  Licensed under the Apache License, Version 2.0. See LICENSE.txt for more information.
  *--------------------------------------------------------------------------------------*/
 
-import { generateUuid } from '../../../../base/common/uuid.js'
+import { generateUuid } from '../../../../../base/common/uuid.js'
 import { endsWithAnyPrefixOf, SurroundingsRemover } from '../helpers/extractCodeFromResult.js'
 import { availableTools, InternalToolInfo } from '../prompt/prompts.js'
 import { OnFinalMessage, OnText, RawToolCallObj, RawToolParamsObj } from '../sendLLMMessageTypes.js'

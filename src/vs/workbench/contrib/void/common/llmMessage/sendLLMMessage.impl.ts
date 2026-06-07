@@ -21,7 +21,7 @@ import { ChatMode, displayInfoOfProviderName, ModelSelectionOptions, OverridesOf
 import { getSendableReasoningInfo, getModelCapabilities, getProviderCapabilities, defaultProviderSettings, getReservedOutputTokenSpace } from '../modelCapabilities.js';
 import { extractReasoningWrapper, extractXMLToolsWrapper } from './extractGrammar.js';
 import { availableTools, InternalToolInfo } from '../prompt/prompts.js';
-import { generateUuid } from '../../../../base/common/uuid.js';
+import { generateUuid } from '../../../../../base/common/uuid.js';
 import { ToolName } from '../toolsServiceTypes.js';
 
 const getGoogleApiKey = async () => {
