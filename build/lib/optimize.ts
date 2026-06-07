@@ -121,7 +121,7 @@ function bundleESMTask(opts: IBundleESMTaskOpts): NodeJS.ReadWriteStream {
 					// require.resolve picks the CJS main entry which esbuild then bundles.
 					// The Anthropic SDK node-runtime shim is redirected to web-runtime by
 					// the llm-sdk-bundle.js pre-bundle step (see Dockerfile.workspace).
-					const llmSdkFilter = /^(@anthropic-ai\/sdk|openai|ollama|@mistralai\/mistralai|@google\/genai)(\/.+)?$/;
+					const llmSdkFilter = /^(@anthropic-ai\/sdk|openai|ollama|@mistralai\/mistralai|@google\/genai|zod|zod-to-json-schema)(\/.+)?$/;
 					build.onResolve({ filter: llmSdkFilter }, (args) => {
 						return { path: require.resolve(args.path, { paths: [REPO_ROOT_PATH] }), external: false };
 					});
