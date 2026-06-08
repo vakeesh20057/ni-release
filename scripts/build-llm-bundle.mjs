@@ -19,7 +19,7 @@ mkdirSync(path.dirname(OUT_FILE), { recursive: true });
 const entryCode = `
 export { default as Anthropic } from '@anthropic-ai/sdk';
 export { default as OpenAI, AzureOpenAI } from 'openai';
-export { Ollama } from 'ollama';
+export { Ollama } from 'ollama/browser';
 export { MistralCore } from '@mistralai/mistralai/core.js';
 export { fimComplete } from '@mistralai/mistralai/funcs/fimComplete.js';
 export { GoogleGenAI, Type } from '@google/genai';
@@ -36,15 +36,14 @@ const result = await esbuild.build({
 	plugins: [{
 		name: 'stub-node-only',
 		setup(build) {
-			// Stub google-auth-library (Vertex Auth — Node-only crypto)
-			build.onResolve({ filter: /^google-auth-library$/ }, () => ({
-				path: 'google-auth-library', namespace: 'stub'
+				// Stub Node-only or polyfill packages
+			build.onResolve({ filter: /^(google-auth-library|whatwg-fetch)$/ }, (args) => ({
+				path: args.path, namespace: 'stub'
 			}));
-			// Stub AWS SDK packages
 			build.onResolve({ filter: /^@aws-sdk\// }, (args) => ({
 				path: args.path, namespace: 'stub'
 			}));
-			build.onLoad({ filter: /.*/, namespace: 'stub' }, (args) => ({
+			build.onLoad({ filter: /.*/, namespace: 'stub' }, () => ({
 				contents: `export default {}; export const GoogleAuth = class {}; export const BedrockRuntimeClient = class {}; export const ConverseStreamCommand = class {}; export const defaultProvider = () => ({});`,
 				loader: 'js',
 			}));
