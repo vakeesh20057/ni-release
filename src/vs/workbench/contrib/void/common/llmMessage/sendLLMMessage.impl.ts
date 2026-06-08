@@ -7,9 +7,16 @@
 // disable foreign import complaints
 /* eslint-disable */
 // LLM SDKs are loaded from the IIFE bundle (llmSdkBundle.js) which sets window.__NI_LLM_SDKS.
-// Read via window[] property access — minifier cannot rename property keys on window.
-const { Anthropic, Ollama, OpenAI, AzureOpenAI, MistralCore, fimComplete, GoogleGenAI, Type } =
-	((typeof window !== 'undefined' && (window as any)['__NI_LLM_SDKS']) || {}) as any;
+// Read lazily at call-time via window[] — top-level destructuring would run before the bundle executes.
+const _sdks = () => (typeof window !== 'undefined' && (window as any)['__NI_LLM_SDKS']) || {} as any;
+const _Anthropic = () => _sdks()['Anthropic'];
+const _Ollama = () => _sdks()['Ollama'];
+const _OpenAI = () => _sdks()['OpenAI'];
+const _AzureOpenAI = () => _sdks()['AzureOpenAI'];
+const _MistralCore = () => _sdks()['MistralCore'];
+const _fimComplete = () => _sdks()['fimComplete'];
+const _GoogleGenAI = () => _sdks()['GoogleGenAI'];
+const _Type = () => _sdks()['Type'];
 // Type aliases — all any since we read from IIFE global
 type ClientOptions = any; type GeminiTool = any; type FunctionDeclaration = any; type ThinkingConfig = any; type Schema = any;
 // google-auth-library and @aws-sdk/* are Node.js-only — stub them out.
@@ -83,27 +90,27 @@ const newOpenAICompatibleSDK = async ({ settingsOfProvider, providerName, includ
 	}
 	if (providerName === 'openAI') {
 		const thisConfig = settingsOfProvider[providerName]
-		return new OpenAI({ apiKey: thisConfig.apiKey, ...commonPayloadOpts })
+		return new (_OpenAI())({ apiKey: thisConfig.apiKey, ...commonPayloadOpts })
 	}
 	else if (providerName === 'ollama') {
 		const thisConfig = settingsOfProvider[providerName]
-		return new OpenAI({ baseURL: `${thisConfig.endpoint}/v1`, apiKey: 'noop', ...commonPayloadOpts })
+		return new (_OpenAI())({ baseURL: `${thisConfig.endpoint}/v1`, apiKey: 'noop', ...commonPayloadOpts })
 	}
 	else if (providerName === 'vLLM') {
 		const thisConfig = settingsOfProvider[providerName]
-		return new OpenAI({ baseURL: `${thisConfig.endpoint}/v1`, apiKey: 'noop', ...commonPayloadOpts })
+		return new (_OpenAI())({ baseURL: `${thisConfig.endpoint}/v1`, apiKey: 'noop', ...commonPayloadOpts })
 	}
 	else if (providerName === 'liteLLM') {
 		const thisConfig = settingsOfProvider[providerName]
-		return new OpenAI({ baseURL: `${thisConfig.endpoint}/v1`, apiKey: 'noop', ...commonPayloadOpts })
+		return new (_OpenAI())({ baseURL: `${thisConfig.endpoint}/v1`, apiKey: 'noop', ...commonPayloadOpts })
 	}
 	else if (providerName === 'lmStudio') {
 		const thisConfig = settingsOfProvider[providerName]
-		return new OpenAI({ baseURL: `${thisConfig.endpoint}/v1`, apiKey: 'noop', ...commonPayloadOpts })
+		return new (_OpenAI())({ baseURL: `${thisConfig.endpoint}/v1`, apiKey: 'noop', ...commonPayloadOpts })
 	}
 	else if (providerName === 'openRouter') {
 		const thisConfig = settingsOfProvider[providerName]
-		return new OpenAI({
+		return new (_OpenAI())({
 			baseURL: 'https://openrouter.ai/api/v1',
 			apiKey: thisConfig.apiKey,
 			defaultHeaders: {
@@ -118,7 +125,7 @@ const newOpenAICompatibleSDK = async ({ settingsOfProvider, providerName, includ
 		const thisConfig = settingsOfProvider[providerName]
 		const baseURL = `https://${thisConfig.region}-aiplatform.googleapis.com/v1/projects/${thisConfig.project}/locations/${thisConfig.region}/endpoints/${'openapi'}`
 		const apiKey = await getGoogleApiKey()
-		return new OpenAI({ baseURL: baseURL, apiKey: apiKey, ...commonPayloadOpts })
+		return new (_OpenAI())({ baseURL: baseURL, apiKey: apiKey, ...commonPayloadOpts })
 	}
 	else if (providerName === 'microsoftAzure') {
 		// https://learn.microsoft.com/en-us/rest/api/aifoundry/model-inference/get-chat-completions/get-chat-completions?view=rest-aifoundry-model-inference-2024-05-01-preview&tabs=HTTP
@@ -127,7 +134,7 @@ const newOpenAICompatibleSDK = async ({ settingsOfProvider, providerName, includ
 		const endpoint = `https://${thisConfig.project}.openai.azure.com/`;
 		const apiVersion = thisConfig.azureApiVersion ?? '2024-04-01-preview';
 		const options = { endpoint, apiKey: thisConfig.apiKey, apiVersion };
-		return new AzureOpenAI({ ...options, ...commonPayloadOpts });
+		return new (_AzureOpenAI())({ ...options, ...commonPayloadOpts });
 	}
 	else if (providerName === 'awsBedrock') {
 		/**
@@ -149,42 +156,42 @@ const newOpenAICompatibleSDK = async ({ settingsOfProvider, providerName, includ
 		if (!baseURL.endsWith('/v1'))
 			baseURL = baseURL.replace(/\/+$/, '') + '/v1'
 
-		return new OpenAI({ baseURL, apiKey, ...commonPayloadOpts })
+		return new (_OpenAI())({ baseURL, apiKey, ...commonPayloadOpts })
 	}
 
 
 	else if (providerName === 'deepseek') {
 		const thisConfig = settingsOfProvider[providerName]
-		return new OpenAI({ baseURL: 'https://api.deepseek.com/v1', apiKey: thisConfig.apiKey, ...commonPayloadOpts })
+		return new (_OpenAI())({ baseURL: 'https://api.deepseek.com/v1', apiKey: thisConfig.apiKey, ...commonPayloadOpts })
 	}
 	else if (providerName === 'openAICompatible') {
 		const thisConfig = settingsOfProvider[providerName]
 		const headers = parseHeadersJSON(thisConfig.headersJSON)
-		return new OpenAI({ baseURL: thisConfig.endpoint, apiKey: thisConfig.apiKey, defaultHeaders: headers, ...commonPayloadOpts })
+		return new (_OpenAI())({ baseURL: thisConfig.endpoint, apiKey: thisConfig.apiKey, defaultHeaders: headers, ...commonPayloadOpts })
 	}
 	else if (providerName === 'groq') {
 		const thisConfig = settingsOfProvider[providerName]
-		return new OpenAI({ baseURL: 'https://api.groq.com/openai/v1', apiKey: thisConfig.apiKey, ...commonPayloadOpts })
+		return new (_OpenAI())({ baseURL: 'https://api.groq.com/openai/v1', apiKey: thisConfig.apiKey, ...commonPayloadOpts })
 	}
 	else if (providerName === 'xAI') {
 		const thisConfig = settingsOfProvider[providerName]
-		return new OpenAI({ baseURL: 'https://api.x.ai/v1', apiKey: thisConfig.apiKey, ...commonPayloadOpts })
+		return new (_OpenAI())({ baseURL: 'https://api.x.ai/v1', apiKey: thisConfig.apiKey, ...commonPayloadOpts })
 	}
 	else if (providerName === 'mistral') {
 		const thisConfig = settingsOfProvider[providerName]
-		return new OpenAI({ baseURL: 'https://api.mistral.ai/v1', apiKey: thisConfig.apiKey, ...commonPayloadOpts })
+		return new (_OpenAI())({ baseURL: 'https://api.mistral.ai/v1', apiKey: thisConfig.apiKey, ...commonPayloadOpts })
 	}
 	else if (providerName === 'githubModels') {
 		const thisConfig = settingsOfProvider[providerName]
-		return new OpenAI({ baseURL: 'https://models.github.ai/inference', apiKey: thisConfig.apiKey, ...commonPayloadOpts })
+		return new (_OpenAI())({ baseURL: 'https://models.github.ai/inference', apiKey: thisConfig.apiKey, ...commonPayloadOpts })
 	}
 	else if (providerName === 'fireworksAI') {
 		const thisConfig = settingsOfProvider[providerName]
-		return new OpenAI({ baseURL: 'https://api.fireworks.ai/inference/v1', apiKey: thisConfig.apiKey, ...commonPayloadOpts })
+		return new (_OpenAI())({ baseURL: 'https://api.fireworks.ai/inference/v1', apiKey: thisConfig.apiKey, ...commonPayloadOpts })
 	}
 	else if (providerName === 'cerebras') {
 		const thisConfig = settingsOfProvider[providerName]
-		return new OpenAI({ baseURL: 'https://api.cerebras.ai/v1', apiKey: thisConfig.apiKey, ...commonPayloadOpts })
+		return new (_OpenAI())({ baseURL: 'https://api.cerebras.ai/v1', apiKey: thisConfig.apiKey, ...commonPayloadOpts })
 	}
 
 	else throw new Error(`Neural Inverse providerName was invalid: ${providerName}.`)
@@ -518,7 +525,7 @@ const sendAnthropicChat = async ({ messages, providerName, onText, onFinalMessag
 
 
 	// instance
-	const anthropic = new Anthropic({
+	const anthropic = new (_Anthropic())({
 		apiKey: thisConfig.apiKey,
 		dangerouslyAllowBrowser: true
 	});
@@ -636,8 +643,8 @@ const sendMistralFIM = ({ messages, onFinalMessage, onError, settingsOfProvider,
 		return
 	}
 
-	const mistral = new MistralCore({ apiKey: settingsOfProvider.mistral.apiKey })
-	fimComplete(mistral,
+	const mistral = new (_MistralCore())({ apiKey: settingsOfProvider.mistral.apiKey })
+	_fimComplete()(mistral,
 		{
 			model: modelName,
 			prompt: messages.prefix,
@@ -665,7 +672,7 @@ const sendMistralFIM = ({ messages, onFinalMessage, onError, settingsOfProvider,
 const newOllamaSDK = ({ endpoint }: { endpoint: string }) => {
 	// if endpoint is empty, normally ollama will send to 11434, but we want it to fail - the user should type it in
 	if (!endpoint) throw new Error(`Ollama Endpoint was empty (please enter ${defaultProviderSettings.ollama.endpoint} in Neural Inverse if you want the default url).`)
-	const ollama = new Ollama({ host: endpoint })
+	const ollama = new (_Ollama())({ host: endpoint })
 	return ollama
 }
 
@@ -732,10 +739,10 @@ const toGeminiFunctionDecl = (toolInfo: InternalToolInfo) => {
 		name,
 		description,
 		parameters: {
-			type: Type.OBJECT,
+			type: _Type().OBJECT,
 			properties: Object.entries(params).reduce((acc, [key, value]) => {
 				acc[key] = {
-					type: Type.STRING,
+					type: _Type().STRING,
 					description: value.description
 				};
 				return acc;
@@ -804,7 +811,7 @@ const sendGeminiChat = async ({
 		: undefined
 
 	// instance
-	const genAI = new GoogleGenAI({ apiKey: thisConfig.apiKey });
+	const genAI = new (_GoogleGenAI())({ apiKey: thisConfig.apiKey });
 
 	// parse out <thought> tags (Void native reasoning)
 	const { newOnText: tOnText, newOnFinalMessage: tOnFinalMessage } = extractReasoningWrapper(onText, onFinalMessage, ['<thought>', '</thought>'])
