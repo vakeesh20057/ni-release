@@ -6,7 +6,6 @@
 import { registerSingleton, InstantiationType } from '../../../../platform/instantiation/common/extensions.js';
 import { IVoidSCMService } from '../common/voidSCMTypes.js';
 import { IGenerateCommitMessageService } from './voidSCMService.js';
-import { ServicesAccessor } from '../../../../platform/instantiation/common/instantiation.js';
 import { ISCMService } from '../../scm/common/scm.js';
 import { IVoidSettingsService } from '../common/voidSettingsService.js';
 import { IConvertToLLMMessageService } from './convertToLLMMessageService.js';
@@ -14,9 +13,6 @@ import { ILLMMessageService } from '../common/sendLLMMessageService.js';
 import { IContextKeyService, IContextKey } from '../../../../platform/contextkey/common/contextkey.js';
 import { INotificationService } from '../../../../platform/notification/common/notification.js';
 import { localize2 } from '../../../../nls.js';
-import { Action2, MenuId, registerAction2 } from '../../../../platform/actions/common/actions.js';
-import { ContextKeyExpr } from '../../../../platform/contextkey/common/contextkey.js';
-import { ThemeIcon } from '../../../../base/common/themables.js';
 import { ThrottledDelayer } from '../../../../base/common/async.js';
 import { CancellationError, isCancellationError } from '../../../../base/common/errors.js';
 import { generateUuid } from '../../../../base/common/uuid.js';
@@ -155,33 +151,6 @@ class GenerateCommitMessageServiceWeb extends Disposable implements IGenerateCom
 }
 
 registerSingleton(IVoidSCMService, VoidSCMServiceWeb, InstantiationType.Eager);
-
-registerAction2(class extends Action2 {
-	constructor() {
-		super({
-			id: 'void.generateCommitMessageAction',
-			title: localize2('voidCommitMessagePrompt', 'Void: Generate Commit Message'),
-			icon: ThemeIcon.fromId('sparkle'),
-			tooltip: localize2('voidCommitMessagePromptTooltip', 'Void: Generate Commit Message'),
-			f1: true,
-			menu: [{ id: MenuId.SCMInputBox, when: ContextKeyExpr.and(ContextKeyExpr.equals('scmProvider', 'git'), ContextKeyExpr.equals(loadingContextKey, false)), group: 'inline' }],
-		});
-	}
-	async run(accessor: ServicesAccessor) { accessor.get(IGenerateCommitMessageService).generateCommitMessage(); }
-});
-
-registerAction2(class extends Action2 {
-	constructor() {
-		super({
-			id: 'void.loadingGenerateCommitMessageAction',
-			title: localize2('voidCommitMessagePromptCancel', 'Void: Cancel Commit Message Generation'),
-			icon: ThemeIcon.fromId('stop-circle'),
-			tooltip: localize2('voidCommitMessagePromptCancelTooltip', 'Void: Cancel Commit Message Generation'),
-			f1: false,
-			menu: [{ id: MenuId.SCMInputBox, when: ContextKeyExpr.and(ContextKeyExpr.equals('scmProvider', 'git'), ContextKeyExpr.equals(loadingContextKey, true)), group: 'inline' }],
-		});
-	}
-	async run(accessor: ServicesAccessor) { accessor.get(IGenerateCommitMessageService).abort(); }
-});
-
+// Actions are already registered by voidSCMService.ts (loaded via void.contribution.ts).
+// Only override the service implementations here.
 registerSingleton(IGenerateCommitMessageService, GenerateCommitMessageServiceWeb, InstantiationType.Delayed);
