@@ -263,7 +263,7 @@ const getReactAccessor = (accessor: ServicesAccessor) => {
 		IWorkspaceContextService: accessor.get(IWorkspaceContextService),
 
 		IVoidCommandBarService: accessor.get(IVoidCommandBarService),
-		INativeHostService: accessor.get(INativeHostService),
+		INativeHostService: (() => { try { return accessor.get(INativeHostService); } catch { return null as any; } })(),
 		IToolsService: accessor.get(IToolsService),
 		IConvertToLLMMessageService: accessor.get(IConvertToLLMMessageService),
 		ITerminalService: accessor.get(ITerminalService),
