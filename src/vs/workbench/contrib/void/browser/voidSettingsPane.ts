@@ -77,6 +77,8 @@ class VoidSettingsPane extends EditorPane {
 	protected createEditor(parent: HTMLElement): void {
 		parent.style.height = '100%';
 		parent.style.width = '100%';
+		parent.style.overflow = 'hidden';
+		parent.addEventListener('wheel', e => e.stopPropagation(), { capture: true, passive: true });
 
 		const settingsElt = document.createElement('div');
 		settingsElt.style.height = '100%';
