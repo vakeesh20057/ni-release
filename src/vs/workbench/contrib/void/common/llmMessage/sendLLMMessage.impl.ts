@@ -7,10 +7,9 @@
 // disable foreign import complaints
 /* eslint-disable */
 // LLM SDKs are loaded from the IIFE bundle (llmSdkBundle.js) which sets window.__NI_LLM_SDKS.
-// Using globals avoids re-bundling CJS TS helpers (__values, __await) into VS Code's bundle.
-declare const __NI_LLM_SDKS: any;
+// Read via window[] property access — minifier cannot rename property keys on window.
 const { Anthropic, Ollama, OpenAI, AzureOpenAI, MistralCore, fimComplete, GoogleGenAI, Type } =
-	(typeof __NI_LLM_SDKS !== 'undefined' ? __NI_LLM_SDKS : {}) as any;
+	((typeof window !== 'undefined' && (window as any)['__NI_LLM_SDKS']) || {}) as any;
 // Type aliases — all any since we read from IIFE global
 type ClientOptions = any; type GeminiTool = any; type FunctionDeclaration = any; type ThinkingConfig = any; type Schema = any;
 // google-auth-library and @aws-sdk/* are Node.js-only — stub them out.
