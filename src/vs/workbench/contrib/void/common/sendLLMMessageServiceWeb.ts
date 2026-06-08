@@ -16,6 +16,8 @@ import { IVoidSettingsService } from './voidSettingsService.js';
 import { IMCPService } from './mcpService.js';
 import { IMetricsService } from './metricsService.js';
 import { sendLLMMessage } from './llmMessage/sendLLMMessage.js';
+// Side-effect import: loads the IIFE bundle that sets window.__NI_LLM_SDKS
+import '../browser/llmMessage/llmSdkBundle.js';
 
 // Web implementation of ILLMMessageService.
 // Calls sendLLMMessage() directly in the browser (no Electron IPC).
@@ -94,9 +96,9 @@ export class LLMMessageServiceWeb extends Disposable implements ILLMMessageServi
 		const { settingsOfProvider } = this.voidSettingsService.state;
 		import('./llmMessage/sendLLMMessage.impl.js').then((mod: any) => {
 			const listFn = mod.sendLLMMessageToProviderImplementation?.['ollama']?.list;
-			if (!listFn) { onError({ error: 'Ollama list not available', requestId: '' }); return; }
+			if (!listFn) { onError({ error: 'Ollama list not available' }); return; }
 			listFn({ settingsOfProvider, providerName: 'ollama', onSuccess, onError });
-		}).catch(e => onError({ error: String(e), requestId: '' }));
+		}).catch(e => onError({ error: String(e) }));
 	}
 
 	openAICompatibleList(params: ServiceModelListParams<OpenaiCompatibleModelResponse>): void {
@@ -104,9 +106,9 @@ export class LLMMessageServiceWeb extends Disposable implements ILLMMessageServi
 		const { settingsOfProvider } = this.voidSettingsService.state;
 		import('./llmMessage/sendLLMMessage.impl.js').then((mod: any) => {
 			const listFn = mod.sendLLMMessageToProviderImplementation?.['openAICompatible']?.list;
-			if (!listFn) { onError({ error: 'OpenAI-compatible list not available', requestId: '' }); return; }
+			if (!listFn) { onError({ error: 'OpenAI-compatible list not available' }); return; }
 			listFn({ settingsOfProvider, providerName: 'openAICompatible', onSuccess, onError });
-		}).catch(e => onError({ error: String(e), requestId: '' }));
+		}).catch(e => onError({ error: String(e) }));
 	}
 
 	private _clearHooks(requestId: string) {

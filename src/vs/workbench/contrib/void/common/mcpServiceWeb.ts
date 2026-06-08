@@ -13,7 +13,7 @@ import { IProductService } from '../../../../platform/product/common/productServ
 import { URI } from '../../../../base/common/uri.js';
 import { VSBuffer } from '../../../../base/common/buffer.js';
 import { IMCPService } from './mcpService.js';
-import { MCPServerOfName, MCPConfigFileJSON, MCPServer, MCPToolCallParams, RawMCPToolCall, MCPServerEventResponse } from './mcpServiceTypes.js';
+import { MCPServerOfName, MCPConfigFileJSON, MCPToolCallParams, RawMCPToolCall } from './mcpServiceTypes.js';
 import { InternalToolInfo } from './prompt/prompts.js';
 import { IVoidSettingsService } from './voidSettingsService.js';
 import { MCPUserStateOfName } from './voidSettingsTypes.js';
@@ -96,7 +96,7 @@ class MCPServiceWeb extends Disposable implements IMCPService {
 			// Mark all as 'unavailable' in web — no process spawning
 			const newServerOfName: MCPServerOfName = {};
 			for (const name of newNames) {
-				newServerOfName[name] = { status: 'error', tools: [], error: 'stdio MCP servers are not supported in web mode. Use HTTP/SSE MCP servers.' };
+				newServerOfName[name] = { status: 'error', error: 'stdio MCP servers are not supported in web mode. Use HTTP/SSE MCP servers.' };
 			}
 			this.state = { ...this.state, mcpServerOfName: newServerOfName };
 			this._onDidChangeState.fire();
@@ -122,8 +122,8 @@ class MCPServiceWeb extends Disposable implements IMCPService {
 		return undefined;
 	}
 
-	async callMCPTool(_toolData: MCPToolCallParams): Promise<{ result: RawMCPToolCall }> {
-		return { result: { event: 'error', text: 'MCP tool calls are not supported in web mode.' } };
+	async callMCPTool(toolData: MCPToolCallParams): Promise<{ result: RawMCPToolCall }> {
+		return { result: { event: 'error', toolName: toolData.toolName, text: 'MCP tool calls are not supported in web mode.' } };
 	}
 
 	stringifyResult(result: RawMCPToolCall): string {

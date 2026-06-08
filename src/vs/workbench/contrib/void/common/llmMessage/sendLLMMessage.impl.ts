@@ -6,14 +6,13 @@
 // @ts-nocheck — web copy; SDK types come from llmSdkBundle (any), strict checking disabled
 // disable foreign import complaints
 /* eslint-disable */
-// Import from the pre-built browser bundle (scripts/build-llm-bundle.mjs).
-// This avoids bundling Node-only CJS modules (node-fetch, node:fs, google-auth-library, etc.)
-// into the VS Code web bundle where they cause "Dynamic require" errors.
-import { Anthropic, Ollama, OpenAI, AzureOpenAI, MistralCore, fimComplete, GoogleGenAI, Type } from '../../browser/llmMessage/llmSdkBundle.js';
-// ClientOptions type only — no runtime import needed
-type ClientOptions = ConstructorParameters<typeof OpenAI>[0];
-// Tool types from @google/genai — these are just interfaces, safe to re-declare
-type GeminiTool = any; type FunctionDeclaration = any; type ThinkingConfig = any; type Schema = any;
+// LLM SDKs are loaded from the IIFE bundle (llmSdkBundle.js) which sets window.__NI_LLM_SDKS.
+// Using globals avoids re-bundling CJS TS helpers (__values, __await) into VS Code's bundle.
+declare const __NI_LLM_SDKS: any;
+const { Anthropic, Ollama, OpenAI, AzureOpenAI, MistralCore, fimComplete, GoogleGenAI, Type } =
+	(typeof __NI_LLM_SDKS !== 'undefined' ? __NI_LLM_SDKS : {}) as any;
+// Type aliases — all any since we read from IIFE global
+type ClientOptions = any; type GeminiTool = any; type FunctionDeclaration = any; type ThinkingConfig = any; type Schema = any;
 // google-auth-library and @aws-sdk/* are Node.js-only — stub them out.
 const GoogleAuth = class { async getAccessToken() { throw new Error('Google Vertex not supported in web mode'); } };
 const BedrockRuntimeClient = class { send() { throw new Error('AWS Bedrock not supported in web mode'); } };

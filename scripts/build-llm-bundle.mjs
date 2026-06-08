@@ -28,7 +28,8 @@ export { GoogleGenAI, Type } from '@google/genai';
 const result = await esbuild.build({
 	stdin: { contents: entryCode, resolveDir: REPO_ROOT, loader: 'js' },
 	bundle: true,
-	format: 'esm',
+	format: 'iife',
+	globalName: '__NI_LLM_SDKS',
 	platform: 'browser',
 	conditions: ['browser', 'import', 'default'],
 	target: ['es2022'],
