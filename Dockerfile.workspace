@@ -64,10 +64,10 @@ RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
     && apt-get install -y nodejs \
     && rm -rf /var/lib/apt/lists/*
 
-# Ubuntu 24.04 ships with 'ubuntu' user at uid/gid 1000 — rename to 'coder'
-RUN usermod -l coder ubuntu && groupmod -n coder ubuntu && \
-    usermod -d /home/coder -m coder && \
-    chsh -s /bin/bash coder
+# Ubuntu 24.04 ships with 'ubuntu' user at uid/gid 1000 — rename to 'cloud'
+RUN usermod -l cloud ubuntu && groupmod -n cloud ubuntu && \
+    usermod -d /home/cloud -m cloud && \
+    chsh -s /bin/bash cloud
 
 # The packageTask outputs to BUILD_ROOT (parent of /build), with correct structure:
 #   /ide/out/          - bundled+minified server+browser code
@@ -80,10 +80,10 @@ RUN usermod -l coder ubuntu && groupmod -n coder ubuntu && \
 #   /ide/node          - node binary
 COPY --from=builder /vscode-reh-web-linux-x64 /ide
 
-RUN chown -R coder:coder /ide
+RUN chown -R cloud:cloud /ide
 
-USER coder
-WORKDIR /home/coder
+USER cloud
+WORKDIR /home/cloud
 EXPOSE 13337
 
 CMD ["sh", "-c", \
