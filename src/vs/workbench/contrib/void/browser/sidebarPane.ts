@@ -134,7 +134,8 @@ class SidebarViewPane extends ViewPane {
 
 	protected override renderBody(parent: HTMLElement): void {
 		super.renderBody(parent);
-		// parent.style.overflow = 'auto'
+		parent.style.overflow = 'hidden'
+		parent.style.height = '100%'
 		parent.style.userSelect = 'text'
 
 		// gets set immediately
