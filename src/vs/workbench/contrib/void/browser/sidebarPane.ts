@@ -137,6 +137,9 @@ class SidebarViewPane extends ViewPane {
 		parent.style.overflow = 'hidden'
 		parent.style.height = '100%'
 		parent.style.userSelect = 'text'
+		// Prevent VS Code's scrollable element from intercepting wheel events —
+		// let the browser deliver them natively to our React overflow-y:auto container.
+		parent.addEventListener('wheel', e => e.stopPropagation(), { capture: true, passive: true })
 
 		// gets set immediately
 		this.instantiationService.invokeFunction(accessor => {
