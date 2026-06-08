@@ -3,6 +3,7 @@
  *  Licensed under the Apache License, Version 2.0. See LICENSE.txt for more information.
  *--------------------------------------------------------------------------------------*/
 
+// @ts-nocheck — web copy; SDK types come from llmSdkBundle (any), strict checking disabled
 // disable foreign import complaints
 /* eslint-disable */
 // Import from the pre-built browser bundle (scripts/build-llm-bundle.mjs).
