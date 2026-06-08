@@ -55,32 +55,30 @@ const validateStr = (argName: string, value: unknown) => {
 
 
 // We are NOT checking to make sure in workspace
-const validateURI = (uriStr: unknown) => {
+// workspaceRootUri: when set, plain paths are resolved using the workspace root's scheme
+// (e.g. vscode-remote:// in Coder) instead of always using file://.
+const makeValidateURI = (workspaceRootUri: URI | undefined) => (uriStr: unknown): URI => {
 	if (uriStr === null) throw new Error(`Invalid LLM output: uri was null.`)
 	if (typeof uriStr !== 'string') throw new Error(`Invalid LLM output format: Provided uri must be a string, but it's a(n) ${typeof uriStr}. Full value: ${JSON.stringify(uriStr)}.`)
 
-	// Check if it's already a full URI with scheme (e.g., vscode-remote://, file://, etc.)
-	// Look for :// pattern which indicates a scheme is present
-	// Examples of supported URIs:
-	// - vscode-remote://wsl+Ubuntu/home/user/file.txt (WSL)
-	// - vscode-remote://ssh-remote+myserver/home/user/file.txt (SSH)
-	// - file:///home/user/file.txt (local file with scheme)
-	// - /home/user/file.txt (local file path, will be converted to file://)
-	// - C:\Users\file.txt (Windows local path, will be converted to file://)
+	// Already has a scheme — parse as-is
 	if (uriStr.includes('://')) {
-		try {
-			const uri = URI.parse(uriStr)
-			return uri
-		} catch (e) {
-			// If parsing fails, it's a malformed URI
-			throw new Error(`Invalid URI format: ${uriStr}. Error: ${e}`)
-		}
-	} else {
-		// No scheme present, treat as file path
-		// This handles regular file paths like /home/user/file.txt or C:\Users\file.txt
-		const uri = URI.file(uriStr)
-		return uri
+		try { return URI.parse(uriStr) } catch (e) { throw new Error(`Invalid URI format: ${uriStr}. Error: ${e}`) }
 	}
+
+	// Plain path — use workspace root scheme if available (handles vscode-remote://, ssh-remote://, etc.)
+	if (workspaceRootUri && workspaceRootUri.scheme !== 'file') {
+		// Reconstruct URI with the same scheme/authority but the given path
+		return workspaceRootUri.with({ path: uriStr })
+	}
+	return URI.file(uriStr)
+}
+
+const validateURI = makeValidateURI(undefined)
+
+const makeValidateOptionalURI = (workspaceRootUri: URI | undefined) => (uriStr: unknown): URI | null => {
+	if (isFalsy(uriStr)) return null
+	return makeValidateURI(workspaceRootUri)(uriStr)
 }
 
 const validateOptionalURI = (uriStr: unknown) => {
@@ -213,13 +211,21 @@ export class ToolsService implements IToolsService {
 	) {
 		const queryBuilder = instantiationService.createInstance(QueryBuilder);
 
-		const workspaceDir = workspaceContextService.getWorkspace().folders[0]?.uri.fsPath ?? '/';
+		const workspaceRootUri = workspaceContextService.getWorkspace().folders[0]?.uri;
+		const workspaceDir = workspaceRootUri?.fsPath ?? '/';
 		this._workspaceDir = workspaceDir;
+
+		// Workspace-aware URI validators — use the workspace root scheme (e.g. vscode-remote://)
+		// so plain paths like /home/coder/file.ts resolve correctly in serve-web mode.
+		const validateURIws = makeValidateURI(workspaceRootUri);
+		const validateOptionalURIws = makeValidateOptionalURI(workspaceRootUri);
 
 		// Wire up getSlashCommands to use fileService closure
 		this.getSlashCommands = async () => {
 			try {
-				const dir = URI.file(`${workspaceDir}/.neuralinverse/commands`);
+				const dir = workspaceRootUri
+					? URI.joinPath(workspaceRootUri, '.neuralinverse/commands')
+					: URI.file(`${workspaceDir}/.neuralinverse/commands`);
 				const entries = await fileService.resolve(dir);
 				if (!entries.children) return [];
 				const results: { name: string; content: string }[] = [];
@@ -414,7 +420,7 @@ export class ToolsService implements IToolsService {
 			// ---
 			read_file: (params: RawToolParamsObj) => {
 				const { uri: uriStr, start_line: startLineUnknown, end_line: endLineUnknown, page_number: pageNumberUnknown } = params
-				const uri = validateURI(uriStr)
+				const uri = validateURIws(uriStr)
 				const pageNumber = validatePageNum(pageNumberUnknown)
 
 				let startLine = validateNumber(startLineUnknown, { default: null })
@@ -428,13 +434,13 @@ export class ToolsService implements IToolsService {
 			ls_dir: (params: RawToolParamsObj) => {
 				const { uri: uriStr, page_number: pageNumberUnknown } = params
 
-				const uri = validateURI(uriStr)
+				const uri = validateURIws(uriStr)
 				const pageNumber = validatePageNum(pageNumberUnknown)
 				return { uri, pageNumber }
 			},
 			get_dir_tree: (params: RawToolParamsObj) => {
 				const { uri: uriStr, } = params
-				const uri = validateURI(uriStr)
+				const uri = validateURIws(uriStr)
 				return { uri }
 			},
 			search_pathnames_only: (params: RawToolParamsObj) => {
@@ -460,7 +466,7 @@ export class ToolsService implements IToolsService {
 				} = params
 				const queryStr = validateStr('query', queryUnknown)
 				const pageNumber = validatePageNum(pageNumberUnknown)
-				const searchInFolder = validateOptionalURI(searchInFolderUnknown)
+				const searchInFolder = validateOptionalURIws(searchInFolderUnknown)
 				const isRegex = validateBoolean(isRegexUnknown, { default: false })
 				return {
 					query: queryStr,
@@ -471,7 +477,7 @@ export class ToolsService implements IToolsService {
 			},
 			search_in_file: (params: RawToolParamsObj) => {
 				const { uri: uriStr, query: queryUnknown, is_regex: isRegexUnknown } = params;
-				const uri = validateURI(uriStr);
+				const uri = validateURIws(uriStr);
 				const query = validateStr('query', queryUnknown);
 				const isRegex = validateBoolean(isRegexUnknown, { default: false });
 				return { uri, query, isRegex };
@@ -481,7 +487,7 @@ export class ToolsService implements IToolsService {
 				const {
 					uri: uriUnknown,
 				} = params
-				const uri = validateURI(uriUnknown)
+				const uri = validateURIws(uriUnknown)
 				return { uri }
 			},
 
@@ -489,7 +495,7 @@ export class ToolsService implements IToolsService {
 
 			create_file_or_folder: (params: RawToolParamsObj) => {
 				const { uri: uriUnknown } = params
-				const uri = validateURI(uriUnknown)
+				const uri = validateURIws(uriUnknown)
 				const uriStr = validateStr('uri', uriUnknown)
 				const isFolder = checkIfIsFolder(uriStr)
 				return { uri, isFolder }
@@ -497,7 +503,7 @@ export class ToolsService implements IToolsService {
 
 			delete_file_or_folder: (params: RawToolParamsObj) => {
 				const { uri: uriUnknown, is_recursive: isRecursiveUnknown } = params
-				const uri = validateURI(uriUnknown)
+				const uri = validateURIws(uriUnknown)
 				const isRecursive = validateBoolean(isRecursiveUnknown, { default: false })
 				const uriStr = validateStr('uri', uriUnknown)
 				const isFolder = checkIfIsFolder(uriStr)
@@ -506,20 +512,20 @@ export class ToolsService implements IToolsService {
 
 			rewrite_file: (params: RawToolParamsObj) => {
 				const { uri: uriStr, new_content: newContentUnknown } = params
-				const uri = validateURI(uriStr)
+				const uri = validateURIws(uriStr)
 				const newContent = validateStr('newContent', newContentUnknown)
 				return { uri, newContent }
 			},
 
 			edit_file: (params: RawToolParamsObj) => {
 				const { uri: uriStr, search_replace_blocks: searchReplaceBlocksUnknown } = params
-				const uri = validateURI(uriStr)
+				const uri = validateURIws(uriStr)
 				const searchReplaceBlocks = validateStr('searchReplaceBlocks', searchReplaceBlocksUnknown)
 				return { uri, searchReplaceBlocks }
 			},
 			multi_replace_file_content: (params: RawToolParamsObj) => {
 				const { uri: uriStr, replacement_chunks: replacementChunksUnknown } = params
-				const uri = validateURI(uriStr)
+				const uri = validateURIws(uriStr)
 				const replacementChunks = validateStr('replacement_chunks', replacementChunksUnknown)
 				return { uri, replacementChunks }
 			},
@@ -615,7 +621,7 @@ export class ToolsService implements IToolsService {
 			},
 			read: async ({ filePath, offset, limit: readLimit }) => {
 				const normalizedPath = filePath.startsWith('/') ? filePath : `${workspaceDir}/${filePath}`
-				const uri = URI.file(normalizedPath)
+				const uri = validateURIws(normalizedPath)
 				try {
 					const stat = await fileService.stat(uri)
 					if (stat.isDirectory) {
@@ -641,7 +647,7 @@ export class ToolsService implements IToolsService {
 			},
 			write: async ({ filePath, content }) => {
 				const normalizedPath = filePath.startsWith('/') ? filePath : `${workspaceDir}/${filePath}`
-				const uri = URI.file(normalizedPath)
+				const uri = validateURIws(normalizedPath)
 				try {
 					await fileService.writeFile(uri, VSBuffer.fromString(content))
 					return { result: { result: `Successfully wrote ${content.split('\n').length} lines to ${normalizedPath}` } }
@@ -651,7 +657,7 @@ export class ToolsService implements IToolsService {
 			},
 			edit: async ({ filePath, oldString, newString }) => {
 				const normalizedPath = filePath.startsWith('/') ? filePath : `${workspaceDir}/${filePath}`
-				const uri = URI.file(normalizedPath)
+				const uri = validateURIws(normalizedPath)
 				try {
 					const content = await fileService.readFile(uri)
 					const text = content.value.toString()
@@ -670,7 +676,7 @@ export class ToolsService implements IToolsService {
 				}
 			},
 			glob: async ({ pattern, path: searchPath }) => {
-				const folderUri = URI.file(searchPath ?? workspaceDir)
+				const folderUri = validateURIws(searchPath ?? workspaceDir)
 				try {
 					const query: IFileQuery = {
 						type: QueryType.File,
@@ -686,7 +692,7 @@ export class ToolsService implements IToolsService {
 				}
 			},
 			grep: async ({ pattern, path: searchPath, include }) => {
-				const folderUri = URI.file(searchPath ?? workspaceDir)
+				const folderUri = validateURIws(searchPath ?? workspaceDir)
 				try {
 					const query: ITextQuery = {
 						type: QueryType.Text,
@@ -714,7 +720,7 @@ export class ToolsService implements IToolsService {
 				}
 			},
 			list: async ({ dirPath }) => {
-				const uri = URI.file(dirPath ?? workspaceDir)
+				const uri = validateURIws(dirPath ?? workspaceDir)
 				try {
 					const resolved = await fileService.resolve(uri)
 					const entries = (resolved.children ?? []).map(c => `${c.isDirectory ? 'd' : '-'} ${c.name}`).sort().join('\n')
@@ -805,11 +811,11 @@ export class ToolsService implements IToolsService {
 
 				try {
 					// Ensure directory exists
-					const dirUri = URI.file(memoryDir);
+					const dirUri = validateURIws(memoryDir);
 					await fileService.createFolder(dirUri).catch(() => { /* already exists */ });
 
 					// Write memory
-					const fileUri = URI.file(memoryFile);
+					const fileUri = validateURIws(memoryFile);
 					const buffer = VSBuffer.fromString(content);
 					await fileService.writeFile(fileUri, buffer);
 
@@ -822,7 +828,7 @@ export class ToolsService implements IToolsService {
 				const memoryFile = `${workspaceDir}/.void-memory/${key}.md`;
 
 				try {
-					const fileUri = URI.file(memoryFile);
+					const fileUri = validateURIws(memoryFile);
 					const content = await fileService.readFile(fileUri);
 					const text = content.value.toString();
 					return { result: { result: text } };
