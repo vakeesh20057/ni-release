@@ -140,7 +140,7 @@ export const subTextMdOfProviderName = (providerName: ProviderName): string => {
 	if (providerName === 'ollama') return 'Read more about custom [Endpoints here](https://github.com/ollama/ollama/blob/main/docs/faq.md#how-can-i-expose-ollama-on-my-network).'
 	if (providerName === 'vLLM') return 'Read more about custom [Endpoints here](https://docs.vllm.ai/en/latest/getting_started/quickstart.html#openai-compatible-server).'
 	if (providerName === 'lmStudio') return 'Read more about custom [Endpoints here](https://lmstudio.ai/docs/app/api/endpoints/openai).'
-	if (providerName === 'niFreeModels') return 'Always-free coding models (DeepSeek-R1, DeepSeek-V3, Codestral, Llama 3.3 70B) powered by Neural Inverse. Your workspace token is used automatically.'
+	if (providerName === 'niFreeModels') return 'Always-free coding models (DeepSeek-R1, DeepSeek-V3, DeepSeek-V4, Llama 3.3/4, Mistral Large 3, Kimi K2.6) powered by Neural Inverse. No configuration needed.'
 	if (providerName === 'liteLLM') return 'Read more about endpoints [here](https://docs.litellm.ai/docs/providers/openai_compatible).'
 	if (providerName === 'githubModels') return 'Use a [GitHub PAT](https://github.com/settings/tokens) with the `models:read` scope. Free tier available with rate limits.'
 	if (providerName === 'fireworksAI') return 'Get your [API Key here](https://fireworks.ai/account/api-keys). Fastest open-model inference with native function calling.'

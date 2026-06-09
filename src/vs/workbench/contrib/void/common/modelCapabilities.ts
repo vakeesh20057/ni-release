@@ -126,7 +126,7 @@ export const defaultModelsOfProvider = {
 	vLLM: [ // autodetected
 	],
 	lmStudio: [], // autodetected
-	niFreeModels: ['deepseek-r1', 'deepseek-v3', 'codestral', 'llama-3.3-70b'],
+	niFreeModels: ['deepseek-r1', 'deepseek-r1-0528', 'deepseek-v3', 'deepseek-v4-flash', 'deepseek-v4-pro', 'llama-3.3-70b', 'llama-4-maverick', 'mistral-large-3', 'kimi-k2.6'],
 
 	openRouter: [ // https://openrouter.ai/models
 		'anthropic/claude-opus-4-6',
