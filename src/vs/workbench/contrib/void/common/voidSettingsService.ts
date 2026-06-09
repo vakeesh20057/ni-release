@@ -164,6 +164,9 @@ const _validatedModelState = (state: Omit<VoidSettingsState, '_modelOptions'>): 
 
 	// recompute _didFillInProviderSettings
 	for (const providerName of providerNames) {
+		if (!newSettingsOfProvider[providerName]) {
+			newSettingsOfProvider = { ...newSettingsOfProvider, [providerName]: { ...defaultSettingsOfProvider[providerName] } }
+		}
 		const settingsAtProvider = newSettingsOfProvider[providerName]
 
 		let didFillInProviderSettings = Object.keys(defaultProviderSettings[providerName]).every(key => !!settingsAtProvider[key as keyof typeof settingsAtProvider])
