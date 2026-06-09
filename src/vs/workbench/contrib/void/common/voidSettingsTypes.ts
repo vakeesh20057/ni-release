@@ -356,6 +356,12 @@ export const defaultSettingsOfProvider: SettingsOfProvider = {
 		...modelInfoOfDefaultModelNames(defaultModelsOfProvider.vLLM),
 		_didFillInProviderSettings: undefined,
 	},
+	niFreeModels: {
+		...defaultCustomSettings,
+		...defaultProviderSettings.niFreeModels,
+		...modelInfoOfDefaultModelNames(defaultModelsOfProvider.niFreeModels),
+		_didFillInProviderSettings: undefined,
+	},
 	googleVertex: { // aggregator (serves models from multiple providers)
 		...defaultCustomSettings,
 		...defaultProviderSettings.googleVertex,
