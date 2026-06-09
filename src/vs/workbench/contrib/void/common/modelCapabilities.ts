@@ -49,6 +49,9 @@ export const defaultProviderSettings = {
 	lmStudio: {
 		endpoint: 'http://localhost:1234',
 	},
+	niFreeModels: {
+		endpoint: 'https://free.neuralinverse.com',
+	},
 	liteLLM: { // https://docs.litellm.ai/docs/providers/openai_compatible
 		endpoint: '',
 	},
@@ -123,6 +126,7 @@ export const defaultModelsOfProvider = {
 	vLLM: [ // autodetected
 	],
 	lmStudio: [], // autodetected
+	niFreeModels: [], // autodetected from free.neuralinverse.com
 
 	openRouter: [ // https://openrouter.ai/models
 		'anthropic/claude-opus-4-6',
@@ -1461,6 +1465,15 @@ const lmStudioSettings: VoidStaticProviderInfo = {
 	},
 }
 
+const niFreeModelsSettings: VoidStaticProviderInfo = {
+	modelOptionsFallback: (modelName) => extensiveModelOptionsFallback(modelName, { downloadable: { sizeGb: 'not-known' } }),
+	modelOptions: {},
+	providerReasoningIOSettings: {
+		input: { includeInPayload: openAICompatIncludeInPayloadReasoning },
+		output: { nameOfFieldInDelta: 'reasoning_content' },
+	},
+}
+
 const ollamaSettings: VoidStaticProviderInfo = {
 	modelOptionsFallback: (modelName) => extensiveModelOptionsFallback(modelName, { downloadable: { sizeGb: 'not-known' } }),
 	modelOptions: ollamaModelOptions,
@@ -1947,6 +1960,7 @@ const modelSettingsOfProvider: { [providerName in ProviderName]: VoidStaticProvi
 
 	liteLLM: liteLLMSettings,
 	lmStudio: lmStudioSettings,
+	niFreeModels: niFreeModelsSettings,
 
 	googleVertex: googleVertexSettings,
 	microsoftAzure: microsoftAzureSettings,

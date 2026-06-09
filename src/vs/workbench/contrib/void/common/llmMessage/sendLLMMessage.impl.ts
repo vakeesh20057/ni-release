@@ -33,6 +33,7 @@ import { extractReasoningWrapper, extractXMLToolsWrapper } from './extractGramma
 import { availableTools, InternalToolInfo } from '../prompt/prompts.js';
 import { generateUuid } from '../../../../../base/common/uuid.js';
 import { ToolName } from '../toolsServiceTypes.js';
+import { env } from '../../../../../base/common/process.js';
 
 const getGoogleApiKey = async () => {
 	// module‑level singleton
@@ -107,6 +108,16 @@ const newOpenAICompatibleSDK = async ({ settingsOfProvider, providerName, includ
 	else if (providerName === 'lmStudio') {
 		const thisConfig = settingsOfProvider[providerName]
 		return new (_OpenAI())({ baseURL: `${thisConfig.endpoint}/v1`, apiKey: 'noop', ...commonPayloadOpts })
+	}
+	else if (providerName === 'niFreeModels') {
+		const thisConfig = settingsOfProvider[providerName]
+		const agentToken = env['NEURALINVERSE_AGENT_TOKEN'] || ''
+		return new (_OpenAI())({
+			baseURL: `${thisConfig.endpoint}/v1`,
+			apiKey: 'noop',
+			defaultHeaders: { 'NI-Session-Token': agentToken },
+			...commonPayloadOpts,
+		})
 	}
 	else if (providerName === 'openRouter') {
 		const thisConfig = settingsOfProvider[providerName]
@@ -1073,6 +1084,11 @@ export const sendLLMMessageToProviderImplementation = {
 		// lmStudio has no suffix parameter in /completions, so sendFIM might not work
 		sendChat: (params) => _sendOpenAICompatibleChat(params),
 		sendFIM: (params) => _sendOpenAICompatibleFIM(params),
+		list: (params) => _openaiCompatibleList(params),
+	},
+	niFreeModels: {
+		sendChat: (params) => _sendOpenAICompatibleChat(params),
+		sendFIM: null,
 		list: (params) => _openaiCompatibleList(params),
 	},
 	liteLLM: {
