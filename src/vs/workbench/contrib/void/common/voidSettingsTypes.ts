@@ -360,7 +360,7 @@ export const defaultSettingsOfProvider: SettingsOfProvider = {
 		...defaultCustomSettings,
 		...defaultProviderSettings.niFreeModels,
 		...modelInfoOfDefaultModelNames(defaultModelsOfProvider.niFreeModels),
-		_didFillInProviderSettings: undefined,
+		_didFillInProviderSettings: true,
 	},
 	googleVertex: { // aggregator (serves models from multiple providers)
 		...defaultCustomSettings,
