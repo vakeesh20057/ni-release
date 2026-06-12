@@ -34,10 +34,15 @@ curl -fsSL https://neuralinverse.com/sh | bash
 irm https://neuralinverse.com/win | iex
 ```
 
+## Neural Inverse Cloud
+
+Use Neural Inverse directly in your browser at [cloud.neuralinverse.com](https://cloud.neuralinverse.com) with forever-free models (Llama 3.3 70B, DeepSeek R1, DeepSeek V3/V4, Mistral Large 3, Kimi K2.6, and more). No API keys required, no configuration needed.
+
 ## Features
 
 - **AI Chat & Inline Edit** (Ctrl+L, Ctrl+K) — multi-mode sidebar chat, inline diffs, autocomplete, Fast Apply
 - **Power Mode** (Cmd+Alt+P) — autonomous coding agent with 22+ tools and concurrent sub-agents
+- **Forever-Free Models** — Llama 3.3 70B, DeepSeek R1/V3/V4, Mistral Large 3, Kimi K2.6 via [cloud.neuralinverse.com](https://cloud.neuralinverse.com)
 - **Bring Your Own LLM** — 20 providers (cloud, local, gateway), per-feature model selection, zero lock-in
 - **Firmware & Embedded** (Cmd+Alt+F) — 357 MCU variants, SVD register maps, 22 `fw_*` agent tools, serial monitor, MISRA/CERT-C compliance
 - **Legacy Modernisation** (Cmd+Alt+M) — 5-stage migration pipeline, 30+ source languages, 61 translation profiles, Knowledge Base, audit export
