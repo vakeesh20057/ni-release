@@ -1101,6 +1101,12 @@ export const sendLLMMessageToProviderImplementation = {
 		list: null,
 	},
 
+	niFreeModels: {
+		sendChat: (params) => _sendOpenAICompatibleChat(params),
+		sendFIM: null,
+		list: (params) => _openaiCompatibleList(params),
+	},
+
 } satisfies CallFnOfProvider
 
 

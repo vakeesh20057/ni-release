@@ -81,10 +81,11 @@ const makeValidateOptionalURI = (workspaceRootUri: URI | undefined) => (uriStr: 
 	return makeValidateURI(workspaceRootUri)(uriStr)
 }
 
-const validateOptionalURI = (uriStr: unknown) => {
+const _validateOptionalURI = (uriStr: unknown) => {
 	if (isFalsy(uriStr)) return null
 	return validateURI(uriStr)
 }
+void _validateOptionalURI;
 
 const validateOptionalStr = (argName: string, str: unknown) => {
 	if (isFalsy(str)) return null

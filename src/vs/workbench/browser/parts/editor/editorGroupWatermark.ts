@@ -24,7 +24,6 @@ import { ColorScheme } from '../../web.api.js';
 // import { splitRecentLabel } from '../../../../base/common/labels.js';
 
 /* eslint-disable */ // Void
-import { VOID_CTRL_L_ACTION_ID } from '../../../contrib/void/browser/actionIDs.js';
 /* eslint-enable */
 
 // interface WatermarkEntry {
@@ -213,7 +212,7 @@ export class EditorGroupWatermark extends Disposable {
 				footerContainer.style.display = 'flex';
 				footerContainer.style.alignItems = 'center';
 				footerContainer.style.justifyContent = 'center';
-				footerContainer.style.marginTop = '35px';
+				footerContainer.style.marginTop = '20px';
 				footerContainer.style.opacity = '0.6';
 				footerContainer.style.userSelect = 'none';
 				footerContainer.style.cursor = 'default';
@@ -241,41 +240,39 @@ export class EditorGroupWatermark extends Disposable {
 
 				// --- 1. Create the Horizontal Container ---
 				const keysRow = append(voidIconBox, $('div'));
-				keysRow.style.display = 'flex';           // Enable Flexbox
-				keysRow.style.flexDirection = 'row';      // Force horizontal line
-				keysRow.style.justifyContent = 'center';  // Center the whole row
-				keysRow.style.gap = '40px';               // Space between each item
-				keysRow.style.marginBottom = '20px';      // Space above the footer
+				keysRow.style.display = 'flex';
+				keysRow.style.flexDirection = 'row';
+				keysRow.style.justifyContent = 'center';
+				keysRow.style.gap = '48px';
+				keysRow.style.marginTop = '28px';
+				keysRow.style.marginBottom = '20px';
 
-				// Helper style for the items (optional, ensures text is centered)
 				const itemStyle = (element: HTMLElement) => {
-					element.style.textAlign = 'center';
+					element.style.display = 'flex';
+					element.style.alignItems = 'center';
+					element.style.gap = '5px';
 					element.style.margin = '0';
 				};
 
 				// --- 2. Add Items to the Row ---
+				const shortcuts: { label: string; commandId: string }[] = [
+					{ label: 'Agents', commandId: 'neuralInverse.openAgentManager' },
+					{ label: 'Power Mode', commandId: 'neuralInverse.openPowerMode' },
+					{ label: 'Firmware', commandId: 'neuralInverse.openFirmware' },
+					{ label: 'Legacy', commandId: 'neuralInverse.openModernisation' },
+				];
 
-				// Item 1: Chat
-				const keys = this.keybindingService.lookupKeybinding(VOID_CTRL_L_ACTION_ID);
-				const dl = append(keysRow, $('dl')); // <--- Append to keysRow
-				itemStyle(dl);
-				const dt = append(dl, $('dt'));
-				dt.textContent = 'Chat';
-				const dd = append(dl, $('dd'));
-				const label = new KeybindingLabel(dd, OS, { renderUnboundKeybindings: true, ...defaultKeybindingLabelStyles });
-				if (keys) label.set(keys);
-				this.currentDisposables.add(label);
-
-				// Item 2: Agents
-				const keys2 = this.keybindingService.lookupKeybinding('neuralInverse.openAgentManager');
-				const dl2 = append(keysRow, $('dl')); // <--- Append to keysRow
-				itemStyle(dl2);
-				const dt2 = append(dl2, $('dt'));
-				dt2.textContent = 'Agents';
-				const dd2 = append(dl2, $('dd'));
-				const label2 = new KeybindingLabel(dd2, OS, { renderUnboundKeybindings: true, ...defaultKeybindingLabelStyles });
-				if (keys2) label2.set(keys2);
-				this.currentDisposables.add(label2);
+				for (const shortcut of shortcuts) {
+					const kb = this.keybindingService.lookupKeybinding(shortcut.commandId);
+					const dl = append(keysRow, $('dl'));
+					itemStyle(dl);
+					const dt = append(dl, $('dt'));
+					dt.textContent = shortcut.label;
+					const dd = append(dl, $('dd'));
+					const kbLabel = new KeybindingLabel(dd, OS, { renderUnboundKeybindings: true, ...defaultKeybindingLabelStyles });
+					if (kb) kbLabel.set(kb);
+					this.currentDisposables.add(kbLabel);
+				}
 
 
 			}
