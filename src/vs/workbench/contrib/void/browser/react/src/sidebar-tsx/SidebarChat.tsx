@@ -6,7 +6,7 @@
 import React, { ButtonHTMLAttributes, FormEvent, FormHTMLAttributes, Fragment, KeyboardEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 
-import { useAccessor, useChatThreadsState, useChatThreadsStreamState, useSettingsState, useActiveURI, useCommandBarState, useFullChatThreadsStreamState } from '../util/services.js';
+import { useAccessor, useChatThreadsState, useChatThreadsStreamState, useSettingsState, useActiveURI, useCommandBarState, useFullChatThreadsStreamState, useSubAgents, useAgentTask } from '../util/services.js';
 import { ScrollType } from '../../../../../../../editor/common/editorCommon.js';
 
 import { ChatMarkdownRender, ChatMessageLocation, getApplyBoxId } from '../markdown/ChatMarkdownRender.js';
@@ -35,7 +35,7 @@ import { ToolApprovalTypeSwitch } from '../void-settings-tsx/Settings.js';
 
 import { persistentTerminalNameOfId } from '../../../terminalToolService.js';
 import { removeMCPToolNamePrefix } from '../../../../common/mcpServiceTypes.js';
-import { AgentNetworkViz, AgentCompletionCard } from './AgentNetworkViz.js';
+import { SubAgentCard, AgentThreadBackBar } from './AgentNetworkViz.js';
 import { ImageUpload, ImageUploadButton, ImagePreviewsList, useImageDropZone, ChatImageDisplay } from './ImageUpload.js';
 import { getToolCategory, getCategoryLabel, formatToolSummary } from './ModernisationToolFormatters.js';
 
@@ -1141,6 +1141,16 @@ const UserMessageComponent = ({ chatMessage, messageIdx, isCheckpointGhost, curr
 	const EditSymbol = mode === 'display' ? Pencil : X
 
 
+	// Background terminal report — render as compact system notification, not a user bubble
+	const isBgReport = chatMessage.displayContent?.startsWith('⬛')
+	if (isBgReport && mode === 'display') {
+		return (
+			<div className='my-1 mx-2 px-3 py-1.5 rounded bg-void-bg-2 border border-void-border text-[11px] text-void-fg-3 font-mono'>
+				{chatMessage.displayContent.slice(2)}
+			</div>
+		)
+	}
+
 	let chatbubbleContents: React.ReactNode
 	if (mode === 'display') {
 		chatbubbleContents = <>
@@ -1378,7 +1388,7 @@ max-w-none
 		{children}
 	</div>
 }
-const AssistantMessageComponent = ({ chatMessage, isCheckpointGhost, isCommitted, messageIdx }: { chatMessage: ChatMessage & { role: 'assistant' }, isCheckpointGhost: boolean, messageIdx: number, isCommitted: boolean }) => {
+const AssistantMessageComponent = React.memo(({ chatMessage, isCheckpointGhost, isCommitted, messageIdx }: { chatMessage: ChatMessage & { role: 'assistant' }, isCheckpointGhost: boolean, messageIdx: number, isCommitted: boolean }) => {
 
 	const accessor = useAccessor()
 	const chatThreadsService = accessor.get('IChatThreadService')
@@ -1419,7 +1429,7 @@ const AssistantMessageComponent = ({ chatMessage, isCheckpointGhost, isCommitted
 			<div className={`${isCheckpointGhost ? 'opacity-50' : ''}`}>
 				<ProseWrapper>
 					<ChatMarkdownRender
-						string={chatMessage.displayContent || ''}
+						string={(chatMessage.displayContent || '').replace(/<system-reminder>[\s\S]*?<\/system-reminder>/g, '').trim()}
 						chatMessageLocation={chatMessageLocation}
 						isApplyEnabled={true}
 						isLinkDetectionEnabled={true}
@@ -1429,34 +1439,38 @@ const AssistantMessageComponent = ({ chatMessage, isCheckpointGhost, isCommitted
 		}
 	</>
 
-}
+})
+
+// Isolated timer — its state updates every 1s but only re-renders this tiny component
+const ReasoningTimer = React.memo(({ isWriting, startTimeRef, finalTimeRef }: { isWriting: boolean, startTimeRef: React.RefObject<number>, finalTimeRef: React.RefObject<number | null> }) => {
+	const [elapsedSeconds, setElapsedSeconds] = useState(0)
+	useEffect(() => {
+		if (!isWriting) {
+			if (finalTimeRef.current === null) {
+				(finalTimeRef as React.MutableRefObject<number | null>).current = Math.round((Date.now() - startTimeRef.current!) / 1000)
+				setElapsedSeconds(finalTimeRef.current!)
+			}
+			return
+		}
+		const interval = setInterval(() => {
+			setElapsedSeconds(Math.round((Date.now() - startTimeRef.current!) / 1000))
+		}, 1000)
+		return () => clearInterval(interval)
+	}, [isWriting, startTimeRef, finalTimeRef])
+	const label = isWriting ? 'Thinking…' : `Thought for ${elapsedSeconds}s`
+	return <span className="text-[11px] text-void-fg-4 opacity-50 group-hover:opacity-80 transition-opacity duration-150">{label}</span>
+})
 
 const ReasoningWrapper = ({ isDoneReasoning, isStreaming, children }: { isDoneReasoning: boolean, isStreaming: boolean, children: React.ReactNode }) => {
 	const isDone = isDoneReasoning || !isStreaming
 	const isWriting = !isDone
 	const [isOpen, setIsOpen] = useState(isWriting)
-	const [elapsedSeconds, setElapsedSeconds] = useState(0)
 	const startTimeRef = useRef(Date.now())
 	const finalTimeRef = useRef<number | null>(null)
 
 	useEffect(() => {
-		if (!isWriting) {
-			setIsOpen(false)
-			if (finalTimeRef.current === null) {
-				finalTimeRef.current = Math.round((Date.now() - startTimeRef.current) / 1000)
-				setElapsedSeconds(finalTimeRef.current)
-			}
-			return
-		}
-		const interval = setInterval(() => {
-			setElapsedSeconds(Math.round((Date.now() - startTimeRef.current) / 1000))
-		}, 1000)
-		return () => clearInterval(interval)
+		if (!isWriting) setIsOpen(false)
 	}, [isWriting])
-
-	const label = isWriting
-		? 'Thinking…'
-		: `Thought for ${elapsedSeconds}s`
 
 	return (
 		<div className="w-full mb-1.5 mt-0.5">
@@ -1471,9 +1485,7 @@ const ReasoningWrapper = ({ isDoneReasoning, isStreaming, children }: { isDoneRe
 						className={`w-3 h-3 flex-shrink-0 transition-transform duration-150 text-void-fg-4 opacity-40 ${isOpen ? 'rotate-90' : ''}`}
 					/>
 				)}
-				<span className="text-[11px] text-void-fg-4 opacity-50 group-hover:opacity-80 transition-opacity duration-150">
-					{label}
-				</span>
+				<ReasoningTimer isWriting={isWriting} startTimeRef={startTimeRef} finalTimeRef={finalTimeRef} />
 			</div>
 
 			<div className={`overflow-hidden transition-all duration-200 ease-in-out ${isOpen ? 'opacity-100 max-h-[5000px]' : 'max-h-0 opacity-0'}`}>
@@ -2096,46 +2108,91 @@ const CommandTool = ({ toolMessage, type, threadId }: { threadId: string } & ({
 		effect()
 	}, [terminalToolsService, toolMessage, toolMessage.type, type]);
 
+	// ── Running: inline xterm (run_command only) ────────────────────────────
+	if (toolMessage.type === 'running_now' && type === 'run_command') {
+		return (
+			<div className='my-0.5'>
+				<div className='flex items-center gap-1.5 py-0.5'>
+					<span className='w-[5px] h-[5px] rounded-full bg-amber-400 opacity-70 animate-pulse flex-shrink-0' />
+					<span className='text-[11px] text-void-fg-4 font-mono truncate opacity-70'>{desc1}</span>
+					<button
+						className='ml-auto text-[10px] text-void-fg-4 opacity-40 hover:opacity-80 hover:text-void-fg-3 transition-opacity px-1.5 py-0.5 rounded border border-void-fg-4/20 hover:border-void-fg-4/50 flex-shrink-0'
+						onClick={() => terminalToolsService.requestPromoteToBackground(toolMessage.params.terminalId)}
+						title='Move to background terminal so agent continues'
+					>→ BG</button>
+				</div>
+				<div ref={divRef} className='w-full h-[200px] mt-1' />
+			</div>
+		)
+	}
+
+	// ── running_now (other) — just a dim line ────────────────────────────────
+	if (toolMessage.type === 'running_now') {
+		return (
+			<div className='flex items-center gap-1.5 py-0.5 my-0.5'>
+				<span className='w-[5px] h-[5px] rounded-full bg-amber-400 opacity-70 animate-pulse flex-shrink-0' />
+				<span className='text-[11px] text-void-fg-4 font-mono truncate opacity-60'>{desc1}</span>
+				{type === 'run_persistent_command' && <span className='text-[10px] text-void-fg-4 opacity-40 ml-auto'>bg</span>}
+			</div>
+		)
+	}
+
+	// ── Success ──────────────────────────────────────────────────────────────
 	if (toolMessage.type === 'success') {
 		const { result } = toolMessage
-
-		// it's unclear that this is a button and not an icon.
-		// componentParams.desc2 = <JumpToTerminalButton
-		// 	onClick={() => { terminalToolsService.openTerminal(terminalId) }}
-		// />
-
 		let msg: string
 		if (type === 'run_command') msg = toolsService.stringOfResult['run_command'](toolMessage.params, result)
 		else msg = toolsService.stringOfResult['run_persistent_command'](toolMessage.params, result)
 
-		if (type === 'run_persistent_command') {
-			componentParams.info = persistentTerminalNameOfId(toolMessage.params.persistentTerminalId)
-		}
-
-		componentParams.children = <ToolChildrenWrapper className='whitespace-pre text-nowrap overflow-auto text-sm'>
-			<div className='!select-text cursor-auto'>
-				<BlockCode initValue={`${msg.trim()}`} language='shellscript' />
+		const trimmed = msg.trim()
+		const isBg = type === 'run_persistent_command'
+		return (
+			<div className='my-0.5'>
+				<div className='flex items-center gap-1.5 py-0.5'>
+					<span className='w-[5px] h-[5px] rounded-full bg-void-fg-4 opacity-25 flex-shrink-0' />
+					<span className='text-[11px] text-void-fg-4 font-mono truncate opacity-60'>{desc1}</span>
+					{isBg && <span className='text-[10px] text-void-fg-4 opacity-30 ml-auto'>bg</span>}
+				</div>
+				{trimmed && !isBg && (
+					<div className='ml-3 mt-0.5 max-h-[200px] overflow-auto'>
+						<div className='!select-text cursor-auto'>
+							<BlockCode initValue={trimmed} language='shellscript' />
+						</div>
+					</div>
+				)}
 			</div>
-		</ToolChildrenWrapper>
-	}
-	else if (toolMessage.type === 'tool_error') {
-		const { result } = toolMessage
-		componentParams.bottomChildren = <BottomChildren title='Error'>
-			<CodeChildren>
-				{result}
-			</CodeChildren>
-		</BottomChildren>
-	}
-	else if (toolMessage.type === 'running_now') {
-		if (type === 'run_command')
-			componentParams.children = <div ref={divRef} className='relative h-[300px] text-sm' />
-	}
-	else if (toolMessage.type === 'rejected' || toolMessage.type === 'tool_request') {
+		)
 	}
 
-	return <>
-		<ToolHeaderWrapper {...componentParams} isOpen={type === 'run_command' && toolMessage.type === 'running_now' ? true : undefined} />
-	</>
+	// ── Error ────────────────────────────────────────────────────────────────
+	if (toolMessage.type === 'tool_error') {
+		const { result } = toolMessage
+		return (
+			<div className='my-0.5'>
+				<div className='flex items-center gap-1.5 py-0.5'>
+					<span className='w-[5px] h-[5px] rounded-full bg-void-warning opacity-60 flex-shrink-0' />
+					<span className='text-[11px] text-void-fg-4 font-mono truncate opacity-60'>{desc1}</span>
+					<span className='text-[10px] text-void-warning opacity-50 ml-auto'>error</span>
+				</div>
+				<div className='ml-3 mt-0.5 max-h-[150px] overflow-auto text-[11px] font-mono text-void-warning/70 whitespace-pre'>
+					{result}
+				</div>
+			</div>
+		)
+	}
+
+	// ── Rejected / stopped ───────────────────────────────────────────────────
+	if (toolMessage.type === 'rejected') {
+		return (
+			<div className='flex items-center gap-1.5 py-0.5 my-0.5'>
+				<span className='w-[5px] h-[5px] rounded-full bg-void-fg-4 opacity-20 flex-shrink-0' />
+				<span className='text-[11px] text-void-fg-4 font-mono truncate opacity-40 line-through'>{desc1}</span>
+				<span className='text-[10px] text-void-fg-4 opacity-30 ml-auto'>stopped</span>
+			</div>
+		)
+	}
+
+	return null
 }
 
 type WrapperProps<T extends ToolName> = { toolMessage: Exclude<ToolMessage<T>, { type: 'invalid_params' }>, messageIdx: number, threadId: string }
@@ -2485,7 +2542,7 @@ const builtinToolNameToComponent: { [T in BuiltinToolName]: { resultWrapper: Res
 				componentParams.hasNextPage = result.hasNextPage
 				componentParams.children = !result.children || (result.children.length ?? 0) === 0 ? undefined
 					: <ToolChildrenWrapper>
-						{result.children.map((child, i) => (<ListableToolItem key={i}
+						{result.children.map((child) => (<ListableToolItem key={child.uri.fsPath}
 							name={`${child.name}${child.isDirectory ? '/' : ''}`}
 							className='w-full overflow-auto'
 							onClick={() => {
@@ -2537,7 +2594,7 @@ const builtinToolNameToComponent: { [T in BuiltinToolName]: { resultWrapper: Res
 				componentParams.hasNextPage = result.hasNextPage
 				componentParams.children = result.uris.length === 0 ? undefined
 					: <ToolChildrenWrapper>
-						{result.uris.map((uri, i) => (<ListableToolItem key={i}
+						{result.uris.map((uri) => (<ListableToolItem key={uri.fsPath}
 							name={getBasename(uri.fsPath)}
 							className='w-full overflow-auto'
 							onClick={() => { voidOpenFileFn(uri, accessor) }}
@@ -2592,7 +2649,7 @@ const builtinToolNameToComponent: { [T in BuiltinToolName]: { resultWrapper: Res
 				componentParams.hasNextPage = result.hasNextPage
 				componentParams.children = result.uris.length === 0 ? undefined
 					: <ToolChildrenWrapper>
-						{result.uris.map((uri, i) => (<ListableToolItem key={i}
+						{result.uris.map((uri) => (<ListableToolItem key={uri.fsPath}
 							name={getBasename(uri.fsPath)}
 							className='w-full overflow-auto'
 							onClick={() => { voidOpenFileFn(uri, accessor) }}
@@ -2821,74 +2878,27 @@ const builtinToolNameToComponent: { [T in BuiltinToolName]: { resultWrapper: Res
 	'open_persistent_terminal': {
 		resultWrapper: ({ toolMessage }) => {
 			const accessor = useAccessor()
-			const terminalToolsService = accessor.get('ITerminalToolService')
-
-			const { desc1, desc1Info } = toolNameToDesc(toolMessage.name, toolMessage.params, accessor)
-			const title = getTitle(toolMessage)
-			const icon = null
-
-			if (toolMessage.type === 'tool_request') return null // do not show past requests
-			if (toolMessage.type === 'running_now') return null // do not show running
-
-			const isError = false
-			const isRejected = toolMessage.type === 'rejected'
-			const { rawParams, params } = toolMessage
-			const componentParams: ToolHeaderParams = { title, desc1, desc1Info, isError, icon, isRejected, }
-
-			const relativePath = params.cwd ? getRelative(URI.file(params.cwd), accessor) : ''
-			componentParams.info = relativePath ? `Running in ${relativePath}` : undefined
-
-			if (toolMessage.type === 'success') {
-				const { result } = toolMessage
-				const { persistentTerminalId } = result
-				componentParams.desc1 = persistentTerminalNameOfId(persistentTerminalId)
-				componentParams.onClick = () => terminalToolsService.focusPersistentTerminal(persistentTerminalId)
-			}
-			else if (toolMessage.type === 'tool_error') {
-				const { result } = toolMessage
-				componentParams.bottomChildren = <BottomChildren title='Error'>
-					<CodeChildren>
-						{result}
-					</CodeChildren>
-				</BottomChildren>
-			}
-
-			return <ToolHeaderWrapper {...componentParams} />
+			const { desc1 } = toolNameToDesc(toolMessage.name, toolMessage.params, accessor)
+			if (toolMessage.type === 'tool_request' || toolMessage.type === 'running_now') return null
+			return (
+				<div className='flex items-center gap-1.5 py-0.5 my-0.5'>
+					<span className='w-[5px] h-[5px] rounded-full bg-void-fg-4 opacity-25 flex-shrink-0' />
+					<span className='text-[11px] text-void-fg-4 font-mono opacity-60'>{desc1}</span>
+				</div>
+			)
 		},
 	},
 	'kill_persistent_terminal': {
 		resultWrapper: ({ toolMessage }) => {
 			const accessor = useAccessor()
-			const commandService = accessor.get('ICommandService')
-			const terminalToolsService = accessor.get('ITerminalToolService')
-
-			const { desc1, desc1Info } = toolNameToDesc(toolMessage.name, toolMessage.params, accessor)
-			const title = getTitle(toolMessage)
-			const icon = null
-
-			if (toolMessage.type === 'tool_request') return null // do not show past requests
-			if (toolMessage.type === 'running_now') return null // do not show running
-
-			const isError = false
-			const isRejected = toolMessage.type === 'rejected'
-			const { rawParams, params } = toolMessage
-			const componentParams: ToolHeaderParams = { title, desc1, desc1Info, isError, icon, isRejected, }
-
-			if (toolMessage.type === 'success') {
-				const { persistentTerminalId } = params
-				componentParams.desc1 = persistentTerminalNameOfId(persistentTerminalId)
-				componentParams.onClick = () => terminalToolsService.focusPersistentTerminal(persistentTerminalId)
-			}
-			else if (toolMessage.type === 'tool_error') {
-				const { result } = toolMessage
-				componentParams.bottomChildren = <BottomChildren title='Error'>
-					<CodeChildren>
-						{result}
-					</CodeChildren>
-				</BottomChildren>
-			}
-
-			return <ToolHeaderWrapper {...componentParams} />
+			const { desc1 } = toolNameToDesc(toolMessage.name, toolMessage.params, accessor)
+			if (toolMessage.type === 'tool_request' || toolMessage.type === 'running_now') return null
+			return (
+				<div className='flex items-center gap-1.5 py-0.5 my-0.5'>
+					<span className='w-[5px] h-[5px] rounded-full bg-void-fg-4 opacity-25 flex-shrink-0' />
+					<span className='text-[11px] text-void-fg-4 font-mono opacity-60'>{desc1}</span>
+				</div>
+			)
 		},
 	},
 	'multi_replace_file_content': {
@@ -2912,77 +2922,52 @@ const builtinToolNameToComponent: { [T in BuiltinToolName]: { resultWrapper: Res
 	'read_terminal': {
 		resultWrapper: ({ toolMessage }) => {
 			const accessor = useAccessor()
-			const terminalToolsService = accessor.get('ITerminalToolService')
+			const { desc1 } = toolNameToDesc(toolMessage.name, toolMessage.params, accessor)
 
-			const { desc1, desc1Info } = toolNameToDesc(toolMessage.name, toolMessage.params, accessor)
-			const title = getTitle(toolMessage)
-			const icon = null
-
-			if (toolMessage.type === 'tool_request') return null // do not show past requests
-			if (toolMessage.type === 'running_now') return null // do not show running
-
-			const isError = false
-			const isRejected = toolMessage.type === 'rejected'
-			const { rawParams, params } = toolMessage
-			const componentParams: ToolHeaderParams = { title, desc1, desc1Info, isError, icon, isRejected, }
+			if (toolMessage.type === 'tool_request' || toolMessage.type === 'running_now') return null
 
 			if (toolMessage.type === 'success') {
-				const { result } = toolMessage
-				componentParams.onClick = () => terminalToolsService.focusPersistentTerminal(params.persistentTerminalId)
-
-				componentParams.children = <ToolChildrenWrapper>
-					<SmallProseWrapper>
-						<ChatMarkdownRender
-							string={`\`\`\`\n${result}\n\`\`\``}
-							chatMessageLocation={undefined}
-							isApplyEnabled={false}
-							isLinkDetectionEnabled={true}
-						/>
-					</SmallProseWrapper>
-				</ToolChildrenWrapper>
+				const output = (toolMessage.result as any)?.result ?? ''
+				const trimmed = typeof output === 'string' ? output.trim() : ''
+				return (
+					<div className='my-0.5'>
+						<div className='flex items-center gap-1.5 py-0.5'>
+							<span className='w-[5px] h-[5px] rounded-full bg-void-fg-4 opacity-25 flex-shrink-0' />
+							<span className='text-[11px] text-void-fg-4 font-mono opacity-60'>{desc1}</span>
+						</div>
+						{trimmed && (
+							<div className='ml-3 mt-0.5 max-h-[160px] overflow-auto'>
+								<div className='!select-text cursor-auto'>
+									<BlockCode initValue={trimmed} language='shellscript' />
+								</div>
+							</div>
+						)}
+					</div>
+				)
 			}
-			else if (toolMessage.type === 'tool_error') {
-				const { result } = toolMessage
-				componentParams.bottomChildren = <BottomChildren title='Error'>
-					<CodeChildren>
-						{result}
-					</CodeChildren>
-				</BottomChildren>
+			if (toolMessage.type === 'tool_error') {
+				return (
+					<div className='flex items-center gap-1.5 py-0.5 my-0.5'>
+						<span className='w-[5px] h-[5px] rounded-full bg-void-warning opacity-60 flex-shrink-0' />
+						<span className='text-[11px] text-void-fg-4 font-mono opacity-60'>{desc1}</span>
+						<span className='text-[10px] text-void-warning opacity-50 ml-auto'>error</span>
+					</div>
+				)
 			}
-
-			return <ToolHeaderWrapper {...componentParams} />
+			return null
 		},
 	},
 	'send_command_input': {
 		resultWrapper: ({ toolMessage }) => {
 			const accessor = useAccessor()
-			const terminalToolsService = accessor.get('ITerminalToolService')
-
-			const { desc1, desc1Info } = toolNameToDesc(toolMessage.name, toolMessage.params, accessor)
-			const title = getTitle(toolMessage)
-			const icon = null
-
-			if (toolMessage.type === 'tool_request') return null // do not show past requests
-			if (toolMessage.type === 'running_now') return null // do not show running
-
-			const isError = false
-			const isRejected = toolMessage.type === 'rejected'
-			const { rawParams, params } = toolMessage
-			const componentParams: ToolHeaderParams = { title, desc1, desc1Info, isError, icon, isRejected, }
-
-			if (toolMessage.type === 'success') {
-				componentParams.onClick = () => terminalToolsService.focusPersistentTerminal(params.persistentTerminalId)
-			}
-			else if (toolMessage.type === 'tool_error') {
-				const { result } = toolMessage
-				componentParams.bottomChildren = <BottomChildren title='Error'>
-					<CodeChildren>
-						{result}
-					</CodeChildren>
-				</BottomChildren>
-			}
-
-			return <ToolHeaderWrapper {...componentParams} />
+			const { desc1 } = toolNameToDesc(toolMessage.name, toolMessage.params, accessor)
+			if (toolMessage.type === 'tool_request' || toolMessage.type === 'running_now') return null
+			return (
+				<div className='flex items-center gap-1.5 py-0.5 my-0.5'>
+					<span className='w-[5px] h-[5px] rounded-full bg-void-fg-4 opacity-25 flex-shrink-0' />
+					<span className='text-[11px] text-void-fg-4 font-mono opacity-60'>{desc1}</span>
+				</div>
+			)
 		},
 	},
 	'update_agent_status': {
@@ -3360,7 +3345,39 @@ const builtinToolNameToComponent: { [T in BuiltinToolName]: { resultWrapper: Res
 			const accessor = useAccessor()
 			const title = getTitle(toolMessage)
 			const { desc1 } = toolNameToDesc(toolMessage.name, toolMessage.params, accessor)
-			if (toolMessage.type === 'tool_request' || toolMessage.type === 'running_now') return null
+			const [inputValue, setInputValue] = useState('')
+
+			if (toolMessage.type === 'tool_request') return null
+
+			// While running: show the question + inline input box
+			if (toolMessage.type === 'running_now') {
+				const question = (toolMessage.params as BuiltinToolCallParams['ask_user'])?.question ?? ''
+				const requestId = toolMessage.id
+				const handleSubmit = () => {
+					if (!inputValue.trim()) return
+					accessor.get('IUserInputRequestService').respond(requestId, inputValue.trim())
+					setInputValue('')
+				}
+				return <div className='flex flex-col gap-2 py-2 px-1'>
+					<div className='text-sm opacity-80'>{question}</div>
+					<div className='flex gap-2'>
+						<input
+							type='text'
+							className='flex-1 bg-transparent border border-white/20 rounded px-2 py-1 text-sm outline-none focus:border-white/50'
+							placeholder='Type your response...'
+							value={inputValue}
+							onChange={e => setInputValue(e.target.value)}
+							onKeyDown={e => { if (e.key === 'Enter') handleSubmit() }}
+							autoFocus
+						/>
+						<button
+							className='px-3 py-1 text-sm bg-white/10 hover:bg-white/20 rounded'
+							onClick={handleSubmit}
+						>Send</button>
+					</div>
+				</div>
+			}
+
 			const isError = toolMessage.type === 'tool_error'
 			const componentParams: ToolHeaderParams = { title, desc1, isError, icon: null }
 			if (toolMessage.type === 'success') {
@@ -3501,30 +3518,17 @@ const builtinToolNameToComponent: { [T in BuiltinToolName]: { resultWrapper: Res
 	},
 	'spawn_agent': {
 		resultWrapper: ({ toolMessage }) => {
+			const accessor = useAccessor()
 			if (toolMessage.type === 'tool_request' || toolMessage.type === 'running_now') return null
 			if (toolMessage.type === 'tool_error') {
-				const accessor = useAccessor()
 				const title = getTitle(toolMessage)
 				const { desc1 } = toolNameToDesc(toolMessage.name, toolMessage.params, accessor)
-				const componentParams: ToolHeaderParams = { title, desc1, isError: true, icon: null }
-				return <ToolHeaderWrapper {...componentParams} />
+				return <ToolHeaderWrapper title={title} desc1={desc1} isError={true} icon={null} />
 			}
-			if (toolMessage.type === 'success') {
-				// Use structured metadata from result if available, otherwise parse from params/result
-				const metadata = toolMessage.result as any;
-				const agentId = metadata.agentId || metadata.shortId || '';
-				const role = metadata.role || (toolMessage.params as any)?.role || 'explorer';
-				const goal = metadata.goal || (toolMessage.params as any)?.goal || '';
-				const hasWriteAccess = metadata.hasWriteAccess ?? (role === 'editor' || role === 'verifier');
-
-				return <AgentNetworkViz
-					agentId={agentId}
-					role={role}
-					goal={goal}
-					hasWriteAccess={hasWriteAccess}
-				/>
-			}
-			return null
+			const meta = toolMessage.result as any
+			const role: string = meta?.role || (toolMessage.params as any)?.role || 'explorer'
+			const goal: string = meta?.goal || (toolMessage.params as any)?.goal || ''
+			return <SubAgentCard role={role} goal={goal} status="running" />
 		},
 	},
 	'get_agent_status': {
@@ -3547,34 +3551,17 @@ const builtinToolNameToComponent: { [T in BuiltinToolName]: { resultWrapper: Res
 	},
 	'wait_for_agent': {
 		resultWrapper: ({ toolMessage }) => {
-			if (toolMessage.type === 'tool_request' || toolMessage.type === 'running_now') return null
-
-			if (toolMessage.type === 'success') {
-				// Extract agent metadata from params or result
-				const params = toolMessage.params as any;
-				const result = toolMessage.result as any;
-
-				const agentId = params?.agentId || result?.agentId || '';
-				const role = params?.role || result?.role || 'explorer';
-				const goal = params?.goal || result?.goal || '';
-				const duration = result?.duration || params?.duration;
-				const resultText = typeof result.result === 'string' ? result.result : JSON.stringify(result.result, null, 2);
-
-				return <AgentCompletionCard
-					agentId={agentId}
-					role={role}
-					goal={goal}
-					result={resultText}
-					duration={duration}
-				/>
-			}
-
-			// Fallback for errors
 			const accessor = useAccessor()
-			const title = getTitle(toolMessage)
-			const { desc1 } = toolNameToDesc(toolMessage.name, toolMessage.params, accessor)
-			const isError = toolMessage.type === 'tool_error'
-			return <ToolHeaderWrapper title={title} desc1={desc1} isError={isError} icon={null} />
+			if (toolMessage.type === 'tool_request' || toolMessage.type === 'running_now') return null
+			if (toolMessage.type === 'tool_error') {
+				const title = getTitle(toolMessage)
+				const { desc1 } = toolNameToDesc(toolMessage.name, toolMessage.params, accessor)
+				return <ToolHeaderWrapper title={title} desc1={desc1} isError={true} icon={null} />
+			}
+			const result = toolMessage.result as any
+			const role: string = result?.role || 'explorer'
+			const goal: string = result?.goal || ''
+			return <SubAgentCard role={role} goal={goal} status="completed" />
 		},
 	},
 	'list_agents': {
@@ -3829,11 +3816,18 @@ const TaskGroupBlock = ({ taskName, taskSummary, taskStatus, isActive, isLastTas
 	</div>
 }
 
-const ChatBubble = (props: ChatBubbleProps) => {
+const ChatBubble = React.memo((props: ChatBubbleProps) => {
 	return <ErrorBoundary>
 		<_ChatBubble {...props} />
 	</ErrorBoundary>
-}
+}, (prev, next) =>
+	prev.messageIdx === next.messageIdx &&
+	prev.threadId === next.threadId &&
+	prev.currCheckpointIdx === next.currCheckpointIdx &&
+	prev.chatIsRunning === next.chatIsRunning &&
+	prev.isCommitted === next.isCommitted &&
+	prev.chatMessage === next.chatMessage
+)
 
 const _ChatBubble = ({ threadId, chatMessage, currCheckpointIdx, isCommitted, messageIdx, chatIsRunning, _scrollToBottom, allMessages }: ChatBubbleProps) => {
 	const role = chatMessage.role
@@ -3876,11 +3870,13 @@ const _ChatBubble = ({ threadId, chatMessage, currCheckpointIdx, isCommitted, me
 		if (ToolResultWrapper)
 			return <>
 				<div className={`${isCheckpointGhost ? 'opacity-50' : ''}`}>
-					<ToolResultWrapper
-						toolMessage={chatMessage}
-						messageIdx={messageIdx}
-						threadId={threadId}
-					/>
+					<ErrorBoundary>
+						<ToolResultWrapper
+							toolMessage={chatMessage}
+							messageIdx={messageIdx}
+							threadId={threadId}
+						/>
+					</ErrorBoundary>
 				</div>
 				{chatMessage.type === 'tool_request' ?
 					<div className={`${isCheckpointGhost ? 'opacity-50 pointer-events-none' : ''}`}>
@@ -3984,10 +3980,13 @@ const CommandBarInChat = () => {
 	// acceptall + rejectall
 	// popup info about each change (each with num changes + acceptall + rejectall of their own)
 
+	const activeToolName = isRunning === 'tool' ? (chatThreadsStreamState as any)?.toolInfo?.toolName as string | undefined : undefined
 	const numFilesChangedStr = numFilesChanged === 0
 		? (threadModifiedFiles.length > 0 && !isRunning
 			? `${threadModifiedFiles.length} file${threadModifiedFiles.length > 1 ? 's' : ''} modified`
-			: 'No files with changes')
+			: isRunning
+				? activeToolName ? `Running ${activeToolName.replace(/_/g, ' ')}…` : 'Running…'
+				: 'No files with changes')
 		: `${sortedCommandBarURIs.length} file${numFilesChanged === 1 ? '' : 's'} with changes`
 
 
@@ -4260,6 +4259,20 @@ export const SidebarChat = () => {
 	const currThreadStreamState = useChatThreadsStreamState(chatThreadsState.currentThreadId)
 	const isRunning = currThreadStreamState?.isRunning
 	const latestError = currThreadStreamState?.error
+
+	// Sub-agent thread detection for back-navigation
+	const subAgents = useSubAgents()
+	const agentTask = useAgentTask()
+	const subAgentThreadInfo = useMemo(() => {
+		const currentId = chatThreadsState.currentThreadId
+		for (const [, agent] of subAgents) {
+			if (agent.threadId === currentId) {
+				const parentThreadId = agentTask?.threadId ?? ''
+				return { parentThreadId, role: agent.role, goal: agent.goal }
+			}
+		}
+		return null
+	}, [subAgents, agentTask, chatThreadsState.currentThreadId])
 	const { displayContentSoFar, toolCallSoFar, reasoningSoFar } = currThreadStreamState?.llmInfo ?? {}
 
 	// this is just if it's currently being generated, NOT if it's currently running
@@ -4272,13 +4285,31 @@ export const SidebarChat = () => {
 	const [instructionsAreEmpty, setInstructionsAreEmpty] = useState(!initVal)
 	const [uploadedImages, setUploadedImages] = useState<import('../../../../common/chatThreadServiceTypes.js').ImageAttachment[]>([])
 
-	const isDisabled = instructionsAreEmpty || !!isFeatureNameDisabled('Chat', settingsState)
+	// Allow new messages while a BG persistent terminal or ask_user is running — only block on LLM/foreground-tool
+	const isBgTerminalRunning = isRunning === 'tool' && (currThreadStreamState as any)?.toolInfo?.toolName === 'run_persistent_command'
+	const isAskUserRunning = isRunning === 'tool' && (currThreadStreamState as any)?.toolInfo?.toolName === 'ask_user'
+	const isDisabled = instructionsAreEmpty || !!isFeatureNameDisabled('Chat', settingsState) || (!!isRunning && !isBgTerminalRunning && !isAskUserRunning)
 
 	const sidebarRef = useRef<HTMLDivElement>(null)
 	const scrollContainerRef = useRef<HTMLDivElement | null>(null)
 	const onSubmit = useCallback(async (_forceSubmit?: string) => {
 
 		if (isDisabled && !_forceSubmit) return
+
+		// If ask_user is waiting — send the typed text as the answer instead of a new message
+		if (isAskUserRunning) {
+			const answer = _forceSubmit || textAreaRef.current?.value || ''
+			if (!answer.trim()) return
+			const userInputService = accessor.get('IUserInputRequestService')
+			const pending = [...userInputService.pendingRequests.values()]
+			if (pending.length > 0) {
+				userInputService.respond(pending[pending.length - 1].id, answer.trim())
+				textAreaFnsRef.current?.setValue('')
+				textAreaRef.current?.focus()
+			}
+			return
+		}
+
 		if (isRunning) return
 
 		const threadId = chatThreadsService.state.currentThreadId
@@ -4444,23 +4475,26 @@ export const SidebarChat = () => {
 				</TaskGroupBlock>
 			</React.Fragment>
 		})
-	}, [previousMessages, threadId, currCheckpointIdx, isRunning])
+	}, [previousMessages, threadId, currCheckpointIdx]) // NOTE: isRunning removed — grouping logic doesn't depend on it; ChatBubble reads its own stream state
 
 	const streamingChatIdx = (previousMessagesHTML ?? []).length
+
+	// Memoize the chatMessage object so ChatBubble doesn't see a new object reference on every token
+	const streamingChatMessage = useMemo(() => ({
+		role: 'assistant' as const,
+		displayContent: displayContentSoFar ?? '',
+		reasoning: reasoningSoFar ?? '',
+		anthropicReasoning: null,
+	}), [displayContentSoFar, reasoningSoFar])
+
 	const currStreamingMessageHTML = reasoningSoFar || displayContentSoFar || isRunning ?
 		<ChatBubble
 			key={'curr-streaming-msg'}
 			currCheckpointIdx={currCheckpointIdx}
-			chatMessage={{
-				role: 'assistant',
-				displayContent: displayContentSoFar ?? '',
-				reasoning: reasoningSoFar ?? '',
-				anthropicReasoning: null,
-			}}
+			chatMessage={streamingChatMessage}
 			messageIdx={streamingChatIdx}
 			isCommitted={false}
 			chatIsRunning={isRunning}
-
 			threadId={threadId}
 			_scrollToBottom={null}
 		/> : null
@@ -4558,8 +4592,8 @@ export const SidebarChat = () => {
 	>
 		<VoidInputBox2
 			enableAtToMention
-			className={`min-h-[20px] px-0.5 py-0.5`}
-			placeholder={`Ask Anything ( ${keybindingString ? `${keybindingString} ` : ''}), @ to mention.`}
+			className={`min-h-[20px] px-0.5 py-0.5 ${isRunning && !isBgTerminalRunning && !isAskUserRunning ? 'opacity-40 pointer-events-none select-none' : ''}`}
+			placeholder={isBgTerminalRunning ? `Running in background — ask anything` : isAskUserRunning ? `Agent is waiting for your answer...` : isRunning ? 'Agent is running…' : `Ask Anything ( ${keybindingString ? `${keybindingString} ` : ''}), @ to mention.`}
 			onChangeText={onChangeText}
 			onKeyDown={onKeyDown}
 			onFocus={() => { chatThreadsService.setCurrentlyFocusedMessageIdx(undefined) }}
@@ -4702,6 +4736,13 @@ export const SidebarChat = () => {
 		ref={sidebarRef}
 		className='w-full h-full flex flex-col overflow-hidden'
 	>
+		{subAgentThreadInfo && (
+			<AgentThreadBackBar
+				parentThreadId={subAgentThreadInfo.parentThreadId}
+				agentRole={subAgentThreadInfo.role}
+				agentGoal={subAgentThreadInfo.goal}
+			/>
+		)}
 
 		<ErrorBoundary>
 			{messagesHTML}

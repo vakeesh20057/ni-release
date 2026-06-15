@@ -25,6 +25,7 @@ import { ChatMessage, CheckpointEntry, CodespanLocationLink, ImageAttachment, St
 import { Position } from '../../../../editor/common/core/position.js';
 import { IMetricsService } from '../common/metricsService.js';
 import { shorten } from '../../../../base/common/labels.js';
+import { IUserInputRequestService } from './userInputRequestService.js';
 import { IVoidModelService } from '../common/voidModelService.js';
 import { findLast, findLastIdx } from '../../../../base/common/arraysFind.js';
 import { IEditCodeService } from './editCodeServiceInterface.js';
@@ -170,6 +171,7 @@ class ChatThreadService extends Disposable implements IChatThreadService {
 		@IMCPService private readonly _mcpService: IMCPService,
 		@IVoidInternalToolService private readonly _internalToolService: IVoidInternalToolService,
 		@IInstantiationService private readonly _instantiationService: IInstantiationService,
+		@IUserInputRequestService private readonly _userInputRequestService: IUserInputRequestService,
 	) {
 		super()
 		this.state = { allThreads: {}, currentThreadId: null as unknown as string } // default state
@@ -184,6 +186,34 @@ class ChatThreadService extends Disposable implements IChatThreadService {
 
 		// always be in a thread
 		this.openNewThread()
+
+		// When a background terminal finishes, inject result as system-level context and trigger agent response
+		this._register(this._toolsService.onBackgroundTerminalComplete(({ threadId, command, output, exitCode }) => {
+			const targetThreadId = threadId || this.state.currentThreadId
+			if (!targetThreadId || !this.state.allThreads[targetThreadId]) return
+			const trimmed = output.trim().slice(-2000)
+			const statusLine = exitCode === 0 ? 'completed successfully (exit 0)' : `failed (exit code ${exitCode})`
+			// Content for LLM: explicit instruction not to re-run
+			const content = `[SYSTEM: Background terminal finished] Command: ${command}\nStatus: ${statusLine}\nOutput:\n${trimmed || '(no output)'}\n\nAcknowledge this result to the user in one sentence. Do NOT re-run the command.`
+			// Display for user: compact notification style
+			const displayContent = `⬛ \`${command}\` ${statusLine}`
+			this._addMessageToThread(targetThreadId, { role: 'user', content, displayContent, selections: null, state: defaultMessageState })
+			// Trigger agent to respond — wait for idle if currently running
+			const triggerAgent = () => {
+				if (this.streamState[targetThreadId]?.isRunning) {
+					const l = this.onDidChangeStreamState(({ threadId: t }) => {
+						if (t !== targetThreadId) return
+						if (!this.streamState[targetThreadId]?.isRunning) {
+							l.dispose()
+							this._runChatAgent({ threadId: targetThreadId, ...this._currentModelSelectionProps() })
+						}
+					})
+				} else {
+					this._runChatAgent({ threadId: targetThreadId, ...this._currentModelSelectionProps() })
+				}
+			}
+			triggerAgent()
+		}))
 
 
 		// keep track of user-modified files
@@ -439,6 +469,11 @@ class ChatThreadService extends Disposable implements IChatThreadService {
 		if (typeof interrupt === 'function')
 			interrupt()
 
+		// cancel any pending ask_user input requests for this thread
+		for (const [id] of this._userInputRequestService.pendingRequests) {
+			this._userInputRequestService.cancel(id)
+		}
+
 
 		this._setStreamState(threadId, undefined)
 	}
@@ -532,6 +567,8 @@ class ChatThreadService extends Disposable implements IChatThreadService {
 			this._setStreamState(threadId, { isRunning: 'tool', interrupt: interruptorPromise, toolInfo: { toolName, toolParams, id: toolId, content: 'interrupted...', rawParams: opts.unvalidatedToolParams, mcpServerName } })
 
 			if (isBuiltInTool) {
+				// For ask_user: register toolId so UI input box can respond using toolMessage.id
+				if (toolName === 'ask_user') this._userInputRequestService.setNextToolCallId(toolId)
 				const { result, interruptTool } = await this._toolsService.callTool[toolName](toolParams as any)
 				const interruptor = () => { interrupted = true; interruptTool?.() }
 				resolveInterruptor(interruptor)
@@ -626,6 +663,9 @@ class ChatThreadService extends Disposable implements IChatThreadService {
 		let shouldSendAnotherMessage = true
 		let isRunningWhenEnd: IsRunningType = undefined
 		const _loopStartMs = Date.now()
+		const MAX_MESSAGES_SENT = 50 // hard cap to prevent infinite loops
+		let _lastToolSig = '' // for consecutive duplicate tool detection
+		let _consecutiveDuplicateTools = 0
 
 		// before enter loop, call tool
 		if (callThisToolFirst) {
@@ -645,6 +685,12 @@ class ChatThreadService extends Disposable implements IChatThreadService {
 			shouldSendAnotherMessage = false
 			isRunningWhenEnd = undefined
 			nMessagesSent += 1
+
+			// Hard cap: prevent runaway loops
+			if (nMessagesSent > MAX_MESSAGES_SENT) {
+				this._setStreamState(threadId, { isRunning: undefined, error: { message: `Agent stopped: exceeded ${MAX_MESSAGES_SENT} iterations. This may indicate an infinite loop.`, fullError: null } })
+				return
+			}
 
 			this._setStreamState(threadId, { isRunning: 'idle', interrupt: idleInterruptor })
 
@@ -794,6 +840,19 @@ class ChatThreadService extends Disposable implements IChatThreadService {
 
 					let anyInterrupted = false;
 					let anyAwaitingUserApproval = false;
+
+					// Detect consecutive duplicate tool calls (loop guard)
+					const toolSig = toolCalls.map(t => `${t.name}:${JSON.stringify(t.rawParams)}`).join('|')
+					if (toolSig === _lastToolSig) {
+						_consecutiveDuplicateTools++
+						if (_consecutiveDuplicateTools >= 3) {
+							this._setStreamState(threadId, { isRunning: undefined, error: { message: `Agent stopped: detected infinite loop (same tool called ${_consecutiveDuplicateTools} times in a row with identical parameters).`, fullError: null } })
+							return
+						}
+					} else {
+						_consecutiveDuplicateTools = 0
+						_lastToolSig = toolSig
+					}
 
 					// execute all tools sequentially or concurrently (sequentially is safer for things like git and file edits)
 					for (const toolCall of toolCalls) {
@@ -1150,9 +1209,9 @@ We only need to do it for files that were edited since `from`, ie files between 
 
 			this._notificationService.notify({
 				severity: error ? Severity.Warning : Severity.Info,
-				message: error ? `Error: ${error} ` : `A new Chat result is ready.`,
-				source: messageContent,
-				sticky: true,
+				message: error ? `Agent error: ${error}` : `Agent finished — "${messageContent}"`,
+				source: 'Neural Inverse Agent',
+				sticky: false,
 				actions: {
 					primary: [{
 						id: 'void.goToChat',
@@ -1173,9 +1232,9 @@ We only need to do it for files that were edited since `from`, ie files between 
 		}
 
 		p.then(() => {
-			if (threadId !== this.state.currentThreadId) notify({ error: null })
+			notify({ error: null })
 		}).catch((e) => {
-			if (threadId !== this.state.currentThreadId) notify({ error: getErrorMessage(e) })
+			notify({ error: getErrorMessage(e) })
 			throw e
 		})
 	}
@@ -1605,6 +1664,26 @@ We only need to do it for files that were edited since `from`, ie files between 
 		}
 		this._storeAllThreads(newThreads)
 		this._setState({ allThreads: newThreads, currentThreadId: newThread.id })
+	}
+
+	createBackgroundThread(): string {
+		const newThread = newThreadObject()
+		const newThreads: ChatThreads = {
+			...this.state.allThreads,
+			[newThread.id]: newThread
+		}
+		this._storeAllThreads(newThreads)
+		this._setState({ allThreads: newThreads })
+		return newThread.id
+	}
+
+	addBackgroundMessage(threadId: string, message: ChatMessage): void {
+		const thread = this.state.allThreads[threadId]
+		if (!thread) return
+		const updatedThread = { ...thread, messages: [...thread.messages, message] }
+		const newThreads = { ...this.state.allThreads, [threadId]: updatedThread }
+		this._storeAllThreads(newThreads)
+		this._setState({ allThreads: newThreads })
 	}
 
 

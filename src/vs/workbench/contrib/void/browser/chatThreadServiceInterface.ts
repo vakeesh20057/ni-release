@@ -122,6 +122,8 @@ export interface IChatThreadService {
 	getCurrentThread(): ThreadType;
 	openNewThread(): void;
 	switchToThread(threadId: string): void;
+	createBackgroundThread(): string;
+	addBackgroundMessage(threadId: string, message: ChatMessage): void;
 
 	// thread selector
 	deleteThread(threadId: string): void;
