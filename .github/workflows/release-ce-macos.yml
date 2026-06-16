@@ -42,7 +42,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          ref: community-edition
+          ref: main
           fetch-depth: 1
 
       - name: Set version
@@ -148,7 +148,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          ref: community-edition
+          ref: main
           fetch-depth: 1
 
       - name: Set version
