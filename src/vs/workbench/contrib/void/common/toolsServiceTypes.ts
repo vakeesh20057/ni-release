@@ -81,6 +81,7 @@ export type BuiltinToolCallParams = {
 	'context_file_context': { file: string, budget: number | null },
 	'context_import_graph': { file: string, depth: number | null },
 	'context_recent_edits': { withinMinutes: number | null },
+	'context_semantic_search': { query: string, maxResults: number | null, filePattern: string | null },
 	// ---
 	'read_file': { uri: URI, startLine: number | null, endLine: number | null, pageNumber: number },
 	'ls_dir': { uri: URI, pageNumber: number },
@@ -96,7 +97,7 @@ export type BuiltinToolCallParams = {
 	'create_file_or_folder': { uri: URI, isFolder: boolean },
 	'delete_file_or_folder': { uri: URI, isRecursive: boolean, isFolder: boolean },
 	// ---
-	'run_command': { command: string; cwd: string | null, terminalId: string },
+	'run_command': { command: string; cwd: string | null, terminalId: string, timeout: number | null, bgAfter: number | null },
 	'run_persistent_command': { command: string; persistentTerminalId: string },
 	'open_persistent_terminal': { cwd: string | null },
 	'read_terminal': { persistentTerminalId: string },
@@ -142,6 +143,7 @@ export type BuiltinToolResultType = {
 	'context_file_context': { result: string },
 	'context_import_graph': { result: string },
 	'context_recent_edits': { result: string },
+	'context_semantic_search': { result: string },
 	// ---
 	'read_file': { fileContents: string, totalFileLen: number, totalNumLines: number, hasNextPage: boolean },
 	'ls_dir': { children: ShallowDirectoryItem[] | null, hasNextPage: boolean, hasPrevPage: boolean, itemsRemaining: number },

@@ -14,7 +14,7 @@
 import { Disposable } from '../../../../base/common/lifecycle.js';
 import { Emitter, Event } from '../../../../base/common/event.js';
 import { registerSingleton, InstantiationType } from '../../../../platform/instantiation/common/extensions.js';
-import { createDecorator } from '../../../../platform/instantiation/common/instantiation.js';
+import { createDecorator, IInstantiationService } from '../../../../platform/instantiation/common/instantiation.js';
 import { generateUuid } from '../../../../base/common/uuid.js';
 import { INotificationService, Severity } from '../../../../platform/notification/common/notification.js';
 
@@ -33,11 +33,17 @@ import {
 	ApprovalTier,
 	defaultApprovalTiers,
 	getRiskLevel,
-	AGENT_MAX_ITERATIONS,
 	AGENT_MAX_CONSECUTIVE_ERRORS,
+	AGENT_MAX_REPLANS,
 	AGENT_STEP_COOLDOWN_MS,
 	AGENT_CONTEXT_MAX_TOKENS,
+	AGENT_ITERATION_BUDGET,
 } from '../common/neuralInverseAgentTypes.js';
+import { IAgentScratchpadService } from './agentScratchpadService.js';
+import { IAgentRollbackService } from './agentRollbackService.js';
+import { IAgentTaskDecomposer } from './agentTaskDecomposer.js';
+import { IAgentMemoryService } from './agentMemoryService.js';
+import type { INeuralInverseSubAgentService } from './neuralInverseSubAgentService.js';
 
 
 // ======================== Service Interface ========================
@@ -106,6 +112,11 @@ class NeuralInverseAgentService extends Disposable implements INeuralInverseAgen
 		@IVoidSettingsService private readonly _settingsService: IVoidSettingsService,
 		@INotificationService private readonly _notificationService: INotificationService,
 		@INeuralInverseAgentConfigService private readonly _configService: INeuralInverseAgentConfigService,
+		@IAgentScratchpadService private readonly _scratchpadService: IAgentScratchpadService,
+		@IAgentRollbackService private readonly _rollbackService: IAgentRollbackService,
+		@IAgentTaskDecomposer private readonly _taskDecomposer: IAgentTaskDecomposer,
+		@IAgentMemoryService private readonly _memoryService: IAgentMemoryService,
+		@IInstantiationService private readonly _instantiationService: IInstantiationService,
 	) {
 		super();
 		this._workingMemory = this._createFreshMemory();
@@ -136,7 +147,8 @@ class NeuralInverseAgentService extends Disposable implements INeuralInverseAgen
 		}
 
 		const now = new Date().toISOString();
-		const maxIter = this._configService.config.constraints.maxIterations ?? AGENT_MAX_ITERATIONS;
+		const estimatedComplexity = this._taskDecomposer.estimateComplexity(goal);
+		const maxIter = this._configService.config.constraints.maxIterations ?? AGENT_ITERATION_BUDGET[estimatedComplexity];
 		const task: AgentTask = {
 			id: generateUuid(),
 			goal,
@@ -153,18 +165,32 @@ class NeuralInverseAgentService extends Disposable implements INeuralInverseAgen
 			totalToolCalls: 0,
 			totalLLMCalls: 0,
 			totalErrors: 0,
+			subtasks: [],
+			scratchpad: this._scratchpadService.scratchpad,
+			replans: [],
+			complexity: estimatedComplexity,
 		};
 
 		this._activeTask = task;
 		this._workingMemory = this._createFreshMemory();
 		this._consecutiveErrors = 0;
 		this._isPaused = false;
+		this._scratchpadService.clear();
 
 		this._emitEvent('task_created', task.id);
 		this._logAction(task, { type: 'status_update', summary: `Task created: ${goal}` });
+		this._scratchpadService.append('observation', `Goal: ${goal}`, 5);
 
-		// Transition to executing — the chat thread loop drives the actual LLM calls
+		// Kick off async decomposition in background — updates task.subtasks when done
+		this._decomposeTaskAsync(task, goal);
+
+		// Transition directly to executing — full autonomy, no plan-approval gate
 		this._transitionStatus(task, 'executing');
+
+		// Create initial rollback checkpoint
+		const thread = this._chatThreadService.state.allThreads[threadId];
+		const msgIndex = thread?.messages?.length ?? 0;
+		this._rollbackService.createCheckpoint(threadId, `task_start:${task.id}`, msgIndex);
 
 		return task;
 	}
@@ -270,11 +296,30 @@ class NeuralInverseAgentService extends Disposable implements INeuralInverseAgen
 			sections.push(`<agent_context>\n${recentEntries}\n</agent_context>`);
 		}
 
-		// Task progress
+		// Task progress + subtask status
 		if (this._activeTask) {
 			const task = this._activeTask;
-			const progress = `Task: ${task.goal}\nIteration: ${task.iteration}/${task.maxIterations}\nFiles read: ${task.filesRead.size} | Files modified: ${task.filesModified.size}\nTool calls: ${task.totalToolCalls} | Errors: ${task.totalErrors}`;
+			const progress = `Task: ${task.goal}\nComplexity: ${task.complexity} | Iteration: ${task.iteration}/${task.maxIterations}\nFiles read: ${task.filesRead.size} | Files modified: ${task.filesModified.size}\nTool calls: ${task.totalToolCalls} | Errors: ${task.totalErrors} | Replans: ${task.replans.length}`;
 			sections.push(`<agent_progress>\n${progress}\n</agent_progress>`);
+
+			if (task.subtasks.length > 0) {
+				const subtaskSummary = task.subtasks
+					.map(st => `[${st.status}] ${st.goal}`)
+					.join('\n');
+				sections.push(`<subtasks>\n${subtaskSummary}\n</subtasks>`);
+			}
+		}
+
+		// Scratchpad reasoning trace
+		const scratchpadSummary = this._scratchpadService.getCompressedSummary();
+		if (scratchpadSummary) {
+			sections.push(scratchpadSummary);
+		}
+
+		// Persistent memory (cross-session learned context)
+		const memorySummary = this._memoryService.getContextSummary(1500);
+		if (memorySummary) {
+			sections.push(`<persistent_memory>\n${memorySummary}\n</persistent_memory>`);
 		}
 
 		return sections.join('\n\n');
@@ -337,6 +382,13 @@ class NeuralInverseAgentService extends Disposable implements INeuralInverseAgen
 					const tier = this.getApprovalTier(toolName);
 
 					if (tier === 'auto') {
+						// Pre-edit context gathering: if edit tool targets a file not yet read, spawn explorer
+						const editTools = new Set(['edit_file', 'rewrite_file', 'multi_replace_file_content']);
+						const targetUri = lastMsg.rawParams?.['uri'] as string | undefined;
+						if (editTools.has(toolName) && targetUri && !task.filesRead.has(targetUri)) {
+							this._spawnPreEditExplorer(task, targetUri);
+						}
+
 						// Auto-approve immediately
 						task.totalToolCalls++;
 						this._consecutiveErrors = 0;
@@ -375,28 +427,63 @@ class NeuralInverseAgentService extends Disposable implements INeuralInverseAgen
 			// Detect when the stream finishes (undefined = idle/done)
 			if (streamState?.isRunning === undefined) {
 				if (task.status === 'executing' || task.status === 'awaiting_approval') {
-					// Check for errors
 					if (streamState?.error) {
 						task.totalErrors++;
 						this._consecutiveErrors++;
-						this._logAction(task, { type: 'error', summary: streamState.error.message });
+						const errorMsg = streamState.error.message;
+						this._logAction(task, { type: 'error', summary: errorMsg });
+						this._scratchpadService.append('error', errorMsg, 5);
 
 						if (this._consecutiveErrors >= AGENT_MAX_CONSECUTIVE_ERRORS) {
-							this._transitionStatus(task, 'failed');
-							this._logAction(task, { type: 'error', summary: `Too many consecutive errors (${AGENT_MAX_CONSECUTIVE_ERRORS})` });
-							return;
+							// Attempt replan before hard-failing
+							const errorClass = this._classifyError(errorMsg);
+							const existingReplan = task.replans.find(r => r.errorClass === errorClass);
+
+							if (!existingReplan || existingReplan.replanCount < AGENT_MAX_REPLANS) {
+								this._triggerReplan(task, threadId, errorClass, errorMsg);
+							} else {
+								this._transitionStatus(task, 'failed');
+								this._logAction(task, { type: 'error', summary: `Replan limit reached for error class: ${errorClass}` });
+							}
 						}
 					} else {
 						// Clean completion
 						this._consecutiveErrors = 0;
+						this._scratchpadService.append('observation', 'Task completed successfully', 3);
 						this._transitionStatus(task, 'completed');
 						this._emitEvent('task_completed', task.id);
+						this._persistTaskMemory(task);
 					}
 				}
 			}
 		}));
 	}
 
+
+	// ---- Memory Persistence ----
+
+	private _persistTaskMemory(task: AgentTask): void {
+		// Store file modification patterns
+		if (task.filesModified.size > 0) {
+			const files = Array.from(task.filesModified).map(f => f.split('/').pop()).join(', ');
+			this._memoryService.remember('project-fact', `Modified files for "${task.goal}": ${files}`, ['task-result']);
+		}
+		// Store error-fix patterns for future reference
+		for (const replan of task.replans) {
+			if (replan.errorMessage) {
+				this._memoryService.remember('error-fix', `Replan during "${task.goal}": ${replan.errorMessage}`, ['replan', 'error']);
+			}
+		}
+		// Store tool usage pattern
+		if (task.totalToolCalls > 5) {
+			const toolSummary = task.steps
+				.flatMap(s => s.toolsUsed)
+				.reduce((acc, t) => { acc[t] = (acc[t] || 0) + 1; return acc; }, {} as Record<string, number>);
+			const topTools = Object.entries(toolSummary).sort((a, b) => b[1] - a[1]).slice(0, 5)
+				.map(([t, c]) => `${t}(${c})`).join(', ');
+			this._memoryService.remember('tool-usage', `Task "${task.goal}" used: ${topTools}`, ['tool-pattern']);
+		}
+	}
 
 	// ---- Internal Helpers ----
 
@@ -456,6 +543,42 @@ class NeuralInverseAgentService extends Disposable implements INeuralInverseAgen
 		});
 	}
 
+	private _getSubAgentService(): INeuralInverseSubAgentService | undefined {
+		try {
+			const { INeuralInverseSubAgentService: id } = require('./neuralInverseSubAgentService.js');
+			return this._instantiationService.invokeFunction(accessor => accessor.get(id));
+		} catch { return undefined; }
+	}
+
+	private _spawnPreEditExplorer(task: AgentTask, targetUri: string): void {
+		const subAgentService = this._getSubAgentService();
+		if (!subAgentService) return;
+		const goal = `Read and understand ${targetUri} — its imports, exports, main patterns — to provide context for an upcoming edit.`;
+		const subAgent = subAgentService.spawn({
+			role: 'explorer',
+			goal,
+			scopedFiles: [targetUri],
+			parentContext: { id: task.id, type: 'agent-task' },
+		});
+		if (subAgent) {
+			task.filesRead.add(targetUri);
+			// Poll for result asynchronously (non-blocking — edit proceeds regardless)
+			const checkResult = () => {
+				const result = subAgentService.getResult(subAgent.id);
+				if (result) {
+					this.recordContext({
+						type: 'file_read',
+						summary: `Pre-edit exploration of ${targetUri}: ${result.slice(0, 500)}`,
+						importance: 4,
+					});
+				} else if (subAgent.status !== 'completed' && subAgent.status !== 'failed') {
+					setTimeout(checkResult, 1000);
+				}
+			};
+			setTimeout(checkResult, 2000);
+		}
+	}
+
 	private _createFreshMemory(): AgentWorkingMemory {
 		const budget = this._configService?.config?.memory?.maxTokenBudget ?? AGENT_CONTEXT_MAX_TOKENS;
 		return {
@@ -469,7 +592,6 @@ class NeuralInverseAgentService extends Disposable implements INeuralInverseAgen
 		const mem = this._workingMemory;
 		if (mem.estimatedTokens <= mem.maxTokenBudget) return;
 
-		// Sort by importance (ascending), prune lowest-importance first
 		const sorted = [...mem.entries].sort((a, b) => a.importance - b.importance);
 		while (mem.estimatedTokens > mem.maxTokenBudget * 0.8 && sorted.length > 0) {
 			const removed = sorted.shift()!;
@@ -478,6 +600,77 @@ class NeuralInverseAgentService extends Disposable implements INeuralInverseAgen
 				mem.entries.splice(idx, 1);
 				mem.estimatedTokens -= Math.ceil(removed.summary.length / 4);
 			}
+		}
+	}
+
+	private _classifyError(errorMsg: string): string {
+		const lower = errorMsg.toLowerCase();
+		if (lower.includes('timeout')) return 'timeout';
+		if (lower.includes('permission') || lower.includes('eacces')) return 'permission';
+		if (lower.includes('not found') || lower.includes('enoent')) return 'not_found';
+		if (lower.includes('rate limit') || lower.includes('429')) return 'rate_limit';
+		if (lower.includes('parse') || lower.includes('syntax')) return 'parse_error';
+		return 'unknown';
+	}
+
+	private _triggerReplan(task: AgentTask, threadId: string, errorClass: string, errorMsg: string): void {
+		const existing = task.replans.find(r => r.errorClass === errorClass);
+		if (existing) {
+			existing.replanCount++;
+			existing.lastReplanAt = new Date().toISOString();
+		} else {
+			task.replans.push({
+				errorClass,
+				errorMessage: errorMsg,
+				replanCount: 1,
+				lastReplanAt: new Date().toISOString(),
+				correctionStrategy: this._getCorrectionStrategy(errorClass),
+			});
+		}
+
+		this._consecutiveErrors = 0;
+		const strategy = this._getCorrectionStrategy(errorClass);
+		this._scratchpadService.append('replan', `Replanning after ${errorClass}: ${strategy}`, 5);
+		this._logAction(task, { type: 'status_update', summary: `Replanning: ${strategy}` });
+
+		// Roll back to last checkpoint and inject corrective context
+		const checkpoint = this._rollbackService.getLatestCheckpoint(threadId);
+		if (checkpoint) {
+			this._rollbackService.rollback(checkpoint.id, `replan:${errorClass}`);
+		}
+	}
+
+	private _getCorrectionStrategy(errorClass: string): string {
+		const strategies: Record<string, string> = {
+			timeout: 'Break the operation into smaller steps or use a shorter command',
+			permission: 'Check file permissions or try an alternative approach',
+			not_found: 'Verify the file/path exists before proceeding',
+			rate_limit: 'Reduce request frequency and retry',
+			parse_error: 'Review the output format and adjust parsing logic',
+			unknown: 'Try a different approach to accomplish the goal',
+		};
+		return strategies[errorClass] ?? strategies.unknown;
+	}
+
+	private async _decomposeTaskAsync(task: AgentTask, goal: string): Promise<void> {
+		try {
+			const context = this.getContextSummary();
+			const result = await this._taskDecomposer.decompose(goal, context);
+			task.subtasks = result.subtasks;
+			task.complexity = result.complexity;
+			// Upgrade iteration budget based on actual decomposed complexity
+			task.maxIterations = Math.max(
+				task.maxIterations,
+				AGENT_ITERATION_BUDGET[result.complexity]
+			);
+			this._scratchpadService.append(
+				'decision',
+				`Decomposed into ${result.subtasks.length} subtasks (${result.complexity}): ${result.reasoning}`,
+				4
+			);
+			this._emitEvent('task_updated', task.id, { subtaskCount: result.subtasks.length });
+		} catch {
+			// Decomposition is best-effort — agent continues even without it
 		}
 	}
 }

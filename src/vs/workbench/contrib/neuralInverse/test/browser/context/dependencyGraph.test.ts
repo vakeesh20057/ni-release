@@ -8,20 +8,32 @@ import { ensureNoDisposablesAreLeakedInTestSuite } from '../../../../../../base/
 import { DependencyGraphService } from '../../../browser/context/graph/dependencyGraph.js';
 
 function makeModel(text: string): any {
-	return { getValue: () => text };
+	return { getValue: () => text, getLanguageId: () => 'typescript' };
 }
+
+const mockTreeSitter: any = {
+	_serviceBrand: undefined,
+	onDidAddLanguage: { dispose() { } },
+	onDidUpdateTree: { dispose() { } },
+	getOrInitLanguage() { return undefined; },
+	async getLanguage() { return undefined; },
+	getParseResult() { return undefined; },
+	async getTree() { return undefined; },
+	getTreeSync() { return undefined; },
+	async getTextModelTreeSitter() { return undefined; },
+};
 
 suite('DependencyGraphService — named imports', () => {
 	const store = ensureNoDisposablesAreLeakedInTestSuite();
 
 	test('extracts single named import', async () => {
-		const svc = store.add(new DependencyGraphService());
+		const svc = store.add(new DependencyGraphService(mockTreeSitter));
 		const allowed = await svc.getAllowedCalls(makeModel("import { Foo } from 'mod';"));
 		assert.ok(allowed.includes('Foo'), 'Foo should be allowed');
 	});
 
 	test('extracts multiple names from one import', async () => {
-		const svc = store.add(new DependencyGraphService());
+		const svc = store.add(new DependencyGraphService(mockTreeSitter));
 		const allowed = await svc.getAllowedCalls(makeModel("import { Alpha, Beta, Gamma } from './pkg';"));
 		assert.ok(allowed.includes('Alpha'));
 		assert.ok(allowed.includes('Beta'));
@@ -29,7 +41,7 @@ suite('DependencyGraphService — named imports', () => {
 	});
 
 	test('handles aliased named imports (keeps alias)', async () => {
-		const svc = store.add(new DependencyGraphService());
+		const svc = store.add(new DependencyGraphService(mockTreeSitter));
 		// "import { Foo as Bar }" — regex captures "Foo as Bar" as a token
 		const allowed = await svc.getAllowedCalls(makeModel("import { Foo as Bar } from 'mod';"));
 		// At minimum the raw token should be present in some form
@@ -38,7 +50,7 @@ suite('DependencyGraphService — named imports', () => {
 	});
 
 	test('deduplicates the same name imported twice', async () => {
-		const svc = store.add(new DependencyGraphService());
+		const svc = store.add(new DependencyGraphService(mockTreeSitter));
 		const code = "import { Foo } from 'a';\nimport { Foo } from 'b';";
 		const allowed = await svc.getAllowedCalls(makeModel(code));
 		assert.strictEqual(allowed.filter(a => a === 'Foo').length, 1);
@@ -49,13 +61,13 @@ suite('DependencyGraphService — namespace imports', () => {
 	const store = ensureNoDisposablesAreLeakedInTestSuite();
 
 	test('extracts namespace import binding', async () => {
-		const svc = store.add(new DependencyGraphService());
+		const svc = store.add(new DependencyGraphService(mockTreeSitter));
 		const allowed = await svc.getAllowedCalls(makeModel("import * as Utils from './utils';"));
 		assert.ok(allowed.includes('Utils'));
 	});
 
 	test('handles multiple namespace imports', async () => {
-		const svc = store.add(new DependencyGraphService());
+		const svc = store.add(new DependencyGraphService(mockTreeSitter));
 		const code = "import * as A from './a';\nimport * as B from './b';";
 		const allowed = await svc.getAllowedCalls(makeModel(code));
 		assert.ok(allowed.includes('A'));
@@ -67,13 +79,13 @@ suite('DependencyGraphService — default imports', () => {
 	const store = ensureNoDisposablesAreLeakedInTestSuite();
 
 	test('extracts default import', async () => {
-		const svc = store.add(new DependencyGraphService());
+		const svc = store.add(new DependencyGraphService(mockTreeSitter));
 		const allowed = await svc.getAllowedCalls(makeModel("import MyClass from './myClass';"));
 		assert.ok(allowed.includes('MyClass'));
 	});
 
 	test('does not add "{" as a default import when curly brace form used', async () => {
-		const svc = store.add(new DependencyGraphService());
+		const svc = store.add(new DependencyGraphService(mockTreeSitter));
 		const allowed = await svc.getAllowedCalls(makeModel("import { Named } from './mod';"));
 		assert.ok(!allowed.includes('{'), 'curly brace should not appear as an identifier');
 	});
@@ -83,27 +95,27 @@ suite('DependencyGraphService — built-in constants', () => {
 	const store = ensureNoDisposablesAreLeakedInTestSuite();
 
 	test('always includes console', async () => {
-		const svc = store.add(new DependencyGraphService());
+		const svc = store.add(new DependencyGraphService(mockTreeSitter));
 		assert.ok((await svc.getAllowedCalls(makeModel(''))).includes('console'));
 	});
 
 	test('always includes Math', async () => {
-		const svc = store.add(new DependencyGraphService());
+		const svc = store.add(new DependencyGraphService(mockTreeSitter));
 		assert.ok((await svc.getAllowedCalls(makeModel(''))).includes('Math'));
 	});
 
 	test('always includes JSON', async () => {
-		const svc = store.add(new DependencyGraphService());
+		const svc = store.add(new DependencyGraphService(mockTreeSitter));
 		assert.ok((await svc.getAllowedCalls(makeModel(''))).includes('JSON'));
 	});
 
 	test('always includes Promise', async () => {
-		const svc = store.add(new DependencyGraphService());
+		const svc = store.add(new DependencyGraphService(mockTreeSitter));
 		assert.ok((await svc.getAllowedCalls(makeModel(''))).includes('Promise'));
 	});
 
 	test('built-ins present even when file has no imports', async () => {
-		const svc = store.add(new DependencyGraphService());
+		const svc = store.add(new DependencyGraphService(mockTreeSitter));
 		const code = 'const x = 1;\nfunction foo() { return x; }';
 		const allowed = await svc.getAllowedCalls(makeModel(code));
 		assert.ok(allowed.includes('console'));
@@ -115,7 +127,7 @@ suite('DependencyGraphService — combined import styles', () => {
 	const store = ensureNoDisposablesAreLeakedInTestSuite();
 
 	test('handles default + named + namespace in same file', async () => {
-		const svc = store.add(new DependencyGraphService());
+		const svc = store.add(new DependencyGraphService(mockTreeSitter));
 		const code = [
 			"import Default from './d';",
 			"import * as NS from './ns';",
@@ -128,7 +140,7 @@ suite('DependencyGraphService — combined import styles', () => {
 	});
 
 	test('returns array (not duplicating built-ins per import)', async () => {
-		const svc = store.add(new DependencyGraphService());
+		const svc = store.add(new DependencyGraphService(mockTreeSitter));
 		const code = "import { Foo } from 'a';\nimport { Bar } from 'b';";
 		const allowed = await svc.getAllowedCalls(makeModel(code));
 		// Each built-in appears exactly once

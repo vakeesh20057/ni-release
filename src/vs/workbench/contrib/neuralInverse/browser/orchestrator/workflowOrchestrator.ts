@@ -36,17 +36,32 @@
 
 import { ILLMMessageService } from '../../../void/common/sendLLMMessageService.js';
 import { IVoidSettingsService } from '../../../void/common/voidSettingsService.js';
-import { IAgentDefinition } from '../../common/workflowTypes.js';
 import {
-	IWorkflowDefinition, IWorkflowStep, IAgentRun, IStepRun,
+	IAgentDefinition, IWorkflowDefinition, IWorkflowStep, IAgentRun, IStepRun,
 	AgentRunStatus, IToolExecutionContext,
 } from '../../common/workflowTypes.js';
 import { ToolRegistry } from '../tools/toolRegistry.js';
 import { AgentExecutor, ICancellationToken, IPriorStepOutput } from '../executor/agentExecutor.js';
+import { shouldRetry, computeRetryDelay } from '../executor/retryPolicy.js';
+import { ToolResultCache } from '../executor/toolCache.js';
+import { validateStepOutput } from '../executor/outputValidator.js';
+import { ApprovalGateManager, IApprovalRequest } from './approvalGate.js';
+import { BudgetTracker } from '../executor/budgetTracker.js';
+import { evaluateCondition } from './conditionalEvaluator.js';
+import { WorkflowComposer } from './workflowComposer.js';
 
 export type RunUpdateCallback = (run: IAgentRun) => void;
 
 export class WorkflowOrchestrator {
+
+	/** Exposed so WorkflowAgentService can wire the approval API onto the service interface */
+	readonly approvalGate = new ApprovalGateManager();
+
+	/**
+	 * Resolver for sub-workflow IDs. Set by WorkflowAgentService after construction
+	 * so WorkflowComposer can look up workflows by ID without a circular DI dependency.
+	 */
+	workflowResolver: ((id: string) => IWorkflowDefinition | undefined) | undefined;
 
 	constructor(
 		private readonly llmService: ILLMMessageService,
@@ -90,6 +105,18 @@ export class WorkflowOrchestrator {
 		// Output map: stepId → finalOutput (for dependency injection into downstream steps)
 		const stepOutputs = new Map<string, string>();
 
+		// Step IDs deactivated by conditional branches at runtime
+		const branchInactiveIds = new Set<string>();
+
+		// Per-run tool result cache (shared across all steps)
+		const toolCache = new ToolResultCache();
+
+		// Per-run budget tracker (undefined if no budget configured)
+		const budgetTracker = workflow.budget ? new BudgetTracker(workflow.budget) : undefined;
+
+		// Sub-workflow composer (for cross-workflow composition)
+		const composer = new WorkflowComposer(this);
+
 		for (const level of levels) {
 			if (cancellation.cancelled) {
 				run.status = 'cancelled';
@@ -97,9 +124,10 @@ export class WorkflowOrchestrator {
 				break;
 			}
 
-			// Validate all agents in this level before launching any
+			// Validate all agents in this level before launching any (skip sub-workflow steps)
 			for (const step of level) {
-				if (!agents.get(step.agentId)) {
+				if (step.subWorkflow) continue; // sub-workflow steps don't need a local agent
+				if (!agents.get(step.agentId) && !branchInactiveIds.has(step.id)) {
 					const stepRun = run.steps.find(s => s.stepId === step.id);
 					const err = `Agent definition "${step.agentId}" not found in .inverse/agents/`;
 					if (stepRun) { stepRun.status = 'failed'; stepRun.error = err; }
@@ -115,12 +143,18 @@ export class WorkflowOrchestrator {
 			// Run all steps in this level concurrently
 			await Promise.all(level.map(step => this._runStep(
 				step, run, agents, baseCtx, input, stepOutputs, cancellation, onUpdate,
+				branchInactiveIds, toolCache, budgetTracker, composer,
 			)));
 
 			// Collect outputs and check for failures before advancing to next level
 			for (const step of level) {
 				const stepRun = run.steps.find(s => s.stepId === step.id);
 				if (!stepRun) continue;
+
+				// branch-inactive and skipped steps don't fail the run
+				if (stepRun.status === 'branch-inactive' || stepRun.status === 'skipped') {
+					continue;
+				}
 
 				if (stepRun.status === 'failed') {
 					run.status = 'failed';
@@ -133,15 +167,45 @@ export class WorkflowOrchestrator {
 
 				if (stepRun.finalOutput) {
 					stepOutputs.set(step.id, stepRun.finalOutput);
+
+					// Evaluate conditional branch after step completes
+					if (step.branch) {
+						const { condition, thenStep, elseStep } = step.branch;
+						let condResult = false;
+						try {
+							condResult = evaluateCondition(stepRun.finalOutput, condition);
+						} catch (e: any) {
+							console.warn(`[WorkflowOrchestrator] Branch condition eval failed for step "${step.id}": ${e.message}`);
+						}
+						const inactiveStepId = condResult ? elseStep : thenStep;
+						const activeStepId = condResult ? thenStep : elseStep;
+						if (inactiveStepId) {
+							branchInactiveIds.add(inactiveStepId);
+							const inactiveRun = run.steps.find(s => s.stepId === inactiveStepId);
+							if (inactiveRun) inactiveRun.status = 'branch-inactive';
+						}
+						console.log(`[WorkflowOrchestrator] Branch for "${step.id}": condition=${condResult}, active="${activeStepId ?? 'none'}", inactive="${inactiveStepId ?? 'none'}"`);
+					}
 				}
+			}
+
+			// Propagate budget usage to run-level token tracking
+			if (budgetTracker) {
+				const usage = budgetTracker.getUsage();
+				run.tokenUsage = usage;
 			}
 		}
 
 		if (run.status !== 'cancelled') {
-			// Final output = last completed step's output (last step of the last level)
+			// Final output = last completed step's output, skipping branch-inactive steps
 			const allSteps = levels.flat();
-			const lastStep = allSteps[allSteps.length - 1];
-			run.finalOutput = stepOutputs.get(lastStep.id);
+			for (let i = allSteps.length - 1; i >= 0; i--) {
+				const output = stepOutputs.get(allSteps[i].id);
+				if (output !== undefined) {
+					run.finalOutput = output;
+					break;
+				}
+			}
 			run.status = 'done';
 		}
 
@@ -163,9 +227,33 @@ export class WorkflowOrchestrator {
 		stepOutputs: Map<string, string>,
 		cancellation: ICancellationToken,
 		onUpdate: RunUpdateCallback,
+		branchInactiveIds: Set<string>,
+		toolCache: ToolResultCache,
+		budgetTracker: BudgetTracker | undefined,
+		composer: WorkflowComposer,
 	): Promise<void> {
 		const stepRun = run.steps.find(s => s.stepId === step.id);
 		if (!stepRun) return;
+
+		// ── Branch-inactive check ─────────────────────────────────────────────
+		if (branchInactiveIds.has(step.id)) {
+			stepRun.status = 'branch-inactive';
+			onUpdate(run);
+			return;
+		}
+
+		// ── Approval gate (before) ────────────────────────────────────────────
+		if (step.approval?.timing === 'before') {
+			const approved = await this._requestApproval(step, run, stepRun, undefined, onUpdate);
+			if (!approved) return; // stepRun already set to failed/skipped
+		}
+
+		// ── Sub-workflow delegation ───────────────────────────────────────────
+		if (step.subWorkflow) {
+			await composer.runSubWorkflow(step, run, stepRun, agents, baseCtx, input, stepOutputs, cancellation, onUpdate, toolCache, budgetTracker, branchInactiveIds);
+			onUpdate(run);
+			return;
+		}
 
 		const agent = agents.get(step.agentId)!;
 
@@ -190,11 +278,139 @@ export class WorkflowOrchestrator {
 			},
 		};
 
-		const executor = new AgentExecutor(this.llmService, this.settingsService, scopedTools, this.contextPacker);
 		const stepInput = this._buildStepInput(step, input, priorOutputs, priorOutputs.length === 0 ? 0 : 1);
 
-		await executor.execute(agent, step, stepRun, priorOutputs, toolCtx, stepInput, cancellation);
+		// ── Retry loop ────────────────────────────────────────────────────────
+		const retryConfig = step.retry;
+		let attempt = 0;
+
+		while (true) {
+			// Reset step state for each attempt — cast through StepRunStatus to satisfy narrowing
+			(stepRun as IStepRun).status = 'pending';
+			stepRun.error = undefined;
+			stepRun.finalOutput = undefined;
+			stepRun.toolCalls = attempt === 0 ? stepRun.toolCalls : [];
+			stepRun.iterationsUsed = 0;
+
+			const executor = new AgentExecutor(
+				this.llmService, this.settingsService, scopedTools, this.contextPacker,
+				toolCache, step.cacheConfig, budgetTracker,
+			);
+
+			await executor.execute(agent, step, stepRun, priorOutputs, toolCtx, stepInput, cancellation);
+
+			// Read status after async mutation — use string comparison to bypass narrowing
+			const statusAfterExecute = stepRun.status as string;
+
+			// ── Output validation ─────────────────────────────────────────────
+			if (statusAfterExecute === 'done' && step.outputSchema && stepRun.finalOutput) {
+				const validation = validateStepOutput(stepRun.finalOutput, step.outputSchema);
+				if (!validation.valid) {
+					const validationErr = `Output validation failed: ${validation.errors.join('; ')}`;
+					stepRun.status = 'failed';
+					stepRun.error = validationErr;
+					stepRun.endedAt = Date.now();
+					toolCtx.log(`[${step.id}] output validation ✗ — ${validationErr}`);
+
+					if (step.outputSchema.onInvalid !== 'retry') {
+						break; // permanent failure
+					}
+					// Fall through to retry logic below
+				}
+			}
+
+			// Success — exit retry loop
+			if ((stepRun.status as string) === 'done') break;
+
+			// Check if we should retry
+			const error = stepRun.error ?? 'Unknown error';
+			attempt++;
+
+			if (!retryConfig || !shouldRetry(error, attempt, retryConfig)) {
+				break; // permanent failure
+			}
+
+			// Record retry history
+			if (!stepRun.retryHistory) stepRun.retryHistory = [];
+			stepRun.retryHistory.push({ attempt, error, retriedAt: Date.now() });
+			stepRun.retryCount = attempt;
+
+			const delayMs = computeRetryDelay(attempt, retryConfig);
+			toolCtx.log(`[${step.id}] retry ${attempt}/${retryConfig.maxRetries} in ${Math.round(delayMs)}ms — ${error}`);
+			onUpdate(run);
+
+			await new Promise<void>(r => setTimeout(r, delayMs));
+
+			if (cancellation.cancelled) {
+				stepRun.status = 'failed';
+				stepRun.error = 'Cancelled during retry';
+				break;
+			}
+		}
+
+		// ── Approval gate (after) ─────────────────────────────────────────────
+		if ((stepRun.status as string) === 'done' && step.approval?.timing === 'after') {
+			const approved = await this._requestApproval(step, run, stepRun, stepRun.finalOutput, onUpdate);
+			if (!approved) return;
+		}
+
 		onUpdate(run);
+	}
+
+	/**
+	 * Fire an approval gate and wait for user response.
+	 * Returns true if approved, false if rejected (stepRun already mutated).
+	 */
+	private async _requestApproval(
+		step: IWorkflowStep,
+		run: IAgentRun,
+		stepRun: IStepRun,
+		stepOutput: string | undefined,
+		onUpdate: RunUpdateCallback,
+	): Promise<boolean> {
+		const approval = step.approval!;
+		const requestedAt = Date.now();
+
+		stepRun.status = 'awaiting-approval';
+		stepRun.approvalRequest = { prompt: approval.prompt, requestedAt, stepOutput };
+		run.status = 'awaiting-approval';
+		onUpdate(run);
+
+		const request: IApprovalRequest = {
+			runId: run.id,
+			stepId: step.id,
+			prompt: approval.prompt,
+			stepOutput,
+			requestedAt,
+			autoApproveAt: approval.autoApproveAfterSeconds
+				? requestedAt + approval.autoApproveAfterSeconds * 1000
+				: undefined,
+		};
+
+		const response = await this.approvalGate.requestApproval(request);
+
+		stepRun.approvalResponse = {
+			decision: response.decision,
+			feedback: response.feedback,
+			respondedAt: Date.now(),
+		};
+		run.status = 'running';
+
+		if (response.decision === 'reject') {
+			const onReject = approval.onReject ?? 'fail';
+			if (onReject === 'skip') {
+				stepRun.status = 'skipped';
+			} else {
+				stepRun.status = 'failed';
+				stepRun.error = `Rejected by user${response.feedback ? `: ${response.feedback}` : ''}`;
+				stepRun.endedAt = Date.now();
+			}
+			onUpdate(run);
+			return false;
+		}
+
+		stepRun.status = 'pending'; // will be reset to 'running' by executor
+		return true;
 	}
 
 	// ─── Concurrency Level Builder ───────────────────────────────────────────

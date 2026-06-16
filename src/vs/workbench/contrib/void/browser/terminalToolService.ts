@@ -4,6 +4,7 @@
  *--------------------------------------------------------------------------------------*/
 
 import { Disposable, IDisposable, toDisposable } from '../../../../base/common/lifecycle.js';
+import { Emitter, Event } from '../../../../base/common/event.js';
 import { removeAnsiEscapeCodes } from '../../../../base/common/strings.js';
 import { ITerminalCapabilityImplMap, TerminalCapability } from '../../../../platform/terminal/common/capabilities/capabilities.js';
 import { URI } from '../../../../base/common/uri.js';
@@ -14,6 +15,9 @@ import { IWorkspaceContextService } from '../../../../platform/workspace/common/
 import { ITerminalService, ITerminalInstance, ICreateTerminalOptions } from '../../../../workbench/contrib/terminal/browser/terminal.js';
 import { MAX_TERMINAL_BG_COMMAND_TIME, MAX_TERMINAL_CHARS, MAX_TERMINAL_INACTIVE_TIME } from '../common/prompt/prompts.js';
 import { TerminalResolveReason } from '../common/toolsServiceTypes.js';
+import { ITerminalCommandClassifier } from './terminalCommandClassifier.js';
+import { ITerminalProcessManager } from './terminalProcessManager.js';
+import { ITerminalStreamingService } from './terminalStreamingService.js';
 import { timeout } from '../../../../base/common/async.js';
 
 
@@ -40,6 +44,10 @@ export interface ITerminalToolService {
 
 	getPersistentTerminal(terminalId: string): ITerminalInstance | undefined
 	getTemporaryTerminal(terminalId: string): ITerminalInstance | undefined
+
+	/** Fired when the user clicks "Move to BG" on a running run_command */
+	readonly onPromoteToBackground: Event<{ terminalId: string }>
+	requestPromoteToBackground(terminalId: string): void
 }
 export const ITerminalToolService = createDecorator<ITerminalToolService>('TerminalToolService');
 
@@ -73,9 +81,19 @@ export class TerminalToolService extends Disposable implements ITerminalToolServ
 	private persistentTerminalInstanceOfId: Record<string, ITerminalInstance> = {}
 	private temporaryTerminalInstanceOfId: Record<string, ITerminalInstance> = {}
 
+	private readonly _onPromoteToBackground = this._register(new Emitter<{ terminalId: string }>())
+	readonly onPromoteToBackground: Event<{ terminalId: string }> = this._onPromoteToBackground.event
+
+	requestPromoteToBackground(terminalId: string): void {
+		this._onPromoteToBackground.fire({ terminalId })
+	}
+
 	constructor(
 		@ITerminalService private readonly terminalService: ITerminalService,
 		@IWorkspaceContextService private readonly workspaceContextService: IWorkspaceContextService,
+		@ITerminalCommandClassifier private readonly _commandClassifier: ITerminalCommandClassifier,
+		@ITerminalProcessManager private readonly _processManager: ITerminalProcessManager,
+		@ITerminalStreamingService private readonly _streamingService: ITerminalStreamingService,
 	) {
 		super();
 
@@ -167,8 +185,15 @@ export class TerminalToolService extends Disposable implements ITerminalToolServ
 	createPersistentTerminal: ITerminalToolService['createPersistentTerminal'] = async ({ cwd }) => {
 		const terminalId = this.getValidNewTerminalId();
 		const config = { name: persistentTerminalNameOfId(terminalId), title: persistentTerminalNameOfId(terminalId) }
-		const terminal = await this._createTerminal({ cwd, config, })
+		// Visible in terminal panel so user can watch — but never steals focus (setActiveInstance removed)
+		const terminal = await this._createTerminal({ cwd, config, hidden: false })
 		this.persistentTerminalInstanceOfId[terminalId] = terminal
+		// Clean up map entry if the user manually closes/kills the terminal panel
+		this._register(terminal.onDisposed(() => {
+			if (this.persistentTerminalInstanceOfId[terminalId] === terminal) {
+				delete this.persistentTerminalInstanceOfId[terminalId]
+			}
+		}))
 		return terminalId
 	}
 
@@ -215,7 +240,7 @@ export class TerminalToolService extends Disposable implements ITerminalToolServ
 		// Try persistent first, then temporary
 		const terminal = this.getPersistentTerminal(terminalId) ?? this.getTemporaryTerminal(terminalId);
 		if (!terminal) {
-			throw new Error(`Read Terminal: Terminal with ID ${terminalId} does not exist.`);
+			return `[Terminal ${terminalId} is no longer running — it was closed or killed. If the command was still in progress, it has been terminated.]`;
 		}
 
 		// Ensure the xterm.js instance has been created – otherwise we cannot access the buffer.
@@ -246,7 +271,7 @@ export class TerminalToolService extends Disposable implements ITerminalToolServ
 	sendInputToPersistentTerminal: ITerminalToolService['sendInputToPersistentTerminal'] = async (terminalId, input) => {
 		const terminal = this.getPersistentTerminal(terminalId);
 		if (!terminal) {
-			throw new Error(`Send Input: Terminal with ID ${terminalId} does not exist.`);
+			throw new Error(`Send Input: Terminal ${terminalId} is no longer running — it was closed or killed.`);
 		}
 
 		// Focus the terminal so the user can see what's happening
@@ -306,19 +331,19 @@ export class TerminalToolService extends Disposable implements ITerminalToolServ
 		}
 
 		const interrupt = () => {
-			terminal.dispose()
-			if (!isPersistent)
-				delete this.temporaryTerminalInstanceOfId[params.terminalId]
-			else
-				delete this.persistentTerminalInstanceOfId[params.persistentTerminalId]
+			// Send Ctrl+C first to unblock interactive/waiting processes (e.g. sudo password prompt, npm install)
+			try { terminal.sendText('\x03', false) } catch { /* ignore if already disposed */ }
+			setTimeout(() => {
+				terminal.dispose()
+				if (!isPersistent)
+					delete this.temporaryTerminalInstanceOfId[params.terminalId]
+				else
+					delete this.persistentTerminalInstanceOfId[params.persistentTerminalId]
+			}, 200)
 		}
 
 		const waitForResult = async () => {
-			if (isPersistent) {
-				// focus the terminal about to run
-				this.terminalService.setActiveInstance(terminal)
-				await this.terminalService.focusActiveInstance()
-			}
+			// Persistent terminals run silently in the background — never steal focus
 			let result: string = ''
 			let resolveReason: TerminalResolveReason | undefined
 
@@ -329,7 +354,7 @@ export class TerminalToolService extends Disposable implements ITerminalToolServ
 			// Prefer the structured command-detection capability when available
 
 			const waitUntilDone = new Promise<void>(resolve => {
-				if (!cmdCap) return
+				if (!cmdCap) { resolve(); return }
 				const l = cmdCap.onCommandFinished(cmd => {
 					if (resolveReason) return // already resolved
 					resolveReason = { type: 'done', exitCode: cmd.exitCode ?? 0 };
@@ -344,15 +369,47 @@ export class TerminalToolService extends Disposable implements ITerminalToolServ
 			// send the command now that listeners are attached
 			await terminal.sendText(command, true)
 
+			// Use command classifier for smart timeouts; fall back to constants
+			const classification = this._commandClassifier.classify(command);
+			const bgTimeoutMs = classification.timeoutMs > 0 ? classification.timeoutMs : MAX_TERMINAL_BG_COMMAND_TIME * 1000;
+			const inactiveTimeoutMs = classification.timeoutMs > 0
+				? Math.min(classification.timeoutMs, MAX_TERMINAL_INACTIVE_TIME * 1000)
+				: MAX_TERMINAL_INACTIVE_TIME * 1000;
+
+			// Track process for monitoring
+			const termId = isPersistent ? (params as { persistentTerminalId: string }).persistentTerminalId
+				: (params as { terminalId: string }).terminalId;
+			const processId = this._processManager.trackProcess(termId, command);
+			this._streamingService.startStreaming(processId, termId);
+
 			const waitUntilInterrupt = isPersistent ?
-				// timeout after X seconds
-				new Promise<void>((res) => {
-					setTimeout(() => {
-						resolveReason = { type: 'timeout' };
+				new Promise<void>(res => {
+					const maxTimeoutMs = classification.category === 'server' ? 600_000 : bgTimeoutMs
+					const bgInactivityMs = 8_000 // Short inactivity for BG terminals — report back quickly
+					let inactivityId: ReturnType<typeof setTimeout>
+					const resetInactivity = () => {
+						clearTimeout(inactivityId)
+						inactivityId = setTimeout(() => {
+							if (resolveReason) return
+							resolveReason = { type: 'timeout' }
+							res()
+						}, bgInactivityMs)
+					}
+					const dTimeout = terminal.onData((data) => {
+						this._streamingService.appendOutput(processId, data)
+						this._processManager.recordOutput(processId, data.length)
+						resetInactivity()
+					})
+					disposables.push(dTimeout, toDisposable(() => clearTimeout(inactivityId)))
+					const hardTimeout = setTimeout(() => {
+						if (resolveReason) return
+						resolveReason = { type: 'timeout' }
 						res()
-					}, MAX_TERMINAL_BG_COMMAND_TIME * 1000)
+					}, maxTimeoutMs)
+					disposables.push(toDisposable(() => clearTimeout(hardTimeout)))
+					resetInactivity()
 				})
-				// inactivity-based timeout
+				// inactivity-based timeout (temporary terminals)
 				: new Promise<void>(res => {
 					let globalTimeoutId: ReturnType<typeof setTimeout>;
 					const resetTimer = () => {
@@ -362,17 +419,26 @@ export class TerminalToolService extends Disposable implements ITerminalToolServ
 
 							resolveReason = { type: 'timeout' };
 							res();
-						}, MAX_TERMINAL_INACTIVE_TIME * 1000);
+						}, inactiveTimeoutMs);
 					};
 
-					const dTimeout = terminal.onData(() => { resetTimer(); });
+					const dTimeout = terminal.onData((data) => {
+						this._streamingService.appendOutput(processId, data);
+						this._processManager.recordOutput(processId, data.length);
+						resetTimer();
+					});
 					disposables.push(dTimeout, toDisposable(() => clearTimeout(globalTimeoutId)));
 					resetTimer();
 				})
 
 			// wait for result
 			await Promise.any([waitUntilDone, waitUntilInterrupt])
-				.finally(() => disposables.forEach(d => d.dispose()))
+				.finally(() => {
+					disposables.forEach(d => d.dispose());
+					this._streamingService.flushAndStop(processId);
+					const exitCode = resolveReason?.type === 'done' ? resolveReason.exitCode : null;
+					this._processManager.markEnded(processId, exitCode);
+				})
 
 
 

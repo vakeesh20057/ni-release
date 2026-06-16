@@ -57,6 +57,7 @@ export const toolRiskLevels: Record<BuiltinToolName, ToolRiskLevel> = {
 	'context_file_context': 'safe',
 	'context_import_graph': 'safe',
 	'context_recent_edits': 'safe',
+	'context_semantic_search': 'safe',
 	'ask_powermode': 'safe',
 	'query_ni_agent': 'safe',
 
@@ -140,6 +141,12 @@ export interface AgentTask {
 	totalToolCalls: number;
 	totalLLMCalls: number;
 	totalErrors: number;
+
+	// Autonomy extensions
+	subtasks: AgentSubtask[];
+	scratchpad: AgentScratchpad;
+	replans: ReplanRecord[];
+	complexity: TaskComplexity;
 }
 
 
@@ -197,6 +204,7 @@ export const defaultApprovalTiers: Record<BuiltinToolName, ApprovalTier> = {
 	'context_file_context': 'auto',
 	'context_import_graph': 'auto',
 	'context_recent_edits': 'auto',
+	'context_semantic_search': 'auto',
 	'ask_powermode': 'auto',
 	'query_ni_agent': 'auto',
 
@@ -222,9 +230,19 @@ export const defaultApprovalTiers: Record<BuiltinToolName, ApprovalTier> = {
 // ======================== Agent Loop Configuration ========================
 
 export const AGENT_MAX_ITERATIONS = 50;
-export const AGENT_MAX_CONSECUTIVE_ERRORS = 5;
+export const AGENT_MAX_CONSECUTIVE_ERRORS = 3; // triggers replan instead of hard fail
+export const AGENT_MAX_REPLANS = 3; // hard-fail after this many replans on same error class
 export const AGENT_IDLE_TIMEOUT_MS = 300_000; // 5 minutes
 export const AGENT_STEP_COOLDOWN_MS = 200; // small delay between steps for UI breathing room
+
+// Adaptive iteration budgets based on task complexity
+export const AGENT_ITERATION_BUDGET = {
+	simple: 15,
+	medium: 30,
+	complex: 50,
+} as const;
+
+export type TaskComplexity = keyof typeof AGENT_ITERATION_BUDGET;
 
 
 // ======================== Agent Events ========================
@@ -271,3 +289,52 @@ export interface AgentWorkingMemory {
 }
 
 export const AGENT_CONTEXT_MAX_TOKENS = 32_000;
+
+
+// ======================== Scratchpad (Reasoning Trace) ========================
+
+export type ScratchpadEntryType = 'observation' | 'hypothesis' | 'decision' | 'error' | 'replan';
+
+export interface ScratchpadEntry {
+	type: ScratchpadEntryType;
+	content: string;
+	timestamp: string;
+	/** Higher importance entries survive pruning longer */
+	importance: number;
+}
+
+export interface AgentScratchpad {
+	entries: ScratchpadEntry[];
+	estimatedTokens: number;
+	maxTokenBudget: number;
+}
+
+export const SCRATCHPAD_MAX_TOKENS = 8_000;
+
+
+// ======================== Subtask Decomposition ========================
+
+export type SubtaskStatus = 'pending' | 'in_progress' | 'completed' | 'failed' | 'skipped';
+
+export interface AgentSubtask {
+	id: string;
+	goal: string;
+	status: SubtaskStatus;
+	complexity: TaskComplexity;
+	dependencies: string[]; // IDs of subtasks that must complete first
+	iterationBudget: number;
+	iterationsUsed: number;
+	result?: string;
+	error?: string;
+}
+
+
+// ======================== Replan State ========================
+
+export interface ReplanRecord {
+	errorClass: string;
+	errorMessage: string;
+	replanCount: number;
+	lastReplanAt: string;
+	correctionStrategy: string;
+}

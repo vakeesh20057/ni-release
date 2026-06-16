@@ -40,6 +40,7 @@ import { IWorkflowDefinition } from '../common/workflowTypes.js';
 import { ITerminalService } from '../../terminal/browser/terminal.js';
 import { isWindows } from '../../../../base/common/platform.js';
 import { BUILTIN_WORKFLOWS } from './builtinLibrary.js';
+import { WorkflowVersioning } from './config/workflowVersioning.js';
 
 const INVERSE_DIR = '.inverse';
 const WORKFLOWS_DIR = 'workflows';
@@ -52,6 +53,7 @@ export class WorkflowConfigLoader extends Disposable {
 	readonly onDidChange: Event<void> = this._onDidChange.event;
 
 	private readonly _terminalName = 'Inverse Workflow Loader';
+	private _versioning: WorkflowVersioning | undefined;
 
 	constructor(
 		@IFileService private readonly fileService: IFileService,
@@ -59,6 +61,11 @@ export class WorkflowConfigLoader extends Disposable {
 		@ITerminalService private readonly terminalService: ITerminalService,
 	) {
 		super();
+		// Initialize versioning after we have workspace context
+		const folder = this.workspaceContextService.getWorkspace().folders[0];
+		if (folder) {
+			this._versioning = new WorkflowVersioning(this.fileService, folder.uri);
+		}
 		this._initialize();
 		this._registerWatcher();
 	}
@@ -238,13 +245,31 @@ export class WorkflowConfigLoader extends Disposable {
 		if (!inverseDirUri) throw new Error('No workspace folder open');
 
 		const fileUri = URI.joinPath(inverseDirUri, WORKFLOWS_DIR, `${def.id}.json`);
-		const json = JSON.stringify(def, null, 2);
 
+		// Archive prior version inside the write-access window, then save with bumped version
 		await this._withWriteAccess(async () => {
+			let defToSave = def;
+			if (this._versioning) {
+				defToSave = await this._versioning.archive(def);
+			}
+			const json = JSON.stringify(defToSave, null, 2);
 			await this.fileService.writeFile(fileUri, VSBuffer.fromString(json));
 		});
 
-		console.log(`[WorkflowConfigLoader] Saved workflow: ${def.id}`);
+		console.log(`[WorkflowConfigLoader] Saved workflow: ${def.id} (v${(def.version ?? 0) + 1})`);
+	}
+
+	/** List all archived versions for a workflow */
+	async listWorkflowVersions(workflowId: string) {
+		return this._versioning?.listVersions(workflowId) ?? [];
+	}
+
+	/** Roll back a workflow to a specific archived version */
+	async rollbackWorkflow(workflowId: string, version: number): Promise<void> {
+		if (!this._versioning) throw new Error('Versioning not available');
+		const historical = await this._versioning.getRollbackDefinition(workflowId, version);
+		if (!historical) throw new Error(`Version ${version} not found for workflow "${workflowId}"`);
+		await this.saveWorkflow(historical);
 	}
 
 	/**

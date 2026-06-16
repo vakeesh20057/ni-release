@@ -142,7 +142,20 @@ const parseXMLPrefixToToolCall = <T extends ToolName,>(toolName: T | 'tool_call'
 		return { toolCall: ans, parsedLen }
 	}
 
+	const selfClosingTag = `<${toolName}/>`
+	const selfClosingTagWithSpace = `<${toolName} />`
 	const openToolTag = `<${toolName}>`
+
+	// Handle self-closing tags like <open_persistent_terminal/> — treat as empty-param tool call
+	const selfCloseIdx = str.indexOf(selfClosingTag) !== -1 ? str.indexOf(selfClosingTag)
+		: str.indexOf(selfClosingTagWithSpace) !== -1 ? str.indexOf(selfClosingTagWithSpace)
+		: -1
+	if (selfCloseIdx !== -1) {
+		isDone = true
+		const scTag = str.indexOf(selfClosingTag) !== -1 ? selfClosingTag : selfClosingTagWithSpace
+		return getAnswer(selfCloseIdx + scTag.length) // str stays empty → no params
+	}
+
 	let i = str.indexOf(openToolTag)
 	if (i === -1) return getAnswer(0)
 

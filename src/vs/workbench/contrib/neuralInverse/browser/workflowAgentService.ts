@@ -32,6 +32,7 @@ import { ILLMMessageService } from '../../void/common/sendLLMMessageService.js';
 import { IVoidSettingsService } from '../../void/common/voidSettingsService.js';
 import { IAgentStoreService } from './agentStoreService.js';
 import { IAgentRun, IWorkflowDefinition, WorkflowTrigger } from '../common/workflowTypes.js';
+import { IApprovalRequest, IApprovalResponse } from './orchestrator/approvalGate.js';
 import { ToolRegistry } from './tools/toolRegistry.js';
 import { ALL_FS_TOOLS } from './tools/fsTools.js';
 import { ALL_TERMINAL_TOOLS } from './tools/terminalTools.js';
@@ -77,6 +78,10 @@ export interface IWorkflowAgentService {
 	saveWorkflow(def: IWorkflowDefinition): Promise<void>;
 	/** Delete a workflow definition file */
 	deleteWorkflow(id: string): Promise<void>;
+	/** List all archived versions for a workflow */
+	listWorkflowVersions(workflowId: string): Promise<Array<{ version: number; savedAt: number; workflowId: string }>>;
+	/** Roll back a workflow to a specific archived version */
+	rollbackWorkflow(workflowId: string, version: number): Promise<void>;
 
 	// ─── Execution ──────────────────────────────────────────────────────────
 	/** Run a full multi-agent workflow by ID */
@@ -90,6 +95,12 @@ export interface IWorkflowAgentService {
 	getActiveRuns(): IAgentRun[];
 	getRunHistory(limit?: number): IAgentRun[];
 	getRun(runId: string): IAgentRun | undefined;
+
+	// ─── Approval gates ─────────────────────────────────────────────────────
+	/** Fires when a step pauses for human approval */
+	readonly onDidRequestApproval: Event<IApprovalRequest>;
+	/** Resolve a pending approval request */
+	respondToApproval(runId: string, stepId: string, response: IApprovalResponse): void;
 }
 
 // ─── Implementation ───────────────────────────────────────────────────────────
@@ -105,6 +116,11 @@ export class WorkflowAgentService extends Disposable implements IWorkflowAgentSe
 
 	private readonly _onDidChangeWorkflows = this._register(new Emitter<void>());
 	readonly onDidChangeWorkflows = this._onDidChangeWorkflows.event;
+
+	// Proxied from orchestrator.approvalGate
+	get onDidRequestApproval() {
+		return this._orchestrator.approvalGate.onDidRequestApproval;
+	}
 
 	private readonly _toolRegistry: ToolRegistry;
 	private readonly _configLoader: WorkflowConfigLoader;
@@ -209,6 +225,9 @@ export class WorkflowAgentService extends Disposable implements IWorkflowAgentSe
 			},
 		));
 
+		// Wire sub-workflow resolver so WorkflowComposer can look up workflows by ID
+		this._orchestrator.workflowResolver = (id: string) => this._configLoader.getWorkflow(id);
+
 		// Wire triggers once workflows are loaded, and re-wire on any change
 		this._register(this._configLoader.onDidChange(() => {
 			this._triggerManager.refresh(this._configLoader.getWorkflows());
@@ -234,6 +253,14 @@ export class WorkflowAgentService extends Disposable implements IWorkflowAgentSe
 
 	async deleteWorkflow(id: string): Promise<void> {
 		await this._configLoader.deleteWorkflow(id);
+	}
+
+	async listWorkflowVersions(workflowId: string) {
+		return this._configLoader.listWorkflowVersions(workflowId);
+	}
+
+	async rollbackWorkflow(workflowId: string, version: number): Promise<void> {
+		await this._configLoader.rollbackWorkflow(workflowId, version);
 	}
 
 	// ─── Execution ────────────────────────────────────────────────────────────
@@ -357,6 +384,10 @@ export class WorkflowAgentService extends Disposable implements IWorkflowAgentSe
 			token.cancelled = true;
 			console.log(`[WorkflowAgentService] Cancelled run: ${runId}`);
 		}
+	}
+
+	respondToApproval(runId: string, stepId: string, response: IApprovalResponse): void {
+		this._orchestrator.approvalGate.respond(runId, stepId, response);
 	}
 
 	// ─── State ────────────────────────────────────────────────────────────────

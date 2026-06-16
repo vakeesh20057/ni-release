@@ -50,16 +50,28 @@ import './voidInternalToolService.js'
 
 // tools
 import './externalCommandExecutor.js'
+import './userInputRequestService.js'
 import './toolsService.js'
 import './terminalToolService.js'
 
 // register Thread History
 import './chatThreadService.js'
 
+// terminal enhancements (command classification, process management, streaming)
+import './terminalCommandClassifier.js'
+import './terminalProcessManager.js'
+import './terminalStreamingService.js'
+
 // neural inverse agent (agentic execution engine — depends on chatThreadService)
 import './neuralInverseAgentConfigService.js'
 import './neuralInverseAgentService.js'
 import './neuralInverseSubAgentService.js'
+
+// agent autonomy services (scratchpad, rollback, task decomposition, memory)
+import './agentScratchpadService.js'
+import './agentRollbackService.js'
+import './agentTaskDecomposer.js'
+import './agentMemoryService.js'
 
 // agent dashboard panel
 import './neuralInverseAgentPane.js'

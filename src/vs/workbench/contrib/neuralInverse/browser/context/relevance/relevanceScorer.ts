@@ -9,6 +9,7 @@ import { registerSingleton, InstantiationType } from '../../../../../../platform
 import { IEditorService } from '../../../../../services/editor/common/editorService.js';
 import { IWorkspaceSymbolIndexService, IIndexedSymbol } from '../index/workspaceSymbolIndex.js';
 import { IChangeTrackerService } from '../tracker/changeTracker.js';
+import { IHybridSearchService } from '../search/hybridSearchService.js';
 
 export const IRelevanceScorerService = createDecorator<IRelevanceScorerService>('neuralInverseRelevanceScorer');
 
@@ -17,6 +18,7 @@ export type RelevanceReason =
 	| 'import-transitive'
 	| 'co-edit-recent'
 	| 'name-match'
+	| 'semantic-match'
 	| 'type-dependency'
 	| 'same-directory'
 	| 'open-tab'
@@ -43,18 +45,20 @@ export interface IScoredItem {
 export interface IRelevanceScorerService {
 	readonly _serviceBrand: undefined;
 	scoreFiles(query: IRelevanceQuery, maxResults?: number): IScoredItem[];
+	scoreFilesAsync(query: IRelevanceQuery, maxResults?: number): Promise<IScoredItem[]>;
 	getRelevantSymbols(query: IRelevanceQuery, maxSymbols?: number): Array<{ symbol: IIndexedSymbol; score: number }>;
 	scoreFile(uri: string, query: IRelevanceQuery): IScoredItem | undefined;
 }
 
 // Signal weights — total must sum to 1.0
-const W_IMPORT = 0.28;
-const W_RECENCY = 0.22;
-const W_NAME_MATCH = 0.20;
-const W_COEDIT = 0.12;
-const W_OPEN_TAB = 0.08;
-const W_DIRECTORY = 0.06;
-const W_TYPE_DEP = 0.04;
+const W_IMPORT = 0.24;
+const W_RECENCY = 0.19;
+const W_NAME_MATCH = 0.17;
+const W_SEMANTIC = 0.15;
+const W_COEDIT = 0.10;
+const W_OPEN_TAB = 0.07;
+const W_DIRECTORY = 0.05;
+const W_TYPE_DEP = 0.03;
 
 // Thresholds
 const MIN_SCORE_THRESHOLD = 0.02;
@@ -72,10 +76,14 @@ class RelevanceScorerService extends Disposable implements IRelevanceScorerServi
 
 	private readonly _openFileUris = new Set<string>();
 
+	// Cache semantic scores per query to avoid repeated hybrid searches within one scoring pass
+	private _semanticScoreCache = new Map<string, Map<string, number>>();
+
 	constructor(
 		@IEditorService private readonly _editorService: IEditorService,
 		@IWorkspaceSymbolIndexService private readonly _symbolIndex: IWorkspaceSymbolIndexService,
 		@IChangeTrackerService private readonly _changeTracker: IChangeTrackerService,
+		@IHybridSearchService private readonly _hybridSearch: IHybridSearchService,
 	) {
 		super();
 
@@ -118,6 +126,46 @@ class RelevanceScorerService extends Disposable implements IRelevanceScorerServi
 		const activeUri = query.activeFileUri ?? query.uri;
 		if (!activeUri || uri === activeUri) return undefined;
 		return this._scoreFileInternal(uri, activeUri, query);
+	}
+
+	async scoreFilesAsync(query: IRelevanceQuery, maxResults = 20): Promise<IScoredItem[]> {
+		await this._warmSemanticCache(query);
+		return this.scoreFiles(query, maxResults);
+	}
+
+	private async _warmSemanticCache(query: IRelevanceQuery): Promise<void> {
+		const queryText = query.text || query.symbols?.join(' ') || '';
+		if (!queryText) return;
+		if (this._semanticScoreCache.has(queryText)) return;
+
+		try {
+			const results = await this._hybridSearch.search(queryText, MAX_CANDIDATES);
+			const scoreMap = new Map<string, number>();
+			if (results.length > 0) {
+				const maxScore = results[0].score;
+				for (const r of results) {
+					const normalized = maxScore > 0 ? r.score / maxScore : 0;
+					const existing = scoreMap.get(r.filePath) ?? 0;
+					if (normalized > existing) scoreMap.set(r.filePath, normalized);
+				}
+			}
+			this._semanticScoreCache.set(queryText, scoreMap);
+			// Evict old entries if cache grows too large
+			if (this._semanticScoreCache.size > 50) {
+				const firstKey = this._semanticScoreCache.keys().next().value;
+				if (firstKey) this._semanticScoreCache.delete(firstKey);
+			}
+		} catch {
+			// Hybrid search unavailable — degrade gracefully
+		}
+	}
+
+	private _getSemanticScore(uri: string, query: IRelevanceQuery): number {
+		const queryText = query.text || query.symbols?.join(' ') || '';
+		if (!queryText) return 0;
+		const scoreMap = this._semanticScoreCache.get(queryText);
+		if (!scoreMap) return 0;
+		return scoreMap.get(uri) ?? 0;
 	}
 
 	getRelevantSymbols(query: IRelevanceQuery, maxSymbols = 40): Array<{ symbol: IIndexedSymbol; score: number }> {
@@ -245,7 +293,14 @@ class RelevanceScorerService extends Disposable implements IRelevanceScorerServi
 			}
 		}
 
-		// 4. Co-edit correlation
+		// 4. Semantic similarity (from hybrid search cache)
+		const semanticScore = this._getSemanticScore(uri, query);
+		if (semanticScore > 0) {
+			totalScore += semanticScore * W_SEMANTIC;
+			reasons.push('semantic-match');
+		}
+
+		// 5. Co-edit correlation
 		const coEditScore = this._computeCoEditScore(uri, activeUri);
 		if (coEditScore > 0) {
 			totalScore += coEditScore * W_COEDIT;

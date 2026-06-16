@@ -33,6 +33,7 @@ import { URI } from '../../../../base/common/uri.js';
 import { isWindows } from '../../../../base/common/platform.js';
 import { match as globMatch } from '../../../../base/common/glob.js';
 import { IWorkflowDefinition, WorkflowTrigger } from '../common/workflowTypes.js';
+import { evaluateGuards, ITriggerContext } from './triggers/triggerGuard.js';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -115,7 +116,7 @@ export class WorkflowTriggerManager extends Disposable {
 				if (!relativePath) return;
 				if (!globMatch(wf.triggerGlob, relativePath)) return;
 			}
-			this._fire(wf.id, 'file-save', e.model.resource.fsPath);
+			this._fire(wf.id, 'file-save', e.model.resource.fsPath, wf);
 		}));
 	}
 
@@ -131,7 +132,7 @@ export class WorkflowTriggerManager extends Disposable {
 		// .git/COMMIT_EDITMSG is rewritten after every commit
 		store.add(this.fileService.onDidFilesChange((e: FileChangesEvent) => {
 			if (e.contains(gitMsgUri)) {
-				this._fire(wf.id, 'on-commit');
+				this._fire(wf.id, 'on-commit', undefined, wf);
 			}
 		}));
 	}
@@ -142,7 +143,7 @@ export class WorkflowTriggerManager extends Disposable {
 		const minutes = wf.scheduleIntervalMinutes ?? 60;
 		const ms = minutes * 60 * 1000;
 		const id = setInterval(() => {
-			this._fire(wf.id, 'schedule');
+			this._fire(wf.id, 'schedule', undefined, wf);
 		}, ms);
 		store.add(toDisposable(() => clearInterval(id)));
 		console.log(`[WorkflowTriggerManager] Scheduled "${wf.id}" every ${minutes} min`);
@@ -207,7 +208,7 @@ export class WorkflowTriggerManager extends Disposable {
 
 			if (shouldFire) {
 				console.log(`[WorkflowTriggerManager] terminal-command "${cmd}" exited ${exitCode} — firing "${wf.id}"`);
-				this._fire(wf.id, 'terminal-command', `exit:${exitCode}`);
+				this._fire(wf.id, 'terminal-command', `exit:${exitCode}`, wf);
 			}
 		};
 
@@ -225,11 +226,48 @@ export class WorkflowTriggerManager extends Disposable {
 
 	// ─── Helpers ──────────────────────────────────────────────────────────────
 
-	private _fire(workflowId: string, trigger: WorkflowTrigger, context?: string): void {
+	/**
+	 * Fire a trigger, evaluating any pre-flight guards first.
+	 * Guards are evaluated async; debounce protects against double-fire during evaluation.
+	 */
+	private _fire(workflowId: string, trigger: WorkflowTrigger, context?: string, workflow?: IWorkflowDefinition): void {
 		const now = Date.now();
 		const last = this._lastFired.get(workflowId) ?? 0;
 		if (now - last < TRIGGER_DEBOUNCE_MS) return;
 		this._lastFired.set(workflowId, now);
+
+		// Run guard evaluation async — if guards pass, fire; if not, suppress
+		this._fireWithGuards(workflowId, trigger, context, workflow).catch(e => {
+			console.warn(`[WorkflowTriggerManager] Guard evaluation error for "${workflowId}":`, e.message);
+		});
+	}
+
+	private async _fireWithGuards(
+		workflowId: string,
+		trigger: WorkflowTrigger,
+		context: string | undefined,
+		workflow: IWorkflowDefinition | undefined,
+	): Promise<void> {
+		const guards = workflow?.triggerGuards;
+
+		if (guards && guards.length > 0) {
+			const workspaceRoot = this._workspaceRoot();
+			if (!workspaceRoot) {
+				console.warn(`[WorkflowTriggerManager] No workspace root — skipping guards for "${workflowId}"`);
+			} else {
+				const triggerCtx: ITriggerContext = { fileUri: context, context };
+				const guardResult = await evaluateGuards(
+					guards, triggerCtx, workspaceRoot,
+					this.fileService, this.terminalService,
+				);
+
+				if (!guardResult.pass) {
+					console.log(`[WorkflowTriggerManager] Guard failed for "${workflowId}" — suppressed trigger. Reason: ${guardResult.failReason}`);
+					return;
+				}
+			}
+		}
+
 		console.log(`[WorkflowTriggerManager] Firing workflow "${workflowId}" via ${trigger}${context ? ` (${context})` : ''}`);
 		this.onTrigger(workflowId, trigger, context);
 	}

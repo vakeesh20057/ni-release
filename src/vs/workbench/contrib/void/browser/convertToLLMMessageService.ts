@@ -906,7 +906,7 @@ class ConvertToLLMMessageService extends Disposable implements IConvertToLLMMess
 			if (m.role === 'assistant') {
 				simpleLLMMessages.push({
 					role: m.role,
-					content: m.displayContent,
+					content: (m.displayContent || '').replace(/<system-reminder>[\s\S]*?<\/system-reminder>/g, '').trim(),
 					anthropicReasoning: m.anthropicReasoning,
 				})
 			}

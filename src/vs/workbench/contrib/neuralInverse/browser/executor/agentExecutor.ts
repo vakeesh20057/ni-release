@@ -29,11 +29,12 @@ import { ILLMMessageService } from '../../../void/common/sendLLMMessageService.j
 import { IVoidSettingsService } from '../../../void/common/voidSettingsService.js';
 import { ModelSelection } from '../../../void/common/voidSettingsTypes.js';
 import { LLMChatMessage } from '../../../void/common/sendLLMMessageTypes.js';
-import { IAgentDefinition } from '../../common/workflowTypes.js';
-import { IWorkflowStep, IStepRun, IToolCallRecord, IToolExecutionContext } from '../../common/workflowTypes.js';
+import { IAgentDefinition, IWorkflowStep, IStepRun, IToolCallRecord, IToolExecutionContext, IStepToolCacheConfig } from '../../common/workflowTypes.js';
 import { ScopedToolRegistry } from '../tools/toolRegistry.js';
 import { parseToolCalls, stripToolCallBlocks } from './toolCallParser.js';
 import { IContextPackerService, ContextMode } from '../context/packer/index.js';
+import { ToolResultCache } from './toolCache.js';
+import { BudgetTracker } from './budgetTracker.js';
 
 const DEFAULT_MAX_ITERATIONS = 20;
 
@@ -60,6 +61,9 @@ export class AgentExecutor {
 		private readonly settingsService: IVoidSettingsService,
 		private readonly scopedTools: ScopedToolRegistry,
 		private readonly contextPacker?: IContextPackerService,
+		private readonly toolCache?: ToolResultCache,
+		private readonly cacheConfig?: IStepToolCacheConfig,
+		private readonly budgetTracker?: BudgetTracker,
 	) {}
 
 	/**
@@ -115,6 +119,11 @@ export class AgentExecutor {
 		// ── Initial user message ───────────────────────────────────────────────
 		history.push({ role: 'user', content: input });
 
+		// ── Budget tracker: begin step ────────────────────────────────────────
+		if (this.budgetTracker) {
+			this.budgetTracker.beginStep(agent.model?.modelName);
+		}
+
 		// ── LLM + tool loop ────────────────────────────────────────────────────
 		while (stepRun.iterationsUsed < maxIterations) {
 			if (cancellation.cancelled) {
@@ -126,6 +135,10 @@ export class AgentExecutor {
 			stepRun.iterationsUsed++;
 			ctx.log(`[${step.id}] iteration ${stepRun.iterationsUsed}/${maxIterations}`);
 
+			// Estimate input tokens for budget tracking.
+			// LLMChatMessage is a union (Anthropic/OpenAI/Gemini); extract text safely.
+			const inputText = history.map(m => _extractMessageText(m)).join('');
+
 			let responseText: string;
 			try {
 				responseText = await this._callLLM(history);
@@ -134,6 +147,24 @@ export class AgentExecutor {
 				stepRun.error = `LLM error: ${e.message}`;
 				stepRun.endedAt = Date.now();
 				return;
+			}
+
+			// ── Budget check ──────────────────────────────────────────────────
+			if (this.budgetTracker) {
+				const budgetResult = this.budgetTracker.recordUsage(inputText, responseText);
+				const stepUsage = this.budgetTracker.getStepUsage();
+				stepRun.tokenUsage = { inputTokens: stepUsage.inputTokens, outputTokens: stepUsage.outputTokens };
+
+				if (!budgetResult.withinBudget) {
+					ctx.log(`[${step.id}] budget exceeded — ${budgetResult.reason}`);
+					// onExceeded='warn' logs and continues; 'fail' (default) aborts the step
+					if (this.budgetTracker.onExceeded !== 'warn') {
+						stepRun.status = 'failed';
+						stepRun.error = `Budget exceeded: ${budgetResult.reason}`;
+						stepRun.endedAt = Date.now();
+						return;
+					}
+				}
 			}
 
 			history.push({ role: 'assistant', content: responseText });
@@ -151,48 +182,18 @@ export class AgentExecutor {
 			}
 
 			// ── Execute tool calls ───────────────────────────────────────────
-			const toolResultParts: string[] = [];
+			const useParallel = step.parallelTools === true && toolCalls.length > 1;
+			const toolResultParts: string[] = new Array(toolCalls.length).fill('');
 
-			for (const call of toolCalls) {
-				if (cancellation.cancelled) break;
-
-				const tool = this.scopedTools.get(call.tool);
-				const callStart = Date.now();
-
-				if (!tool) {
-					const record: IToolCallRecord = {
-						toolName: call.tool,
-						args: call.args,
-						result: { success: false, output: '', error: `Tool "${call.tool}" is not available in this step` },
-						executedAt: callStart,
-						durationMs: 0,
-					};
-					stepRun.toolCalls.push(record);
-					toolResultParts.push(`Tool "${call.tool}" error: not available`);
-					ctx.log(`[${step.id}] tool "${call.tool}" — not available`);
-					continue;
-				}
-
-				ctx.log(`[${step.id}] calling tool: ${call.tool}(${JSON.stringify(call.args)})`);
-
-				const result = await tool.execute(call.args, ctx);
-				const durationMs = Date.now() - callStart;
-
-				const record: IToolCallRecord = {
-					toolName: call.tool,
-					args: call.args,
-					result,
-					executedAt: callStart,
-					durationMs,
-				};
-				stepRun.toolCalls.push(record);
-
-				if (result.success) {
-					toolResultParts.push(`Tool "${call.tool}" result:\n${result.output}`);
-					ctx.log(`[${step.id}] tool "${call.tool}" ✓ (${durationMs}ms)`);
-				} else {
-					toolResultParts.push(`Tool "${call.tool}" error: ${result.error}`);
-					ctx.log(`[${step.id}] tool "${call.tool}" ✗ — ${result.error}`);
+			if (useParallel) {
+				// Parallel execution with concurrency cap
+				const maxConcurrent = step.maxParallelToolCalls ?? 5;
+				await this._executeToolsParallel(toolCalls, toolResultParts, stepRun, step, ctx, cancellation, maxConcurrent);
+			} else {
+				// Sequential execution (default)
+				for (let i = 0; i < toolCalls.length; i++) {
+					if (cancellation.cancelled) break;
+					toolResultParts[i] = await this._executeSingleTool(toolCalls[i], stepRun, step, ctx);
 				}
 			}
 
@@ -205,6 +206,112 @@ export class AgentExecutor {
 			stepRun.status = 'failed';
 			stepRun.error = `Reached max iterations (${maxIterations}) without completing`;
 			stepRun.endedAt = Date.now();
+		}
+	}
+
+	// ─── Tool Execution ───────────────────────────────────────────────────────
+
+	private async _executeSingleTool(
+		call: import('./toolCallParser.js').IParsedToolCall,
+		stepRun: IStepRun,
+		step: IWorkflowStep,
+		ctx: IToolExecutionContext,
+	): Promise<string> {
+		const tool = this.scopedTools.get(call.tool);
+		const callStart = Date.now();
+
+		if (!tool) {
+			const record: IToolCallRecord = {
+				toolName: call.tool,
+				args: call.args,
+				result: { success: false, output: '', error: `Tool "${call.tool}" is not available in this step` },
+				executedAt: callStart,
+				durationMs: 0,
+			};
+			stepRun.toolCalls.push(record);
+			ctx.log(`[${step.id}] tool "${call.tool}" — not available`);
+			return `Tool "${call.tool}" error: not available`;
+		}
+
+		// ── Cache check ───────────────────────────────────────────────────────
+		if (this.toolCache && this.cacheConfig?.enabled) {
+			const cacheableTools = this.cacheConfig.cacheableTools;
+			const isCacheable = !cacheableTools || cacheableTools.length === 0 || cacheableTools.includes(call.tool);
+			if (isCacheable) {
+				const cacheKey = this.toolCache.key(call.tool, call.args);
+				const cached = this.toolCache.get(cacheKey, this.cacheConfig.ttlMs);
+				if (cached) {
+					const record: IToolCallRecord = {
+						toolName: call.tool,
+						args: call.args,
+						result: cached,
+						executedAt: callStart,
+						durationMs: 0,
+					};
+					stepRun.toolCalls.push(record);
+					ctx.log(`[${step.id}] tool "${call.tool}" ✓ (cached)`);
+					return `Tool "${call.tool}" result:\n${cached.output}`;
+				}
+			}
+		}
+
+		ctx.log(`[${step.id}] calling tool: ${call.tool}(${JSON.stringify(call.args)})`);
+		const result = await tool.execute(call.args, ctx);
+		const durationMs = Date.now() - callStart;
+
+		const record: IToolCallRecord = {
+			toolName: call.tool,
+			args: call.args,
+			result,
+			executedAt: callStart,
+			durationMs,
+		};
+		stepRun.toolCalls.push(record);
+
+		// Cache successful results
+		if (this.toolCache && this.cacheConfig?.enabled && result.success) {
+			const cacheKey = this.toolCache.key(call.tool, call.args);
+			this.toolCache.set(cacheKey, result);
+		}
+
+		if (result.success) {
+			ctx.log(`[${step.id}] tool "${call.tool}" ✓ (${durationMs}ms)`);
+			return `Tool "${call.tool}" result:\n${result.output}`;
+		} else {
+			ctx.log(`[${step.id}] tool "${call.tool}" ✗ — ${result.error}`);
+			return `Tool "${call.tool}" error: ${result.error}`;
+		}
+	}
+
+	private async _executeToolsParallel(
+		calls: import('./toolCallParser.js').IParsedToolCall[],
+		results: string[],
+		stepRun: IStepRun,
+		step: IWorkflowStep,
+		ctx: IToolExecutionContext,
+		cancellation: ICancellationToken,
+		maxConcurrent: number,
+	): Promise<void> {
+		// Pool-of-promises: dispatch up to maxConcurrent, race for completion
+		const pending = new Set<Promise<void>>();
+		let idx = 0;
+
+		const dispatch = (i: number) => {
+			const p = this._executeSingleTool(calls[i], stepRun, step, ctx)
+				.then(r => { results[i] = r; })
+				.catch(e => { results[i] = `Tool "${calls[i].tool}" error: ${e.message}`; })
+				.finally(() => pending.delete(p));
+			pending.add(p);
+		};
+
+		while (idx < calls.length || pending.size > 0) {
+			if (cancellation.cancelled) break;
+
+			while (pending.size < maxConcurrent && idx < calls.length) {
+				dispatch(idx++);
+			}
+
+			if (pending.size > 0) await Promise.race(pending);
 		}
 	}
 
@@ -271,4 +378,31 @@ export class AgentExecutor {
 
 		return parts.join('\n');
 	}
+}
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+/**
+ * Extract plain text from any LLMChatMessage variant for token estimation.
+ * Anthropic/OpenAI messages have a `content` field; Gemini has `parts`.
+ */
+function _extractMessageText(msg: import('../../../void/common/sendLLMMessageTypes.js').LLMChatMessage): string {
+	// Gemini messages use `parts` instead of `content`
+	if ('parts' in msg) {
+		return msg.parts
+			.map(p => ('text' in p ? p.text : ''))
+			.join('');
+	}
+	// Anthropic / OpenAI messages have `content`
+	if ('content' in msg) {
+		const content = (msg as { content: unknown }).content;
+		if (typeof content === 'string') return content;
+		if (Array.isArray(content)) {
+			return content.map(c => {
+				if (typeof c === 'object' && c !== null && 'text' in c) return (c as { text: string }).text;
+				return '';
+			}).join('');
+		}
+	}
+	return '';
 }

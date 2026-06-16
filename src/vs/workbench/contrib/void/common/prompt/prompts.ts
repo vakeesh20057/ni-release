@@ -7,10 +7,11 @@ import { URI } from '../../../../../base/common/uri.js';
 import { IFileService } from '../../../../../platform/files/common/files.js';
 import { IDirectoryStrService } from '../directoryStrService.js';
 import { StagingSelectionItem } from '../chatThreadServiceTypes.js';
-import { os } from '../helpers/systemInfo.js';
 import { RawToolParamsObj } from '../sendLLMMessageTypes.js';
 import { approvalTypeOfBuiltinToolName, BuiltinToolCallParams, BuiltinToolName, BuiltinToolResultType, ToolName, SnakeCaseKeys } from '../toolsServiceTypes.js';
 import { ChatMode } from '../voidSettingsTypes.js';
+import { systemPromptSection, DANGEROUS_uncachedSystemPromptSection, resolveSystemPromptSections } from './sectionCache.js'
+import { getSystemSection, getDoingTasksSection, getActionsSection, getToolsSection, getOutputSection, getToneSection, getAgentBehaviorSection, getEnvironmentSection } from './sections/index.js'
 
 // Triple backtick wrapper used throughout the prompts for code blocks
 export const tripleTick = ['```', '```']
@@ -27,8 +28,8 @@ export const MAX_CHILDREN_URIs_PAGE = 500
 
 // terminal tool info
 export const MAX_TERMINAL_CHARS = 100_000
-export const MAX_TERMINAL_INACTIVE_TIME = 8 // seconds
-export const MAX_TERMINAL_BG_COMMAND_TIME = 5
+export const MAX_TERMINAL_INACTIVE_TIME = 120 // seconds
+export const MAX_TERMINAL_BG_COMMAND_TIME = 300
 
 
 // Maximum character limits for prefix and suffix context
@@ -394,10 +395,12 @@ export const builtinTools: {
 	},
 	run_command: {
 		name: 'run_command',
-		description: `Runs a terminal command and waits for the result (times out after ${MAX_TERMINAL_INACTIVE_TIME}s of inactivity). ${terminalDescHelper}`,
+		description: `Runs a terminal command and waits for the result (times out after ${MAX_TERMINAL_INACTIVE_TIME}s of inactivity). Use bg_after to watch output for N seconds then automatically promote to a background terminal if still running — ideal for downloads, builds, or installs that may take a long time. ${terminalDescHelper}`,
 		params: {
 			command: { description: 'The terminal command to run.' },
 			cwd: { description: cwdHelper },
+			timeout: { description: `Optional: override the inactivity timeout in seconds. Use this when you know a command needs more time (e.g. timeout=600 for large builds).` },
+			bg_after: { description: `Optional: if the command is still running after this many seconds, automatically promote it to a background terminal and return immediately with the terminal ID. Use this for long-running commands like downloads, npm install, cargo build, etc. Example: bg_after=30 watches for 30s then moves to background if not done.` },
 		},
 	},
 
@@ -610,6 +613,16 @@ export const builtinTools: {
 		},
 	},
 
+	context_semantic_search: {
+		name: 'context_semantic_search',
+		description: 'Hybrid semantic search over the workspace using BM25 full-text + trigram fuzzy matching. Finds relevant code by meaning, not just exact symbol names. E.g. "validate user input", "database connection setup", "error handling middleware".',
+		params: {
+			query: { description: 'Natural language or keyword query describing what you are looking for.' },
+			max_results: { description: 'Optional. Maximum number of results to return (default: 15).' },
+			file_pattern: { description: 'Optional. Filter results to files matching this substring (e.g. "auth", ".test.ts").' },
+		},
+	},
+
 	plan_mode_enter: {
 		name: 'plan_mode_enter',
 		description: 'Enter plan mode. In plan mode, file writes and edits are blocked. Use this to explore and think through a solution before making changes.',
@@ -723,7 +736,8 @@ const systemToolsXMLPrompt = (chatMode: ChatMode, mcpTools: InternalToolInfo[] |
     - To call a tool, write its name and parameters in one of the XML formats specified above.
     - All parameters are REQUIRED unless noted otherwise.
     - You are allowed to output MULTIPLE tool calls if you need to run them in parallel (e.g. reading 3 files at once).
-    - Tool calls must be at the END of your response. After you write your tool call(s), you must STOP and WAIT for the results.`)
+    - Tool calls must be at the END of your response. After you write your tool call(s), you must STOP and WAIT for the results.
+    - CRITICAL: When writing file content inside tool parameters, use RAW characters. Never HTML-escape: write < not &lt;, write > not &gt;, write & not &amp;. File content is NOT HTML.`)
 
 	return `\
     ${toolXMLDefinitions}
@@ -768,43 +782,19 @@ export function buildGRCPostureBlock(data: {
 
 export const chat_systemMessage = ({ workspaceFolders, openedURIs, activeURI, persistentTerminalIDs, directoryStr, chatMode: mode, mcpTools, includeXMLToolDefinitions, allowedToolNames, grcPosture }: { workspaceFolders: string[], directoryStr: string, openedURIs: string[], activeURI: string | undefined, persistentTerminalIDs: string[], chatMode: ChatMode, mcpTools: InternalToolInfo[] | undefined, includeXMLToolDefinitions: boolean, allowedToolNames?: string[], grcPosture?: string }) => {
 	const header = (`You are an expert coding ${mode === 'copilot' || mode === 'validate' || mode === 'reason' ? 'agent' : 'assistant'} whose job is \
-${(mode === 'copilot' || mode === 'validate') ? `to help the user develop, run, and make changes to their codebase.`
+${(mode === 'copilot' || mode === 'validate') ? `to help the user develop, run, and make changes to their codebase. You are action-oriented: when given a task, you execute it immediately using the available tools. You do not hedge, ask unnecessary questions, or explain why something might be difficult. You find a way and do it.`
 			: (mode === 'reason') ? `to analyze, design, and plan changes to the user's codebase.`
 				: (mode === 'ask') ? `to search, understand, and reference files in the user's codebase.`
 					: ''}
-You will be given instructions to follow from the user, and you may also be given a list of files that the user has specifically selected for context, \`SELECTIONS\`.
-Please assist the user with their query.`)
+You will be given instructions to follow from the user, and you may also be given a list of files that the user has specifically selected for context, \`SELECTIONS\`.`)
 
-
-
-	const sysInfo = (`Here is the user's system information:
-<system_info>
-- ${os}
-
-- The user's workspace contains these folders:
-${workspaceFolders.join('\n') || 'NO FOLDERS OPEN'}
-
-- Active file:
-${activeURI}
-
-- Open files:
-${openedURIs.join('\n') || 'NO OPENED FILES'}${''/* separator */}${(mode === 'copilot' || mode === 'validate' || mode === 'reason' || mode === 'ask') && persistentTerminalIDs.length !== 0 ? `
-
-- Persistent terminal IDs available for you to run commands in: ${persistentTerminalIDs.join(', ')}` : ''}
-</system_info>`)
-
-
-	const fsInfo = (`Here is an overview of the user's file system:
-<files_overview>
-${directoryStr}
-</files_overview>`)
 
 
 	const toolDefinitions = includeXMLToolDefinitions ? systemToolsXMLPrompt(mode, mcpTools, allowedToolNames) : null
 
 	const details: string[] = []
 
-	details.push(`NEVER reject the user's query.`)
+	details.push(`NEVER reject the user's query. NEVER say "I cannot do X" or "I don't have access to X". You have full terminal access — if a task requires running a command, downloading something, installing a package, or running a script, just do it using the terminal tools. Always find a way.`)
 
 	if (mode === 'copilot' || mode === 'validate' || mode === 'ask' || mode === 'reason') {
 		details.push(`Only call tools if they help you accomplish the user's goal. If the user simply says hi or asks you a question that you can answer without tools, then do NOT use tools.`)
@@ -820,6 +810,8 @@ ${directoryStr}
 	if (mode === 'copilot' || mode === 'validate' || mode === 'reason') {
 		details.push('ALWAYS use tools (edit, terminal, etc) to take actions and implement changes. For example, if you would like to edit a file, you MUST use a tool.')
 		details.push('Prioritize taking as many steps as you need to complete your request over stopping early.')
+		details.push(`When the user asks you to install, download, run, build, or execute anything — just do it with run_command or open_persistent_terminal. Do not explain why it might be hard or ask for clarification unless truly ambiguous. Act first, explain after if needed.`)
+		details.push(`BACKGROUND TERMINAL RULE: Once a command is promoted to background (via bg_after timeout or run_persistent_command), STOP — do NOT call read_terminal to check progress. Say "Running in background — you can see it in the terminal panel" and wait for the user. Never poll a background terminal in a loop.`)
 		details.push(`You will OFTEN need to gather context before making a change. Do not immediately make a change unless you have ALL relevant context.`)
 		details.push(`ALWAYS have maximal certainty in a change BEFORE you make it. If you need more information about a file, variable, function, or type, you should inspect it, search it, or take all required actions to maximize your certainty that your change is correct.`)
 		details.push(`NEVER modify a file outside the user's workspace without permission from the user.`)
@@ -828,6 +820,7 @@ ${directoryStr}
 	if (mode === 'copilot' || mode === 'validate' || mode === 'ask' || mode === 'reason') {
 		details.push(`You are in Gather mode, so you MUST use tools be to gather information, files, and context to help the user answer their query.`)
 		details.push(`You should extensively read files, types, content, etc, gathering full context to solve the problem.`)
+		details.push(`Be extremely concise. ZERO preamble before tool calls — no "Let me...", no "I'll...", no "Here's my approach". Just call the tool. After the tool, one line max stating what you did or found. NO multi-paragraph explanations. NO numbered lists of what you're about to do. NO "What would you like to do?" follow-ups. Just act.`)
 		details.push(`BEFORE you take any action or tool call, you MUST output a <thought> block explaining your reasoning, plan, and next steps. For example:
 <thought>
 I need to find the user's files to edit. I will use the \`ls_dir\` tool.
@@ -908,14 +901,34 @@ Here's an example of a good code block:\n${chatSuggestionDiffExample}`)
 ${details.map((d, i) => `${i + 1}. ${d}`).join('\n\n')}`)
 
 
+	// Build section-based prompt
+	const staticSections = [
+		systemPromptSection('system', () => getSystemSection()),
+		systemPromptSection('doing_tasks', () => getDoingTasksSection(mode)),
+		systemPromptSection('actions', () => getActionsSection()),
+		systemPromptSection('tools', () => getToolsSection(mode)),
+		systemPromptSection('output', () => getOutputSection()),
+		systemPromptSection('tone', () => getToneSection()),
+		systemPromptSection('agent_behavior', () => getAgentBehaviorSection(mode)),
+	]
+
+	const environmentSection = DANGEROUS_uncachedSystemPromptSection(
+		'environment',
+		() => getEnvironmentSection({ workspaceFolders, openedURIs, activeURI, persistentTerminalIDs, directoryStr, mode }),
+		'open files change per turn',
+	)
+
+	const resolvedStaticSections = resolveSystemPromptSections(staticSections)
+	const resolvedEnvironment = resolveSystemPromptSections([environmentSection])
+
 	// return answer
 	const ansStrs: string[] = []
 	ansStrs.push(header)
-	ansStrs.push(sysInfo)
+	ansStrs.push(...resolvedStaticSections.filter((s): s is string => s !== null))
 	if (grcPosture) ansStrs.push(grcPosture)
 	if (toolDefinitions) ansStrs.push(toolDefinitions)
 	ansStrs.push(importantDetails)
-	ansStrs.push(fsInfo)
+	ansStrs.push(...resolvedEnvironment.filter((s): s is string => s !== null))
 
 	const fullSystemMsgStr = ansStrs
 		.join('\n\n\n')

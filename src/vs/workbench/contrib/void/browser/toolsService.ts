@@ -1,4 +1,6 @@
 import { CancellationToken } from '../../../../base/common/cancellation.js'
+import { Emitter, Event } from '../../../../base/common/event.js'
+import { Disposable } from '../../../../base/common/lifecycle.js'
 import { URI } from '../../../../base/common/uri.js'
 import { IFileService } from '../../../../platform/files/common/files.js'
 import { registerSingleton, InstantiationType } from '../../../../platform/instantiation/common/extensions.js'
@@ -8,7 +10,7 @@ import { QueryBuilder } from '../../../services/search/common/queryBuilder.js'
 import { ISearchService, IFileQuery, ITextQuery, QueryType } from '../../../services/search/common/search.js'
 import { IEditCodeService } from './editCodeServiceInterface.js'
 import { ITerminalToolService } from './terminalToolService.js'
-import { LintErrorItem, BuiltinToolCallParams, BuiltinToolResultType, BuiltinToolName } from '../common/toolsServiceTypes.js'
+import { LintErrorItem, BuiltinToolCallParams, BuiltinToolResultType, BuiltinToolName, TerminalResolveReason } from '../common/toolsServiceTypes.js'
 import { IVoidModelService } from '../common/voidModelService.js'
 import { EndOfLinePreference } from '../../../../editor/common/model.js'
 import { IVoidCommandBarService } from './voidCommandBarServiceInterface.js'
@@ -29,6 +31,7 @@ import { IExternalCommandExecutor } from './externalCommandExecutor.js';
 import { IPowerModeService } from '../../powerMode/browser/powerModeService.js';
 import { IWorkflowAgentService } from '../../neuralInverse/browser/workflowAgentService.js';
 import type { INeuralInverseSubAgentService } from './neuralInverseSubAgentService.js';
+import { IUserInputRequestService } from './userInputRequestService.js';
 import {
 	createTaskCreateTool,
 	createTaskListTool,
@@ -146,6 +149,8 @@ export interface IToolsService {
 	validateParams: ValidateBuiltinParams;
 	callTool: CallBuiltinTool;
 	stringOfResult: BuiltinToolResultToString;
+	/** Fires when a background terminal finishes — chatThreadService uses this to report back */
+	readonly onBackgroundTerminalComplete: Event<{ threadId: string; command: string; output: string; exitCode: number }>
 	// Plan Mode + TodoWrite + Worktree state (per-thread, in-memory)
 	setCurrentContext(threadId: string): void;
 	getThreadPlanMode(threadId: string): boolean;
@@ -159,13 +164,16 @@ export interface IToolsService {
 
 export const IToolsService = createDecorator<IToolsService>('ToolsService');
 
-export class ToolsService implements IToolsService {
+export class ToolsService extends Disposable implements IToolsService {
 
 	readonly _serviceBrand: undefined;
 
 	public validateParams: ValidateBuiltinParams;
 	public callTool: CallBuiltinTool;
 	public stringOfResult: BuiltinToolResultToString;
+
+	private readonly _onBackgroundTerminalComplete = this._register(new Emitter<{ threadId: string; command: string; output: string; exitCode: number }>())
+	readonly onBackgroundTerminalComplete = this._onBackgroundTerminalComplete.event
 
 	private _currentThreadId: string = '';
 	private _planModeByThread = new Map<string, boolean>();
@@ -209,7 +217,9 @@ export class ToolsService implements IToolsService {
 		@IEnvironmentService private readonly environmentService: IEnvironmentService,
 		@IExternalCommandExecutor private readonly commandExecutor: IExternalCommandExecutor,
 		@IPowerModeService private readonly powerMode: IPowerModeService,
+		@IUserInputRequestService private readonly userInputRequestService: IUserInputRequestService,
 	) {
+		super()
 		const queryBuilder = instantiationService.createInstance(QueryBuilder);
 
 		const workspaceRootUri = workspaceContextService.getWorkspace().folders[0]?.uri;
@@ -280,6 +290,10 @@ export class ToolsService implements IToolsService {
 		const _getChangeTracker = async () => {
 			const { IChangeTrackerService } = await import('../../neuralInverse/browser/context/tracker/changeTracker.js');
 			return instantiationService.invokeFunction(a => a.get(IChangeTrackerService));
+		};
+		const _getHybridSearch = async () => {
+			const { IHybridSearchService } = await import('../../neuralInverse/browser/context/search/hybridSearchService.js');
+			return instantiationService.invokeFunction(a => a.get(IHybridSearchService));
 		};
 		const _getWorkspaceUri = (): string => {
 			const folders = workspaceContextService.getWorkspace().folders;
@@ -418,6 +432,12 @@ export class ToolsService implements IToolsService {
 				const withinMinutes = validateNumber(params.within_minutes, { default: null })
 				return { withinMinutes }
 			},
+			context_semantic_search: (params: RawToolParamsObj) => {
+				const query = validateStr('query', params.query)
+				const maxResults = validateNumber(params.max_results, { default: null })
+				const filePattern = validateOptionalStr('file_pattern', params.file_pattern)
+				return { query, maxResults, filePattern }
+			},
 			// ---
 			read_file: (params: RawToolParamsObj) => {
 				const { uri: uriStr, start_line: startLineUnknown, end_line: endLineUnknown, page_number: pageNumberUnknown } = params
@@ -534,11 +554,13 @@ export class ToolsService implements IToolsService {
 			// ---
 
 			run_command: (params: RawToolParamsObj) => {
-				const { command: commandUnknown, cwd: cwdUnknown } = params
+				const { command: commandUnknown, cwd: cwdUnknown, timeout: timeoutUnknown, bg_after: bgAfterUnknown } = params
 				const command = validateStr('command', commandUnknown)
 				const cwd = validateOptionalStr('cwd', cwdUnknown)
+				const timeout = (typeof timeoutUnknown === 'number' && timeoutUnknown > 0) ? timeoutUnknown : null
+				const bgAfter = (typeof bgAfterUnknown === 'number' && bgAfterUnknown > 0) ? bgAfterUnknown : null
 				const terminalId = generateUuid()
-				return { command, cwd, terminalId }
+				return { command, cwd, terminalId, timeout, bgAfter }
 			},
 			run_persistent_command: (params: RawToolParamsObj) => {
 				const { command: commandUnknown, persistent_terminal_id: persistentTerminalIdUnknown } = params;
@@ -763,9 +785,20 @@ export class ToolsService implements IToolsService {
 			},
 			// --- Workflow tools ---
 			ask_user: async ({ question }) => {
-				// ask_user in main chat should behave like a regular chat message
-				// Rather than pausing, we return a prompt asking the user to respond
-				return { result: { result: `[ask_user] ${question}\n\nPlease respond to continue.` } };
+				let requestId: string | null = null
+				const resultPromise: Promise<{ result: string }> = new Promise((resolve, reject) => {
+					this.userInputRequestService.request(question).then(answer => {
+						resolve({ result: answer })
+					}).catch(() => {
+						reject(new Error('ask_user cancelled'))
+					})
+					const pending = [...this.userInputRequestService.pendingRequests.values()]
+					if (pending.length > 0) requestId = pending[pending.length - 1].id
+				})
+				const interruptTool = () => {
+					if (requestId) this.userInputRequestService.cancel(requestId)
+				}
+				return { result: resultPromise, interruptTool }
 			},
 			web_fetch: async ({ url, description }) => {
 				try {
@@ -1123,6 +1156,27 @@ export class ToolsService implements IToolsService {
 				}).join('\n')
 				return { result: { result: `Recently edited (${results.length}):\n${output}` } }
 			},
+			context_semantic_search: async ({ query, maxResults, filePattern }) => {
+				const hybridSearch = await _getHybridSearch()
+				const limit = maxResults ?? 15
+				const results = await hybridSearch.search(query, limit)
+				if (results.length === 0) {
+					const status = hybridSearch.getStatus()
+					return { result: { result: `No results for "${query}". Index has ${status.bm25Files} files indexed.` } }
+				}
+				const filtered = filePattern
+					? results.filter(r => r.filePath.includes(filePattern))
+					: results
+				const output = filtered.map(r => {
+					const shortPath = r.filePath.split('/').slice(-3).join('/')
+					const scoreStr = (r.score * 100).toFixed(0)
+					const sources = r.sources.join('+')
+					const symbol = r.symbolName ? ` [${r.symbolName}]` : ''
+					const snippet = r.content.split('\n').slice(0, 5).join('\n').trim()
+					return `## ${shortPath}${symbol} (score: ${scoreStr}%, via: ${sources})\nLines ${r.startLine}-${r.endLine}:\n\`\`\`\n${snippet}\n\`\`\``
+				}).join('\n\n')
+				return { result: { result: `Found ${filtered.length} results for "${query}":\n\n${output}` } }
+			},
 			// ---
 			read_file: async ({ uri, startLine, endLine, pageNumber }) => {
 				await voidModelService.initializeModel(uri)
@@ -1296,13 +1350,90 @@ export class ToolsService implements IToolsService {
 				return { result: lintErrorsPromise }
 			},
 			// ---
-			run_command: async ({ command, cwd, terminalId }) => {
+			run_command: async ({ command, cwd, terminalId, bgAfter }) => {
 				const commitGateMsg = this._checkCommitGate(command);
 				if (commitGateMsg) {
 					return { result: Promise.resolve({ resolveReason: { type: 'done' as const, exitCode: 1 }, result: commitGateMsg }) }
 				}
 				const { resPromise, interrupt } = await this.terminalToolService.runCommand(command, { type: 'temporary', cwd, terminalId })
-				return { result: resPromise, interruptTool: interrupt }
+
+				// Build a shared result promise that can be resolved early by bg_after timer OR user "Move to BG" click
+				const result = new Promise<{ result: string, resolveReason: TerminalResolveReason }>(async (resolve) => {
+					// User-triggered "Move to BG" button
+					const threadIdAtPromotion = this._currentThreadId
+					const fireWhenDone = (bgTerminalId: string) => {
+						resPromise.then(r => {
+							this._onBackgroundTerminalComplete.fire({
+								threadId: threadIdAtPromotion,
+								command,
+								output: r.result,
+								exitCode: (r.resolveReason as any).exitCode ?? 0,
+							})
+						}).catch(() => {
+							this._onBackgroundTerminalComplete.fire({
+								threadId: threadIdAtPromotion,
+								command,
+								output: `Terminal ${bgTerminalId} was closed before completing.`,
+								exitCode: 1,
+							})
+						})
+					}
+
+					const promoteListener = this.terminalToolService.onPromoteToBackground(async ({ terminalId: firedId }) => {
+						if (firedId !== terminalId) return
+						promoteListener.dispose()
+						try {
+							const bgTerminalId = await this.terminalToolService.createPersistentTerminal({ cwd })
+							fireWhenDone(bgTerminalId)
+							resolve({
+								resolveReason: { type: 'done' as const, exitCode: 0 },
+								result: `Command moved to background. The result will be reported back to you automatically when it finishes.`,
+							})
+						} catch {
+							resolve({
+								resolveReason: { type: 'done' as const, exitCode: 0 },
+								result: `Command moved to background. The result will be reported back to you automatically when it finishes.`,
+							})
+						}
+					})
+
+					if (!bgAfter) {
+						const r = await resPromise
+						promoteListener.dispose()
+						resolve(r)
+						return
+					}
+
+					// bg_after: watch for N seconds, then promote to background if still running
+					const bgAfterMs = bgAfter * 1000
+					const winner = await Promise.race([
+						resPromise.then(r => ({ kind: 'done' as const, r })),
+						new Promise<{ kind: 'timeout' }>(res => setTimeout(() => res({ kind: 'timeout' }), bgAfterMs)),
+					])
+					promoteListener.dispose()
+
+					if (winner.kind === 'done') {
+						resolve(winner.r)
+						return
+					}
+
+					// Still running after bgAfter seconds — promote to background persistent terminal
+					try {
+						const bgTerminalId = await this.terminalToolService.createPersistentTerminal({ cwd })
+						fireWhenDone(bgTerminalId)
+						resolve({
+							resolveReason: { type: 'done' as const, exitCode: 0 },
+							result: `Command still running after ${bgAfter}s, moved to background. The result will be reported back to you automatically when it finishes.`,
+						})
+					} catch {
+						resolve({
+							resolveReason: { type: 'done' as const, exitCode: 0 },
+							result: `Command still running after ${bgAfter}s, moved to background. The result will be reported back to you automatically when it finishes.`,
+						})
+					}
+				})
+
+				return { result, interruptTool: interrupt }
 			},
 			run_persistent_command: async ({ command, persistentTerminalId }) => {
 				const commitGateMsg = this._checkCommitGate(command);
@@ -1310,7 +1441,20 @@ export class ToolsService implements IToolsService {
 					return { result: Promise.resolve({ resolveReason: { type: 'done' as const, exitCode: 1 }, result: commitGateMsg }) }
 				}
 				const { resPromise, interrupt } = await this.terminalToolService.runCommand(command, { type: 'persistent', persistentTerminalId })
-				return { result: resPromise, interruptTool: interrupt }
+				const threadId = this._currentThreadId
+				resPromise.then(r => {
+					this._onBackgroundTerminalComplete.fire({
+						threadId,
+						command,
+						output: r.result,
+						exitCode: (r.resolveReason as any).exitCode ?? 0,
+					})
+				}).catch(() => {
+					this._onBackgroundTerminalComplete.fire({ threadId, command, output: 'Terminal was closed before completing.', exitCode: 1 })
+				})
+				// Return immediately so the agent loop continues
+				const immediateResult = Promise.resolve({ resolveReason: { type: 'done' as const, exitCode: 0 }, result: `Command started in background. The result will be reported back automatically when it finishes.` })
+				return { result: immediateResult, interruptTool: interrupt }
 			},
 			open_persistent_terminal: async ({ cwd }) => {
 				const persistentTerminalId = await this.terminalToolService.createPersistentTerminal({ cwd })
@@ -1445,6 +1589,7 @@ export class ToolsService implements IToolsService {
 			context_file_context: (_params, result) => result.result,
 			context_import_graph: (_params, result) => result.result,
 			context_recent_edits: (_params, result) => result.result,
+			context_semantic_search: (_params, result) => result.result,
 			// ---
 			read_file: (params, result) => {
 				return `${params.uri.fsPath}\n\`\`\`\n${result.fileContents}\n\`\`\`${nextPageStr(result.hasNextPage)}${result.hasNextPage ? `\nMore info because truncated: this file has ${result.totalNumLines} lines, or ${result.totalFileLen} characters.` : ''}`
