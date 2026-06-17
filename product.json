@@ -33,7 +33,7 @@
 	"reportIssueUrl": "https://github.com/neuralinverse/neuralinverse/issues/new",
 	"nodejsRepository": "https://nodejs.org",
 	"urlProtocol": "neuralinverse",
-	"quality": "stable",
+	"quality": "ce",
 	"updateUrl": "https://tcnnnsytzd.execute-api.us-east-1.amazonaws.com",
 	"extensionsGallery": {
 		"serviceUrl": "https://marketplace.visualstudio.com/_apis/public/gallery",
