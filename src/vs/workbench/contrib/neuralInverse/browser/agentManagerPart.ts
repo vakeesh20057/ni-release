@@ -28,6 +28,8 @@ import { IDeploymentRegistryService } from './modelManagement/deployment/deploym
 import { IUnifiedDeployment, isLocalDeployment, isCloudDeployment, isDeploymentActive, getDeploymentEndpoint } from './modelManagement/deployment/deploymentTypes.js';
 import { CloudProvider, CloudDeploymentStatus, ICloudCredentials, ICloudDeployment, getRecommendedInstances } from '../common/modelManagement/cloudTypes.js';
 import { IWorkflowComposerService } from './composer/service.js';
+import { IBackgroundAgentService } from './backgroundAgentService.js';
+import { BackgroundTaskStatus } from '../common/backgroundAgentTypes.js';
 
 export class AgentManagerPart extends Part {
 
@@ -61,6 +63,7 @@ export class AgentManagerPart extends Part {
         @ICloudDeploymentService private readonly cloudDeploymentService: ICloudDeploymentService,
         @IDeploymentRegistryService private readonly deploymentRegistryService: IDeploymentRegistryService,
         @IWorkflowComposerService private readonly workflowComposerService: IWorkflowComposerService,
+        @IBackgroundAgentService private readonly backgroundAgentService: IBackgroundAgentService,
     ) {
         super(AgentManagerPart.ID, { hasTitle: false }, themeService, storageService, layoutService);
         this.registerListeners();
@@ -165,12 +168,19 @@ export class AgentManagerPart extends Part {
         workflowsContainer.style.background = 'var(--vscode-editor-background)';
         body.appendChild(workflowsContainer);
 
+        // VIEW 7: Background Agents (under Agents tab as sub-view)
+        const backgroundContainer = document.createElement('div');
+        backgroundContainer.style.width = '100%';
+        backgroundContainer.style.height = '100%';
+        body.appendChild(backgroundContainer);
+
         // State Management
-        const allContainers = [agentContainer, voidContainer, controlCenterContainer, modelsContainer, deploymentsContainer, workflowsContainer];
+        const allContainers = [agentContainer, voidContainer, controlCenterContainer, modelsContainer, deploymentsContainer, workflowsContainer, backgroundContainer];
         let allTabs: HTMLElement[] = [];
         let composerMounted = false;
+        let bgMounted = false;
 
-        const updateView = (view: 'manager' | 'chat' | 'control' | 'models' | 'deployments' | 'workflows') => {
+        const updateView = (view: 'manager' | 'chat' | 'control' | 'models' | 'deployments' | 'workflows' | 'background') => {
             for (const c of allContainers) { c.style.display = 'none'; }
             for (const t of allTabs) { styleInactive(t); }
 
@@ -199,8 +209,14 @@ export class AgentManagerPart extends Part {
                     this.workflowComposerService.mount(workflowsContainer);
                     this.disposables.add(toDisposable(() => this.workflowComposerService.unmount()));
                 } else {
-                    // Re-measure after display:none → display:block so SVG fills correctly
                     requestAnimationFrame(() => this.workflowComposerService.refresh());
+                }
+            } else if (view === 'background') {
+                backgroundContainer.style.display = 'flex';
+                styleActive(tabBackground);
+                if (!bgMounted) {
+                    bgMounted = true;
+                    this._renderBackgroundAgentsView(backgroundContainer);
                 }
             }
         };
@@ -219,14 +235,16 @@ export class AgentManagerPart extends Part {
 
         const tabChat = createTab('Chat', () => updateView('chat'));
         const tabAgents = createTab('Agents', () => updateView('manager'));
+        const tabBackground = createTab('Background', () => updateView('background'));
         const tabWorkflows = createTab('Workflows', () => updateView('workflows'));
         const tabModels = createTab('Models', () => updateView('models'));
         const tabDeployments = createTab('Deployments', () => updateView('deployments'));
 
-        allTabs = [tabChat, tabAgents, tabWorkflows, tabModels, tabDeployments];
+        allTabs = [tabChat, tabAgents, tabBackground, tabWorkflows, tabModels, tabDeployments];
 
         tabsContainer.appendChild(tabChat);
         tabsContainer.appendChild(tabAgents);
+        tabsContainer.appendChild(tabBackground);
         tabsContainer.appendChild(tabWorkflows);
         tabsContainer.appendChild(tabModels);
         tabsContainer.appendChild(tabDeployments);
@@ -3093,6 +3111,260 @@ export class AgentManagerPart extends Part {
             hash = name.charCodeAt(i) + ((hash << 5) - hash);
         }
         return colors[Math.abs(hash) % colors.length];
+    }
+
+    // === BACKGROUND AGENTS TAB ===
+
+    private _renderBackgroundAgentsView(container: HTMLElement): void {
+        container.style.display = 'flex';
+        container.style.flexDirection = 'column';
+        container.style.overflow = 'hidden';
+
+        // Header
+        const header = document.createElement('div');
+        header.style.display = 'flex';
+        header.style.alignItems = 'center';
+        header.style.justifyContent = 'space-between';
+        header.style.padding = '12px 16px';
+        header.style.borderBottom = '1px solid var(--vscode-panel-border)';
+
+        const titleArea = document.createElement('div');
+        titleArea.style.display = 'flex';
+        titleArea.style.alignItems = 'center';
+        titleArea.style.gap = '8px';
+
+        const title = document.createElement('span');
+        title.textContent = 'Background Agents';
+        title.style.fontSize = '13px';
+        title.style.fontWeight = '500';
+        title.style.color = 'var(--vscode-foreground)';
+        titleArea.appendChild(title);
+
+        const badge = document.createElement('span');
+        badge.style.fontSize = '10px';
+        badge.style.padding = '1px 6px';
+        badge.style.borderRadius = '8px';
+        badge.style.background = 'rgba(59,130,246,0.2)';
+        badge.style.color = '#93c5fd';
+        badge.style.display = 'none';
+        titleArea.appendChild(badge);
+        header.appendChild(titleArea);
+
+        const spawnBtn = document.createElement('button');
+        spawnBtn.textContent = '+ New Agent';
+        spawnBtn.style.fontSize = '11px';
+        spawnBtn.style.padding = '4px 10px';
+        spawnBtn.style.borderRadius = '4px';
+        spawnBtn.style.background = 'var(--vscode-button-secondaryBackground)';
+        spawnBtn.style.color = 'var(--vscode-button-secondaryForeground)';
+        spawnBtn.style.border = '1px solid var(--vscode-panel-border)';
+        spawnBtn.style.cursor = 'pointer';
+        spawnBtn.addEventListener('click', () => {
+            this.commandService.executeCommand('neuralInverse.bgAgent.spawn');
+        });
+        header.appendChild(spawnBtn);
+        container.appendChild(header);
+
+        // Task list area
+        const listArea = document.createElement('div');
+        listArea.style.flex = '1';
+        listArea.style.minHeight = '0';
+        listArea.style.overflowY = 'auto';
+        listArea.style.padding = '12px';
+        container.appendChild(listArea);
+
+        const render = () => {
+            const tasks = [...this.backgroundAgentService.tasks.values()];
+
+            // Always show task count in header for debug
+            title.textContent = `Background Agents (${tasks.length})`;
+
+            listArea.innerHTML = '';
+            const statusOrder: BackgroundTaskStatus[] = ['running', 'branching', 'committing', 'queued', 'completed', 'failed', 'cancelled'];
+            tasks.sort((a, b) => statusOrder.indexOf(a.status) - statusOrder.indexOf(b.status));
+
+            const running = tasks.filter(t => t.status === 'running' || t.status === 'branching' || t.status === 'committing');
+            if (running.length > 0) {
+                badge.textContent = `${running.length} active`;
+                badge.style.display = 'inline';
+            } else {
+                badge.style.display = 'none';
+            }
+
+            if (tasks.length === 0) {
+                const empty = document.createElement('div');
+                empty.style.display = 'flex';
+                empty.style.flexDirection = 'column';
+                empty.style.alignItems = 'center';
+                empty.style.justifyContent = 'center';
+                empty.style.height = '100%';
+                empty.style.opacity = '0.5';
+                empty.style.textAlign = 'center';
+                empty.innerHTML = `
+                    <div style="font-size:32px;margin-bottom:12px">⊘</div>
+                    <div style="font-size:12px;color:var(--vscode-descriptionForeground)">No background agents running</div>
+                    <div style="font-size:11px;color:var(--vscode-descriptionForeground);margin-top:4px;opacity:0.7">Spawn one to work on a branch while you continue coding</div>
+                `;
+                listArea.appendChild(empty);
+                return;
+            }
+
+            for (const task of tasks) {
+                const card = document.createElement('div');
+                card.style.marginBottom = '8px';
+                card.style.borderRadius = '6px';
+                card.style.border = '1px solid var(--vscode-panel-border)';
+                card.style.overflow = 'hidden';
+
+                const isActive = task.status === 'running' || task.status === 'branching' || task.status === 'committing';
+                if (isActive) {
+                    card.style.borderColor = 'rgba(59,130,246,0.3)';
+                    card.style.background = 'rgba(30,58,138,0.1)';
+                } else {
+                    card.style.background = 'var(--vscode-editor-inactiveSelectionBackground)';
+                }
+
+                // Card header
+                const cardHeader = document.createElement('div');
+                cardHeader.style.display = 'flex';
+                cardHeader.style.alignItems = 'center';
+                cardHeader.style.gap = '8px';
+                cardHeader.style.padding = '8px 12px';
+                cardHeader.style.cursor = 'pointer';
+
+                const dot = document.createElement('span');
+                dot.style.width = '6px';
+                dot.style.height = '6px';
+                dot.style.borderRadius = '50%';
+                dot.style.flexShrink = '0';
+                if (isActive) { dot.style.background = '#60a5fa'; }
+                else if (task.status === 'completed') { dot.style.background = '#4ade80'; }
+                else if (task.status === 'failed') { dot.style.background = '#f87171'; }
+                else { dot.style.background = '#666'; }
+                cardHeader.appendChild(dot);
+
+                const taskTitle = document.createElement('span');
+                taskTitle.textContent = task.request.title;
+                taskTitle.style.fontSize = '12px';
+                taskTitle.style.fontWeight = '600';
+                taskTitle.style.color = 'var(--vscode-foreground)';
+                taskTitle.style.flex = '1';
+                taskTitle.style.overflow = 'hidden';
+                taskTitle.style.textOverflow = 'ellipsis';
+                taskTitle.style.whiteSpace = 'nowrap';
+                cardHeader.appendChild(taskTitle);
+
+                const statusLabel = document.createElement('span');
+                const labels: Record<string, string> = { running: '⚡ Running', branching: '🔀 Branching', committing: '💾 Committing', queued: '⏳ Queued', completed: '✓ Done', failed: '✗ Failed', cancelled: '⊘ Cancelled' };
+                statusLabel.textContent = labels[task.status] || task.status;
+                statusLabel.style.fontSize = '10px';
+                statusLabel.style.color = 'var(--vscode-descriptionForeground)';
+                cardHeader.appendChild(statusLabel);
+
+                card.appendChild(cardHeader);
+
+                // Expandable console
+                const consoleArea = document.createElement('div');
+                consoleArea.style.display = isActive ? 'block' : 'none';
+                consoleArea.style.borderTop = '1px solid var(--vscode-panel-border)';
+
+                // Metadata
+                const meta = document.createElement('div');
+                meta.style.display = 'flex';
+                meta.style.gap = '12px';
+                meta.style.padding = '4px 12px';
+                meta.style.fontSize = '10px';
+                meta.style.color = 'var(--vscode-descriptionForeground)';
+                meta.style.opacity = '0.6';
+                meta.style.background = 'rgba(0,0,0,0.1)';
+                meta.innerHTML = `<span style="font-family:monospace">${task.branchName}</span><span>${task.commits.length} commit(s)</span><span>${task.progress.length} steps</span>`;
+                consoleArea.appendChild(meta);
+
+                // Progress log
+                const log = document.createElement('div');
+                log.style.padding = '8px 12px';
+                log.style.maxHeight = '200px';
+                log.style.overflowY = 'auto';
+                log.style.fontFamily = 'var(--vscode-editor-font-family, monospace)';
+                log.style.fontSize = '11px';
+                log.style.color = 'var(--vscode-foreground)';
+                log.style.opacity = '0.8';
+
+                if (task.progress.length === 0) {
+                    log.innerHTML = '<div style="opacity:0.4;font-style:italic">Waiting...</div>';
+                } else {
+                    log.innerHTML = task.progress.map(l => `<div style="padding:1px 0"><span style="opacity:0.3;margin-right:6px">&gt;</span>${this._escapeHtml(l)}</div>`).join('');
+                }
+                if (task.error) {
+                    log.innerHTML += `<div style="color:var(--vscode-errorForeground);margin-top:4px;padding-left:12px;border-left:2px solid var(--vscode-errorForeground)">${this._escapeHtml(task.error)}</div>`;
+                }
+                consoleArea.appendChild(log);
+
+                // Actions
+                const actions = document.createElement('div');
+                actions.style.display = 'flex';
+                actions.style.gap = '8px';
+                actions.style.padding = '6px 12px';
+                actions.style.borderTop = '1px solid var(--vscode-panel-border)';
+
+                if (isActive) {
+                    const cancelBtn = document.createElement('button');
+                    cancelBtn.textContent = 'Cancel';
+                    cancelBtn.style.fontSize = '10px';
+                    cancelBtn.style.padding = '2px 8px';
+                    cancelBtn.style.borderRadius = '3px';
+                    cancelBtn.style.background = 'rgba(239,68,68,0.2)';
+                    cancelBtn.style.color = '#fca5a5';
+                    cancelBtn.style.border = 'none';
+                    cancelBtn.style.cursor = 'pointer';
+                    cancelBtn.addEventListener('click', () => this.backgroundAgentService.cancel(task.id));
+                    actions.appendChild(cancelBtn);
+                }
+                if (task.status === 'completed' && task.commits.length > 0) {
+                    const diffBtn = document.createElement('button');
+                    diffBtn.textContent = 'View Diff';
+                    diffBtn.style.fontSize = '10px';
+                    diffBtn.style.padding = '2px 8px';
+                    diffBtn.style.borderRadius = '3px';
+                    diffBtn.style.background = 'rgba(59,130,246,0.2)';
+                    diffBtn.style.color = '#93c5fd';
+                    diffBtn.style.border = 'none';
+                    diffBtn.style.cursor = 'pointer';
+                    diffBtn.addEventListener('click', () => this.commandService.executeCommand('neuralInverse.bgAgent.viewDiff'));
+                    actions.appendChild(diffBtn);
+                }
+                if (task.status === 'completed' || task.status === 'failed' || task.status === 'cancelled') {
+                    const removeBtn = document.createElement('button');
+                    removeBtn.textContent = 'Remove';
+                    removeBtn.style.fontSize = '10px';
+                    removeBtn.style.padding = '2px 8px';
+                    removeBtn.style.borderRadius = '3px';
+                    removeBtn.style.background = 'var(--vscode-button-secondaryBackground)';
+                    removeBtn.style.color = 'var(--vscode-button-secondaryForeground)';
+                    removeBtn.style.border = 'none';
+                    removeBtn.style.cursor = 'pointer';
+                    removeBtn.style.marginLeft = 'auto';
+                    removeBtn.addEventListener('click', () => { this.backgroundAgentService.removeTask(task.id); render(); });
+                    actions.appendChild(removeBtn);
+                }
+                consoleArea.appendChild(actions);
+                card.appendChild(consoleArea);
+
+                // Toggle expand
+                cardHeader.addEventListener('click', () => {
+                    consoleArea.style.display = consoleArea.style.display === 'none' ? 'block' : 'none';
+                });
+
+                listArea.appendChild(card);
+            }
+        };
+
+        render();
+        this.disposables.add(this.backgroundAgentService.onDidChangeTask(() => render()));
+    }
+
+    private _escapeHtml(str: string): string {
+        return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
     }
 
     // === DEPLOYMENTS TAB ===

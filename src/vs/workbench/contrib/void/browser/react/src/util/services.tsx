@@ -57,6 +57,8 @@ import { IStorageService, StorageScope } from '../../../../../../../platform/sto
 import { OPT_OUT_KEY } from '../../../../common/storageKeys.js'
 import { INeuralInverseAgentService } from '../../../neuralInverseAgentService.js'
 import { INeuralInverseSubAgentService } from '../../../neuralInverseSubAgentService.js'
+import { IBackgroundAgentService } from '../../../../neuralInverse/browser/backgroundAgentService.js'
+import type { IBackgroundTask } from '../../../../neuralInverse/common/backgroundAgentTypes.js'
 import { IAutoConnectService } from '../../../autoConnect/autoConnectService.js'
 import { IUserInputRequestService } from '../../../userInputRequestService.js'
 import { AgentTask } from '../../../../common/neuralInverseAgentTypes.js'
@@ -95,6 +97,9 @@ const agentTaskListeners: Set<(t: AgentTask | null) => void> = new Set()
 
 let agentSubAgents: ReadonlyMap<string, SubAgentTask> = new Map()
 const agentSubAgentListeners: Set<(s: ReadonlyMap<string, SubAgentTask>) => void> = new Set()
+
+let bgAgentTasks: ReadonlyMap<string, IBackgroundTask> = new Map()
+const bgAgentTaskListeners: Set<(s: ReadonlyMap<string, IBackgroundTask>) => void> = new Set()
 
 
 // must call this before you can use any of the hooks below
@@ -220,6 +225,20 @@ export const _registerServices = (accessor: ServicesAccessor) => {
 		)
 	}
 
+	let bgService: InstanceType<typeof IBackgroundAgentService> | null = null
+	try {
+		bgService = accessor.get(IBackgroundAgentService)
+	} catch { }
+	if (bgService) {
+		bgAgentTasks = bgService.tasks as ReadonlyMap<string, IBackgroundTask>
+		disposables.push(
+			bgService.onDidChangeTask(() => {
+				bgAgentTasks = new Map(bgService!.tasks as ReadonlyMap<string, IBackgroundTask>)
+				bgAgentTaskListeners.forEach(l => l(bgAgentTasks))
+			})
+		)
+	}
+
 
 	return disposables
 }
@@ -289,10 +308,16 @@ const getReactAccessor = (accessor: ServicesAccessor) => {
 		// Agent services not registered yet
 	}
 
+	let bgAgent: any = undefined
+	try {
+		bgAgent = accessor.get(IBackgroundAgentService)
+	} catch { }
+
 	return {
 		...reactAccessor,
 		INeuralInverseAgentService: niAgent,
 		INeuralInverseSubAgentService: niSubAgent,
+		IBackgroundAgentService: bgAgent,
 	} as const
 }
 
@@ -486,6 +511,17 @@ export const useSubAgents = () => {
 		const listener = (map: ReadonlyMap<string, SubAgentTask>) => ss(new Map(map))
 		agentSubAgentListeners.add(listener)
 		return () => { agentSubAgentListeners.delete(listener) }
+	}, [ss])
+	return s
+}
+
+export const useBackgroundAgents = () => {
+	const [s, ss] = useState<ReadonlyMap<string, IBackgroundTask>>(bgAgentTasks)
+	useEffect(() => {
+		ss(bgAgentTasks)
+		const listener = (map: ReadonlyMap<string, IBackgroundTask>) => ss(new Map(map))
+		bgAgentTaskListeners.add(listener)
+		return () => { bgAgentTaskListeners.delete(listener) }
 	}, [ss])
 	return s
 }

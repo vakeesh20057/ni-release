@@ -6,5 +6,7 @@
 import '../styles.css'
 import { mountFnGenerator } from '../util/mountFnGenerator.js'
 import { Sidebar } from './Sidebar.js'
+import { BackgroundAgentConsole } from './BackgroundAgentConsole.js'
 
 export const mountSidebar = mountFnGenerator(Sidebar)
+export const mountBackgroundAgents = mountFnGenerator(BackgroundAgentConsole)

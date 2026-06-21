@@ -80,6 +80,7 @@ import type { IRegisteredAgent, IAgentBusMessage } from '../common/powerBusTypes
 import { PowerModeChangeTracker, IPowerModeChangeTracker, IChangeGroup } from './powerModeChangeTracker.js';
 import { CompactionService } from './session/compaction/compactionService.js';
 import { ISummarizationLLM } from './session/compaction/conversationSummarizer.js';
+import { IShadowValidationService } from '../../void/browser/shadowValidationService.js';
 
 // ─── Service Interface ────────────────────────────────────────────────────────
 
@@ -289,6 +290,7 @@ export class PowerModeService extends Disposable implements IPowerModeService {
 		@IRelevanceScorerService private readonly relevanceScorerService: IRelevanceScorerService,
 		@IChangeTrackerService private readonly changeTrackerService: IChangeTrackerService,
 		@IInstantiationService private readonly instantiationService: IInstantiationService,
+		@IShadowValidationService private readonly shadowValidationService: IShadowValidationService,
 	) {
 		super();
 		this._llmBridge = new PowerModeLLMBridge(llmMessageService, voidSettingsService);
@@ -463,8 +465,8 @@ export class PowerModeService extends Disposable implements IPowerModeService {
 				// Core filesystem tools
 				createBrowserBashTool(directory, this.commandExecutor),
 				createBrowserReadTool(directory, this.fileService),
-				createBrowserWriteTool(directory, this.fileService, this._changeTracker),
-				createBrowserEditTool(directory, this.fileService, this._changeTracker),
+				createBrowserWriteTool(directory, this.fileService, this._changeTracker, this.shadowValidationService),
+				createBrowserEditTool(directory, this.fileService, this._changeTracker, this.shadowValidationService),
 				createBrowserListTool(directory, this.fileService),
 				createBrowserGlobTool(directory, this.searchService),
 				createBrowserGrepTool(directory, this.searchService),

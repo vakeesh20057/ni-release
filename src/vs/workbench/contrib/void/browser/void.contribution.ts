@@ -4,6 +4,9 @@
  *--------------------------------------------------------------------------------------*/
 
 
+// shadow validation (diagnostics after AI edits)
+import './shadowValidationService.js'
+
 // register inline diffs
 import './editCodeService.js'
 

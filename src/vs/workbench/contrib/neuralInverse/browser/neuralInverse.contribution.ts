@@ -21,6 +21,9 @@ import { LifecyclePhase } from '../../../services/lifecycle/common/lifecycle.js'
 // Services
 import './agentStoreService.js';
 import './workflowAgentService.js';
+import './backgroundAgentService.js';
+import './backgroundAgentCommands.js';
+import './backgroundAgentPanel.js';
 import './fim/neuralInverseFIMService.js';
 import './context/input/astContextService.js';
 import './context/graph/dependencyGraph.js';

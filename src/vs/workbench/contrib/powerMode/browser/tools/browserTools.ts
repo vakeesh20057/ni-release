@@ -18,6 +18,7 @@ import { IExternalCommandExecutor } from '../../../void/browser/externalCommandE
 import { IPowerTool, IToolContext, IToolResult } from '../../common/powerModeTypes.js';
 import { definePowerTool } from './powerToolRegistry.js';
 import { IPowerModeChangeTracker } from '../powerModeChangeTracker.js';
+import { IShadowValidationService } from '../../../void/browser/shadowValidationService.js';
 
 const MAX_OUTPUT = 50 * 1024; // 50KB
 const MAX_LINES = 2000;
@@ -170,7 +171,8 @@ Rules:
 export function createBrowserWriteTool(
 	workingDirectory: string,
 	fileService: IFileService,
-	changeTracker?: IPowerModeChangeTracker
+	changeTracker?: IPowerModeChangeTracker,
+	shadowValidation?: IShadowValidationService
 ): IPowerTool {
 	return definePowerTool(
 		'write',
@@ -218,9 +220,18 @@ Rules:
 				}
 
 				const lineCount = content.split('\n').length;
+				let output = `Successfully wrote ${lineCount} lines to ${filePath}`;
+
+				if (shadowValidation) {
+					const validation = await shadowValidation.validateAfterEdit(uri);
+					if (validation.hasErrors || validation.hasWarnings) {
+						output += shadowValidation.formatForLLM(validation);
+					}
+				}
+
 				return {
 					title: `Wrote ${fileName}`,
-					output: `Successfully wrote ${lineCount} lines to ${filePath}`,
+					output,
 					metadata: { lines: lineCount },
 				};
 			} catch (err: any) {
@@ -239,7 +250,8 @@ Rules:
 export function createBrowserEditTool(
 	workingDirectory: string,
 	fileService: IFileService,
-	changeTracker?: IPowerModeChangeTracker
+	changeTracker?: IPowerModeChangeTracker,
+	shadowValidation?: IShadowValidationService
 ): IPowerTool {
 	return definePowerTool(
 		'edit',
@@ -307,9 +319,18 @@ Rules:
 					await changeTracker.finalizeChange(changeId, newText);
 				}
 
+				let output = `Successfully edited ${filePath}`;
+
+				if (shadowValidation) {
+					const validation = await shadowValidation.validateAfterEdit(uri);
+					if (validation.hasErrors || validation.hasWarnings) {
+						output += shadowValidation.formatForLLM(validation);
+					}
+				}
+
 				return {
 					title: `Edited ${fileName}`,
-					output: `Successfully edited ${filePath}`,
+					output,
 					metadata: {},
 				};
 			} catch (err: any) {
