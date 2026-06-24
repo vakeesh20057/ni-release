@@ -19,6 +19,7 @@ import { IPowerTool, IToolContext, IToolResult } from '../../common/powerModeTyp
 import { definePowerTool } from './powerToolRegistry.js';
 import { IPowerModeChangeTracker } from '../powerModeChangeTracker.js';
 import { IShadowValidationService } from '../../../void/browser/shadowValidationService.js';
+import { checkBashSecurity, isDestructiveCommand, validatePaths } from './bashSecurity.js';
 
 const MAX_OUTPUT = 50 * 1024; // 50KB
 const MAX_LINES = 2000;
@@ -50,6 +51,37 @@ Rules:
 			const description = args.description as string;
 			const timeout = (args.timeout as number) ?? 120000;
 
+			// Security validation: check for dangerous patterns
+			const securityResult = checkBashSecurity(command, workingDirectory);
+			if (!securityResult.safe) {
+				const blockingIssues = securityResult.issues.filter(i => i.severity === 'block');
+				if (blockingIssues.length > 0) {
+					const errorMessages = blockingIssues.map(i => `[${i.code}] ${i.message}`).join('\n');
+					return {
+						title: description,
+						output: `Security Error: Command blocked due to dangerous patterns:\n\n${errorMessages}\n\nThis command cannot be executed for security reasons.`,
+						metadata: { exit: 1, description, securityBlocked: true },
+					};
+				}
+			}
+
+			// Path validation: ensure paths don't escape workspace
+			const pathValidation = validatePaths(command, workingDirectory, workingDirectory);
+			if (!pathValidation.valid) {
+				return {
+					title: description,
+					output: `Security Error: Command contains paths that escape the workspace:\n\n${pathValidation.escapedPaths.join('\n')}\n\nFor security, commands must not access files outside the workspace directory.`,
+					metadata: { exit: 1, description, securityBlocked: true },
+				};
+			}
+
+			// Check for destructive commands (informational warning)
+			const destructiveCheck = isDestructiveCommand(command);
+			let warningPrefix = '';
+			if (destructiveCheck.isDestructive && destructiveCheck.warning) {
+				warningPrefix = `Warning: ${destructiveCheck.warning}\n\n`;
+			}
+
 			// Auto-inject co-author trailers when bash is used for git commit
 			command = _injectCoAuthorIfGitCommit(command, getModelInfo?.());
 
@@ -62,9 +94,9 @@ Rules:
 				const output = await commandExecutor.execute(jobId, fullCommand, timeout, MAX_OUTPUT);
 				return {
 					title: description,
-					output: output.length > MAX_OUTPUT
+					output: warningPrefix + (output.length > MAX_OUTPUT
 						? output.substring(0, MAX_OUTPUT) + '\n[Output truncated at 50KB]'
-						: output,
+						: output),
 					metadata: { exit: 0, description },
 				};
 			} catch (err: any) {

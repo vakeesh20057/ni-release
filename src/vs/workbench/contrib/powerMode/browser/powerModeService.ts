@@ -68,13 +68,27 @@ import {
 	createMemoryWriteTool,
 	createMemoryReadTool,
 	createRunTestsTool,
+	createSleepTool,
+	createNotifyUserTool,
+	createTodoWriteTool,
+	createTodoReadTool,
+	createEnterWorktreeTool,
+	createExitWorktreeTool,
 } from './tools/advancedTools.js';
+import {
+	createWebSearchTool,
+	createEnhancedWebFetchTool,
+} from './tools/webTools.js';
 import {
 	createSpawnAgentTool,
 	createGetAgentStatusTool,
 	createWaitForAgentTool,
 	createListAgentsTool,
 } from './tools/subAgentTools.js';
+import {
+	createEnterPlanModeTool,
+	createExitPlanModeTool,
+} from './tools/planModeTools.js';
 import { IPowerBusService } from './powerBusService.js';
 import type { IRegisteredAgent, IAgentBusMessage } from '../common/powerBusTypes.js';
 import { PowerModeChangeTracker, IPowerModeChangeTracker, IChangeGroup } from './powerModeChangeTracker.js';
@@ -491,6 +505,9 @@ export class PowerModeService extends Disposable implements IPowerModeService {
 				// High-priority workflow tools
 				createAskUserTool((question, sessionId) => this._askUser(question, sessionId)),
 				createWebFetchTool(),
+				// Web tools
+				createWebSearchTool(),
+				createEnhancedWebFetchTool(),
 				// Workflow task management (renamed to avoid confusion with 'list')
 				createTaskCreateTool(),   // tasks_create
 				createTaskListTool(),     // tasks_list
@@ -505,6 +522,17 @@ export class PowerModeService extends Disposable implements IPowerModeService {
 				createMemoryReadTool(directory, this.fileService),
 				// Test execution
 				createRunTestsTool(directory, this.commandExecutor, this.fileService),
+				// Plan mode transition tools
+				createEnterPlanModeTool(),
+				createExitPlanModeTool(),
+				// Session utilities
+				createSleepTool(),
+				createNotifyUserTool((message, sessionId) => this._notifyUser(message, sessionId)),
+				createTodoWriteTool(),
+				createTodoReadTool(),
+				// Worktree isolation
+				createEnterWorktreeTool(directory, this.commandExecutor),
+				createExitWorktreeTool(directory, this.commandExecutor),
 			]);
 
 			// Sub-agent orchestration (lazy-resolved to avoid circular dependency)
@@ -738,6 +766,14 @@ export class PowerModeService extends Disposable implements IPowerModeService {
 			this._pendingQuestions.delete(questionId);
 			resolve(answer);
 		}
+	}
+
+	private _notifyUser(message: string, sessionId: string): void {
+		this._onDidEmitUIEvent.fire({
+			type: 'user-notification',
+			sessionId,
+			message,
+		} as any);
 	}
 
 	private _askUser(question: string, sessionId: string): Promise<string> {

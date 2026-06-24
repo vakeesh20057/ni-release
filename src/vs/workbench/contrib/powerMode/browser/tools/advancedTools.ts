@@ -15,6 +15,7 @@ import { IFileService } from '../../../../../platform/files/common/files.js';
 import { IExternalCommandExecutor } from '../../../void/browser/externalCommandExecutor.js';
 import { IPowerTool, IToolContext, IToolResult } from '../../common/powerModeTypes.js';
 import { definePowerTool } from './powerToolRegistry.js';
+import { generateUuid } from '../../../../../base/common/uuid.js';
 
 // ─── ask_user: Ask clarifying questions ─────────────────────────────────────
 
@@ -703,6 +704,310 @@ Automatically detects: npm/yarn test, pytest, cargo test, go test, etc.`,
 			}
 		},
 	);
+}
+
+// ─── sleep: Wait without holding a shell process ────────────────────────────
+
+export function createSleepTool(
+	onSleep?: (ms: number) => void
+): IPowerTool {
+	return definePowerTool(
+		'sleep',
+		`Wait for a specified duration without holding a shell process.
+
+Rules:
+- Use when waiting for a background process, rate limit cooldown, or user-requested pause
+- Prefer this over bash(sleep ...) — no shell process consumed
+- Can run concurrently with other tools
+- Max sleep: 60 seconds per call`,
+		[
+			{ name: 'duration', type: 'number', description: 'Duration to sleep in milliseconds (max 60000)', required: true },
+			{ name: 'reason', type: 'string', description: 'Brief reason for sleeping', required: false },
+		],
+		async (args: Record<string, any>, ctx: IToolContext): Promise<IToolResult> => {
+			const rawMs = args.duration as number;
+			const reason = (args.reason as string | undefined) || '';
+			const ms = Math.min(Math.max(0, rawMs), 60_000);
+
+			ctx.metadata({ title: reason ? `Sleeping ${ms}ms: ${reason}` : `Sleeping ${ms}ms` });
+
+			await new Promise<void>((resolve, reject) => {
+				const timer = setTimeout(resolve, ms);
+				ctx.abort.addEventListener('abort', () => {
+					clearTimeout(timer);
+					reject(new Error('Aborted'));
+				});
+			});
+
+			return {
+				title: 'Slept',
+				output: `Slept for ${ms}ms${reason ? ` (${reason})` : ''}.`,
+				metadata: { duration: ms },
+			};
+		},
+	);
+}
+
+// ─── notify_user: Send a message to the user mid-session ────────────────────
+
+export function createNotifyUserTool(
+	notifyCallback: (message: string, sessionId: string) => void
+): IPowerTool {
+	return definePowerTool(
+		'notify_user',
+		`Send a message or status update to the user without ending the agent loop.
+
+Use this to:
+- Report progress on a long-running task
+- Surface a finding that needs the user's attention
+- Ask for confirmation before a risky operation
+- Signal task completion while continuing work`,
+		[
+			{ name: 'message', type: 'string', description: 'The message to send to the user (markdown supported)', required: true },
+			{ name: 'status', type: 'string', description: 'Status type: "info", "warning", "success", "error" (default: "info")', required: false },
+		],
+		async (args: Record<string, any>, ctx: IToolContext): Promise<IToolResult> => {
+			const message = args.message as string;
+			const status = (args.status as string | undefined) || 'info';
+
+			ctx.metadata({ title: `Notifying user` });
+			notifyCallback(message, ctx.sessionId);
+
+			return {
+				title: 'User notified',
+				output: `Message sent to user: ${message}`,
+				metadata: { status, message },
+			};
+		},
+	);
+}
+
+// ─── todo_write: Manage a persistent task checklist ─────────────────────────
+
+export type TodoStatus = 'pending' | 'in_progress' | 'completed' | 'cancelled';
+
+export interface ITodoItem {
+	id: string;
+	content: string;
+	status: TodoStatus;
+	priority: 'high' | 'medium' | 'low';
+}
+
+const _todoStore = new Map<string, ITodoItem[]>();
+
+export function createTodoWriteTool(): IPowerTool {
+	return definePowerTool(
+		'todo_write',
+		`Manage a persistent task checklist for the current session.
+
+Use this to track multi-step work:
+- Break complex tasks into trackable subtasks
+- Mark items in_progress before starting them
+- Mark items completed when done
+- Add new items as you discover more work
+
+The checklist persists across tool calls in this session.`,
+		[
+			{
+				name: 'todos',
+				type: 'string',
+				description: 'JSON array of todo items: [{ id, content, status, priority }]. status: pending|in_progress|completed|cancelled. priority: high|medium|low.',
+				required: true,
+			},
+		],
+		async (args: Record<string, any>, ctx: IToolContext): Promise<IToolResult> => {
+			let todos: ITodoItem[];
+			try {
+				todos = JSON.parse(args.todos as string);
+				if (!Array.isArray(todos)) { throw new Error('todos must be an array'); }
+			} catch (e: any) {
+				return { title: 'Invalid todos', output: `Error: ${e.message}`, metadata: { error: true } };
+			}
+
+			const sessionKey = ctx.sessionId;
+			const old = _todoStore.get(sessionKey) ?? [];
+			_todoStore.set(sessionKey, todos);
+
+			const summary = todos.map(t => {
+				const icon = t.status === 'completed' ? '[x]' : t.status === 'in_progress' ? '[~]' : t.status === 'cancelled' ? '[-]' : '[ ]';
+				const pri = t.priority === 'high' ? '!' : t.priority === 'low' ? 'v' : ' ';
+				return `${icon} ${pri} ${t.content}`;
+			}).join('\n');
+
+			const added = todos.filter(t => !old.find(o => o.id === t.id)).length;
+			const changed = todos.filter(t => {
+				const o = old.find(o => o.id === t.id);
+				return o && o.status !== t.status;
+			}).length;
+
+			return {
+				title: `Todo list updated (${todos.length} items)`,
+				output: summary || '(empty)',
+				metadata: { total: todos.length, added, changed },
+			};
+		},
+	);
+}
+
+export function createTodoReadTool(): IPowerTool {
+	return definePowerTool(
+		'todo_read',
+		`Read the current task checklist for this session.`,
+		[],
+		async (args: Record<string, any>, ctx: IToolContext): Promise<IToolResult> => {
+			const todos = _todoStore.get(ctx.sessionId) ?? [];
+
+			if (todos.length === 0) {
+				return { title: 'No todos', output: 'No tasks in checklist.', metadata: { total: 0 } };
+			}
+
+			const summary = todos.map(t => {
+				const icon = t.status === 'completed' ? '[x]' : t.status === 'in_progress' ? '[~]' : t.status === 'cancelled' ? '[-]' : '[ ]';
+				const pri = t.priority === 'high' ? '!' : t.priority === 'low' ? 'v' : ' ';
+				return `${icon} ${pri} ${t.content}  [${t.id}]`;
+			}).join('\n');
+
+			const pending = todos.filter(t => t.status === 'pending').length;
+			const inProgress = todos.filter(t => t.status === 'in_progress').length;
+			const completed = todos.filter(t => t.status === 'completed').length;
+
+			return {
+				title: `Todo list (${todos.length} items: ${inProgress} active, ${pending} pending, ${completed} done)`,
+				output: summary,
+				metadata: { total: todos.length, pending, inProgress, completed },
+			};
+		},
+	);
+}
+
+// ─── worktree: Isolated git worktree for risky/experimental changes ──────────
+
+const _activeWorktrees = new Map<string, { path: string; branch: string; sessionId: string }>();
+
+export function createEnterWorktreeTool(
+	workspaceRoot: string,
+	commandExecutor: IExternalCommandExecutor
+): IPowerTool {
+	return definePowerTool(
+		'enter_worktree',
+		`Create an isolated git worktree and switch into it for this session.
+
+Use this when you want to:
+- Make experimental changes without touching the main working tree
+- Work on a new feature branch in isolation
+- Test a risky refactor that you may want to discard
+
+After entering a worktree:
+- All file reads/writes operate relative to the worktree path
+- Use exit_worktree to return and optionally discard the branch
+- The worktree branch is created from current HEAD`,
+		[
+			{ name: 'name', type: 'string', description: 'Optional branch/worktree name (alphanumeric, hyphens, dots; max 64 chars). Auto-generated if omitted.', required: false },
+		],
+		async (args: Record<string, any>, ctx: IToolContext): Promise<IToolResult> => {
+			if (_activeWorktrees.has(ctx.sessionId)) {
+				const existing = _activeWorktrees.get(ctx.sessionId)!;
+				return {
+					title: 'Already in worktree',
+					output: `Already in worktree at ${existing.path} on branch ${existing.branch}. Use exit_worktree first.`,
+					metadata: { worktreePath: existing.path, worktreeBranch: existing.branch },
+				};
+			}
+
+			const rawName = (args.name as string | undefined)?.replace(/[^a-zA-Z0-9._-]/g, '-').substring(0, 64);
+			const id = generateUuid().slice(0, 8);
+			const branch = rawName ? `pm/wt/${rawName}` : `pm/wt/${id}`;
+			const worktreePath = `/tmp/ni-pm-wt-${id}`;
+
+			ctx.metadata({ title: `Creating worktree: ${branch}` });
+
+			try {
+				const result = await _execInDir(commandExecutor, 'git', ['worktree', 'add', worktreePath, '-b', branch], workspaceRoot);
+				if (result.exitCode !== 0) {
+					throw new Error(result.stderr || result.stdout || 'git worktree add failed');
+				}
+
+				_activeWorktrees.set(ctx.sessionId, { path: worktreePath, branch, sessionId: ctx.sessionId });
+
+				return {
+					title: `Worktree created`,
+					output: `Entered isolated worktree.\nPath: ${worktreePath}\nBranch: ${branch}\n\nAll changes in this session are isolated. Use exit_worktree when done.`,
+					metadata: { worktreePath, worktreeBranch: branch },
+				};
+			} catch (e: any) {
+				return { title: 'Worktree failed', output: `Error: ${e.message}`, metadata: { error: true } };
+			}
+		},
+	);
+}
+
+export function createExitWorktreeTool(
+	workspaceRoot: string,
+	commandExecutor: IExternalCommandExecutor
+): IPowerTool {
+	return definePowerTool(
+		'exit_worktree',
+		`Exit the current isolated worktree and return to the main working tree.
+
+Options:
+- keep: Leave the branch for manual review/merge
+- discard: Remove the worktree and delete the branch (discards all changes)`,
+		[
+			{ name: 'action', type: 'string', description: '"keep" (default) or "discard"', required: false },
+		],
+		async (args: Record<string, any>, ctx: IToolContext): Promise<IToolResult> => {
+			const wt = _activeWorktrees.get(ctx.sessionId);
+			if (!wt) {
+				return { title: 'Not in worktree', output: 'No active worktree for this session.', metadata: {} };
+			}
+
+			const action = (args.action as string | undefined) || 'keep';
+			ctx.metadata({ title: `Exiting worktree (${action})` });
+
+			_activeWorktrees.delete(ctx.sessionId);
+
+			try {
+				// Always remove the worktree directory
+				await _execInDir(commandExecutor, 'git', ['worktree', 'remove', wt.path, '--force'], workspaceRoot);
+
+				if (action === 'discard') {
+					await _execInDir(commandExecutor, 'git', ['branch', '-D', wt.branch], workspaceRoot);
+					return {
+						title: 'Worktree discarded',
+						output: `Exited and discarded worktree.\nBranch ${wt.branch} deleted. All changes removed.`,
+						metadata: { worktreePath: wt.path, discarded: true },
+					};
+				}
+
+				return {
+					title: 'Worktree kept',
+					output: `Exited worktree. Branch ${wt.branch} is preserved.\nYou can merge it with: git merge ${wt.branch}`,
+					metadata: { worktreePath: wt.path, worktreeBranch: wt.branch, discarded: false },
+				};
+			} catch (e: any) {
+				return { title: 'Exit worktree failed', output: `Error: ${e.message}`, metadata: { error: true } };
+			}
+		},
+	);
+}
+
+async function _execInDir(
+	commandExecutor: IExternalCommandExecutor,
+	cmd: string,
+	args: string[],
+	cwd: string
+): Promise<{ stdout: string; stderr: string; exitCode: number }> {
+	const nodeRequire = (globalThis as any).require as NodeRequire | undefined;
+	if (!nodeRequire) { throw new Error('Node.js integration required'); }
+	const { execFile } = nodeRequire('child_process') as typeof import('child_process');
+	const { promisify } = nodeRequire('util') as typeof import('util');
+	const execFileAsync = promisify(execFile);
+	try {
+		const { stdout, stderr } = await execFileAsync(cmd, args, { cwd, timeout: 30_000 });
+		return { stdout: stdout ?? '', stderr: stderr ?? '', exitCode: 0 };
+	} catch (e: any) {
+		return { stdout: e.stdout ?? '', stderr: e.stderr ?? '', exitCode: e.code ?? 1 };
+	}
 }
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
