@@ -91,6 +91,7 @@ You have these tools (use them via function calling):
 - write - Create new files
 - edit - Modify existing files (provide old_string and new_string)
 - notebook_edit - Edit Jupyter notebook cells (.ipynb): replace, insert, or delete cells
+- lsp - Language server operations: goToDefinition, findReferences, hover, documentSymbol
 - bash - Execute shell commands
 - glob - Find files by pattern (e.g., "**/*.ts")
 - grep - Search file contents by regex

@@ -12,6 +12,8 @@ import { IStorageService, StorageScope, StorageTarget } from '../../../../platfo
 import { IWorkspaceContextService } from '../../../../platform/workspace/common/workspace.js';
 import { IFileService } from '../../../../platform/files/common/files.js';
 import { ISearchService } from '../../../services/search/common/search.js';
+import { IModelService } from '../../../../editor/common/services/model.js';
+import { ILanguageFeaturesService } from '../../../../editor/common/services/languageFeatures.js';
 import { ILLMMessageService } from '../../void/common/sendLLMMessageService.js';
 import { IVoidSettingsService, ModelOption } from '../../void/common/voidSettingsService.js';
 import { ModelSelection } from '../../void/common/voidSettingsTypes.js';
@@ -90,6 +92,7 @@ import {
 	createExitPlanModeTool,
 } from './tools/planModeTools.js';
 import { createNotebookEditTool } from './tools/notebookEditTool.js';
+import { createLSPTool } from './tools/lspTool.js';
 import { IPowerBusService } from './powerBusService.js';
 import type { IRegisteredAgent, IAgentBusMessage } from '../common/powerBusTypes.js';
 import { PowerModeChangeTracker, IPowerModeChangeTracker, IChangeGroup } from './powerModeChangeTracker.js';
@@ -306,6 +309,8 @@ export class PowerModeService extends Disposable implements IPowerModeService {
 		@IChangeTrackerService private readonly changeTrackerService: IChangeTrackerService,
 		@IInstantiationService private readonly instantiationService: IInstantiationService,
 		@IShadowValidationService private readonly shadowValidationService: IShadowValidationService,
+		@IModelService private readonly modelService: IModelService,
+		@ILanguageFeaturesService private readonly languageFeaturesService: ILanguageFeaturesService,
 	) {
 		super();
 		this._llmBridge = new PowerModeLLMBridge(llmMessageService, voidSettingsService);
@@ -536,6 +541,8 @@ export class PowerModeService extends Disposable implements IPowerModeService {
 				createExitWorktreeTool(directory, this.commandExecutor),
 				// Notebook editing (.ipynb Jupyter files)
 				createNotebookEditTool(directory, this.fileService),
+				// LSP: go to definition, find references, hover, document symbols
+				createLSPTool(this.modelService, this.languageFeaturesService, this.fileService),
 			]);
 
 			// Sub-agent orchestration (lazy-resolved to avoid circular dependency)
