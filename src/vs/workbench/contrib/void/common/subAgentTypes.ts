@@ -305,6 +305,9 @@ export interface SubAgentTask {
 
 	/** Files this sub-agent is scoped to (editor role) */
 	scopedFiles?: string[];
+
+	/** AbortController for this agent's execution loop — call .abort() to cancel mid-run */
+	abortController?: AbortController;
 }
 
 
@@ -325,6 +328,8 @@ export interface SubAgentParentContext {
 export interface SubAgentSpawnRequest {
 	role: SubAgentRole;
 	goal: string;
+	/** Optional: friendly name for send_message routing (e.g. "auth-explorer") */
+	name?: string;
 	/** Optional: scope editor sub-agents to specific files */
 	scopedFiles?: string[];
 	/** Optional: explicit parent context (for Power Mode integration) */

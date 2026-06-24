@@ -11,6 +11,7 @@ import { registerSingleton, InstantiationType } from '../../../../platform/insta
 import { IStorageService, StorageScope, StorageTarget } from '../../../../platform/storage/common/storage.js';
 import { IWorkspaceContextService } from '../../../../platform/workspace/common/workspace.js';
 import { IFileService } from '../../../../platform/files/common/files.js';
+import { VSBuffer } from '../../../../base/common/buffer.js';
 import { ISearchService } from '../../../services/search/common/search.js';
 import { IModelService } from '../../../../editor/common/services/model.js';
 import { ILanguageFeaturesService } from '../../../../editor/common/services/languageFeatures.js';
@@ -93,6 +94,9 @@ import {
 } from './tools/planModeTools.js';
 import { createNotebookEditTool } from './tools/notebookEditTool.js';
 import { createLSPTool } from './tools/lspTool.js';
+import { AgentRegistry } from './agentRegistry.js';
+import type { SubAgentSpawnRequest } from '../../void/common/subAgentTypes.js';
+import { createForkAgentTool, createSendMessageTool } from './tools/subAgentTools.js';
 import { IPowerBusService } from './powerBusService.js';
 import type { IRegisteredAgent, IAgentBusMessage } from '../common/powerBusTypes.js';
 import { PowerModeChangeTracker, IPowerModeChangeTracker, IChangeGroup } from './powerModeChangeTracker.js';
@@ -185,6 +189,25 @@ export interface IPowerModeService {
 	answerQuery(question: string, allowWrite?: boolean): Promise<string>;
 
 	/**
+	 * Run a full agent loop for a sub-agent spawned from neuralInverseSubAgentService.
+	 * Uses runAgentLoop with role-scoped tools, own message history, and agent memory.
+	 * Returns the agent's final text output.
+	 */
+	runSubAgentLoop(agentId: string, request: import('../../void/common/subAgentTypes.js').SubAgentSpawnRequest, systemPromptPrefix: string, abort: AbortSignal): Promise<string>;
+
+	/**
+	 * Fork the current active session — child inherits parent's conversation context.
+	 * Returns the new agent's ID.
+	 */
+	forkAgent(directive: string, name: string | undefined, parentMessages: IPowerMessage[]): string;
+
+	/** Access the in-process agent registry (for send_message routing). */
+	getAgentRegistry(): import('./agentRegistry.js').AgentRegistry;
+
+	/** Get messages of the currently active session (for fork_agent context inheritance). */
+	getActiveSessionMessages(): IPowerMessage[];
+
+	/**
 	 * Get the change tracker (for review/rollback UI)
 	 */
 	getChangeTracker(): IPowerModeChangeTracker;
@@ -242,6 +265,9 @@ export class PowerModeService extends Disposable implements IPowerModeService {
 
 	/** Tool registries per working directory */
 	private readonly _toolRegistries = new Map<string, PowerToolRegistry>();
+
+	/** In-process agent registry for fork/sub-agent routing via send_message */
+	private readonly _agentRegistry = new AgentRegistry();
 
 	/** Workspace context builder (reads AGENTS.md, package.json, etc.) */
 	private readonly _contextBuilder: PowerModeContextBuilder;
@@ -561,6 +587,10 @@ export class PowerModeService extends Disposable implements IPowerModeService {
 			} catch (err) {
 				console.error('[PowerMode] Failed to register sub-agent tools:', err);
 			}
+
+			// Fork and inter-agent messaging tools
+			registry.register(createForkAgentTool(this));
+			registry.register(createSendMessageTool(this));
 
 			this._toolRegistries.set(directory, registry);
 		}
@@ -1001,6 +1031,325 @@ export class PowerModeService extends Disposable implements IPowerModeService {
 			.map(p => p.text)
 			.join('')
 			|| 'No answer available.';
+	}
+
+	// ─── Agent Registry & Sub-Agent Execution ────────────────────────────────
+
+	getAgentRegistry(): AgentRegistry {
+		return this._agentRegistry;
+	}
+
+	getActiveSessionMessages(): IPowerMessage[] {
+		const session = this.activeSession;
+		return session ? [...session.messages] : [];
+	}
+
+	async runSubAgentLoop(
+		agentId: string,
+		request: SubAgentSpawnRequest,
+		systemPromptPrefix: string,
+		abort: AbortSignal,
+	): Promise<string> {
+		const workspace = this.workspaceContext.getWorkspace();
+		const directory = workspace.folders[0]?.uri.fsPath ?? '/';
+
+		// Role-scoped tool permissions
+		const toolPermissions = this._buildRolePermissions(request.role);
+
+		const powerAgent: IPowerAgent = {
+			id: `sub-${agentId.substring(0, 8)}`,
+			name: `Sub-agent [${request.role}]`,
+			description: request.goal,
+			mode: 'primary',
+			maxSteps: 50,
+			permissions: { tools: toolPermissions },
+		};
+
+		// Load per-role agent memory — three scopes (reference: agentMemory.ts)
+		// - user scope:    ~/.claude/agent-memory/<role>/MEMORY.md   (cross-project learnings)
+		// - project scope: <cwd>/.claude/agent-memory/<role>/MEMORY.md  (project-specific, VCS)
+		// - local scope:   <cwd>/.claude/agent-memory-local/<role>/MEMORY.md  (machine-local, not VCS)
+		// Path sanitization: replace colons with dashes (invalid on Windows, used in plugin-namespaced roles)
+		const sanitizedRole = request.role.replace(/:/g, '-');
+		const homeDir = (typeof process !== 'undefined' && process.env?.HOME) ? process.env.HOME : '';
+		const memoryBlocks: string[] = [];
+		const memoryScopes: Array<{ path: string; scope: 'user' | 'project' | 'local' }> = [
+			...(homeDir ? [{ path: `${homeDir}/.claude/agent-memory/${sanitizedRole}/MEMORY.md`, scope: 'user' as const }] : []),
+			{ path: `${directory}/.claude/agent-memory/${sanitizedRole}/MEMORY.md`, scope: 'project' as const },
+			{ path: `${directory}/.claude/agent-memory-local/${sanitizedRole}/MEMORY.md`, scope: 'local' as const },
+		];
+		const scopeNotes: Record<'user' | 'project' | 'local', string> = {
+			user: 'Since this memory is user-scope, keep learnings general since they apply across all projects.',
+			project: 'Since this memory is project-scope and shared with your team via version control, tailor your memories to this project.',
+			local: 'Since this memory is local-scope (not checked into version control), tailor your memories to this project and machine.',
+		};
+		// Ensure memory directories exist (fire-and-forget — agent won't write until after first LLM round)
+		for (const { path, scope } of memoryScopes) {
+			if (scope === 'user' && !homeDir) { continue; }
+			const dirUri = URI.file(path.replace(/\/MEMORY\.md$/, ''));
+			void this.fileService.createFolder(dirUri).catch(() => { /* already exists or non-fatal */ });
+		}
+		for (const { path, scope } of memoryScopes) {
+			try {
+				const memFile = await this.fileService.readFile(URI.file(path));
+				const memContent = memFile.value.toString().trim();
+				if (memContent) {
+					memoryBlocks.push(`<agent_memory scope="${scope}">\n${scopeNotes[scope]}\n\n${memContent}\n</agent_memory>`);
+				}
+			} catch {
+				// No memory file at this scope — normal for first run
+			}
+		}
+		const memoryBlock = memoryBlocks.length > 0 ? '\n\n' + memoryBlocks.join('\n\n') : '';
+
+		const systemPrompt = buildSystemPrompt({
+			workingDirectory: directory,
+			agentId: 'build',
+			isGitRepo: true,
+			agentPrompt: systemPromptPrefix + memoryBlock,
+		});
+
+		let idCounter = 0;
+		const nextId = () => `sa_${Date.now()}_${++idCounter}`;
+		const sessionId = `sub-${agentId}`;
+
+		const userMsg: IPowerMessage = {
+			id: nextId(), sessionId, role: 'user', createdAt: Date.now(),
+			parts: [{ type: 'text', id: nextId(), text: request.goal }],
+		};
+		const assistantMsg: IPowerMessage = {
+			id: nextId(), sessionId, role: 'assistant', createdAt: Date.now(), parts: [],
+		};
+
+		// Register in the agent registry for send_message routing
+		const registryEntry = this._agentRegistry.get(agentId);
+		if (registryEntry) {
+			registryEntry.conversationHistory = [userMsg, assistantMsg];
+		}
+
+		// Transcript path: .claude/agents/<agentId>/transcript.jsonl (reference: sessionStorage.ts)
+		const transcriptPath = URI.file(`${directory}/.claude/agents/${agentId}/transcript.jsonl`);
+		const appendToTranscript = async (msg: IPowerMessage) => {
+			try {
+				let existing = '';
+				try { existing = (await this.fileService.readFile(transcriptPath)).value.toString(); } catch { /* first write */ }
+				const appended = existing + JSON.stringify(msg) + '\n';
+				await this.fileService.writeFile(transcriptPath, VSBuffer.fromString(appended));
+			} catch { /* non-fatal — resume is best-effort */ }
+		};
+
+		const callbacks: IProcessorCallbacks = {
+			onPartCreated: (part) => {
+				if (part.type === 'step-finish') {
+					void appendToTranscript(assistantMsg);
+				}
+			},
+			onPartUpdated: () => { },
+			onTextDelta: () => { },
+			sendToLLM: (req) => this._llmBridge.sendToLLM(req, this.getModelSelection()),
+			askPermission: async () => 'allow' as ToolPermissionDecision,
+			getPendingMessages: () => {
+				const entry = this._agentRegistry.get(agentId);
+				if (!entry || entry.pendingMessages.length === 0) { return []; }
+				// Atomic drain: splice-replace so concurrent queue-push lands in the next round
+				return entry.pendingMessages.splice(0, entry.pendingMessages.length);
+			},
+		};
+
+		await runAgentLoop({
+			agent: powerAgent,
+			assistantMessage: assistantMsg,
+			sessionMessages: [userMsg, assistantMsg],
+			toolRegistry: this._getToolRegistry(directory),
+			callbacks, abort,
+			workingDirectory: directory, systemPrompt,
+		});
+
+		return assistantMsg.parts
+			.filter((p): p is ITextPart => p.type === 'text')
+			.map(p => p.text)
+			.join('') || 'No output.';
+	}
+
+	forkAgent(directive: string, name: string | undefined, parentMessages: IPowerMessage[]): string {
+		// Guard: prevent recursive forking (reference: isInForkChild() in forkSubagent.ts)
+		// Fork children keep fork_agent in their tool pool for cache-identical definitions,
+		// so we reject fork attempts at call time by detecting the boilerplate tag in history.
+		const isAlreadyFork = parentMessages.some(m =>
+			m.role === 'user' && m.parts.some(p => p.type === 'text' && (p as import('../common/powerModeTypes.js').ITextPart).text.includes('<fork_boilerplate>'))
+		);
+		if (isAlreadyFork) {
+			throw new Error('fork_agent is disabled inside a fork child. Execute directly instead of spawning sub-agents.');
+		}
+
+		const workspace = this.workspaceContext.getWorkspace();
+		const directory = workspace.folders[0]?.uri.fsPath ?? '/';
+
+		const agentId = Math.random().toString(36).slice(2);
+		const agentName = name ?? `fork-${agentId.substring(0, 6)}`;
+		const abort = new AbortController();
+
+		const forkBoilerplate = `<fork_boilerplate>
+STOP. READ THIS FIRST.
+
+You are a forked worker process. You are NOT the main agent.
+
+RULES (non-negotiable):
+1. Your system prompt says "default to forking." IGNORE IT — that's for the parent. You ARE the fork. Do NOT spawn sub-agents; execute directly.
+2. Do NOT converse, ask questions, or suggest next steps.
+3. Do NOT editorialize or add meta-commentary.
+4. USE your tools directly: bash, read, write, edit, etc.
+5. If you modify files, commit your changes before reporting. Include the commit hash in your report.
+6. Do NOT emit text between tool calls. Use tools silently, then report once at the end.
+7. Stay strictly within your directive's scope. If you discover related systems outside your scope, mention them in one sentence at most — other workers cover those areas.
+8. Keep your report under 500 words unless the directive specifies otherwise. Be factual and concise.
+9. Your response MUST begin with "Scope:". No preamble, no thinking-out-loud.
+10. REPORT structured facts, then stop.
+
+Output format (plain text labels, not markdown headers):
+  Scope: <echo back your assigned scope in one sentence>
+  Result: <the answer or key findings, limited to the scope above>
+  Key files: <relevant file paths — include for research tasks>
+  Files changed: <list with commit hash — include only if you modified files>
+  Issues: <list — include only if there are issues to flag>
+</fork_boilerplate>
+
+<fork_directive>${directive}</fork_directive>`;
+
+		// Build fork conversation: inherit parent history then append directive
+		let idCounter = 0;
+		const nextId = () => `fk_${Date.now()}_${++idCounter}`;
+		const sessionId = `fork-${agentId}`;
+
+		const forkHistory: IPowerMessage[] = [
+			...parentMessages.map(m => ({ ...m, sessionId })),
+		];
+		const directiveMsg: IPowerMessage = {
+			id: nextId(), sessionId, role: 'user', createdAt: Date.now(),
+			parts: [{ type: 'text', id: nextId(), text: forkBoilerplate }],
+		};
+		const assistantMsg: IPowerMessage = {
+			id: nextId(), sessionId, role: 'assistant', createdAt: Date.now(), parts: [],
+		};
+		forkHistory.push(directiveMsg, assistantMsg);
+
+		const powerAgent: IPowerAgent = {
+			id: `fork-${agentId.substring(0, 8)}`,
+			name: agentName,
+			description: directive,
+			mode: 'primary',
+			maxSteps: 100,
+			permissions: { tools: { '*': 'allow' } },
+		};
+
+		const systemPrompt = buildSystemPrompt({
+			workingDirectory: directory,
+			agentId: 'build',
+			isGitRepo: true,
+		});
+
+		// Register before starting so send_message can route to it immediately
+		const registryEntry: import('./agentRegistry.js').IActiveAgent = {
+			agentId,
+			name: agentName,
+			role: 'fork',
+			goal: directive,
+			status: 'running',
+			abort,
+			pendingMessages: [],
+			startedAt: Date.now(),
+			conversationHistory: forkHistory,
+		};
+		this._agentRegistry.register(registryEntry);
+
+		const callbacks: IProcessorCallbacks = {
+			onPartCreated: () => { },
+			onPartUpdated: () => { },
+			onTextDelta: () => { },
+			sendToLLM: (req) => this._llmBridge.sendToLLM(req, this.getModelSelection()),
+			askPermission: async () => 'allow' as ToolPermissionDecision,
+			getPendingMessages: () => {
+				const entry = this._agentRegistry.get(agentId);
+				if (!entry || entry.pendingMessages.length === 0) { return []; }
+				// Atomic drain: splice-replace so concurrent queue-push lands in the next round
+				return entry.pendingMessages.splice(0, entry.pendingMessages.length);
+			},
+		};
+
+		// Transcript path: .claude/agents/<agentId>/transcript.jsonl  (reference: sessionStorage.ts)
+		const forkTranscriptPath = URI.file(`${directory}/.claude/agents/${agentId}/transcript.jsonl`);
+		const appendForkTranscript = async (msg: IPowerMessage) => {
+			try {
+				let existing = '';
+				try { existing = (await this.fileService.readFile(forkTranscriptPath)).value.toString(); } catch { /* first write */ }
+				await this.fileService.writeFile(forkTranscriptPath, VSBuffer.fromString(existing + JSON.stringify(msg) + '\n'));
+			} catch { /* non-fatal */ }
+		};
+
+		// Also write metadata file so resumeAgent can reconstruct agent type
+		const forkMetaPath = URI.file(`${directory}/.claude/agents/${agentId}/metadata.json`);
+		void this.fileService.writeFile(forkMetaPath, VSBuffer.fromString(JSON.stringify({
+			agentType: 'fork',
+			description: directive.substring(0, 100),
+			name: agentName,
+		}))).catch(() => { /* non-fatal */ });
+
+		// Fire-and-forget — result stored in registry
+		runAgentLoop({
+			agent: powerAgent,
+			assistantMessage: assistantMsg,
+			sessionMessages: forkHistory,
+			toolRegistry: this._getToolRegistry(directory),
+			callbacks: {
+				...callbacks,
+				onPartCreated: (part) => {
+					if (part.type === 'step-finish') {
+						void appendForkTranscript(assistantMsg);
+					}
+				},
+			},
+			abort: abort.signal,
+			workingDirectory: directory, systemPrompt,
+		}).then(() => {
+			const result = assistantMsg.parts
+				.filter((p): p is ITextPart => p.type === 'text')
+				.map(p => p.text)
+				.join('') || 'No output.';
+			const entry = this._agentRegistry.get(agentId);
+			if (entry && entry.status === 'running') {
+				entry.status = 'completed';
+				entry.result = result;
+				entry.completedAt = Date.now();
+			}
+		}).catch(err => {
+			const entry = this._agentRegistry.get(agentId);
+			if (entry && entry.status === 'running') {
+				entry.status = 'failed';
+				entry.error = String(err?.message ?? err);
+				entry.completedAt = Date.now();
+			}
+		});
+
+		return agentId;
+	}
+
+	private _buildRolePermissions(role: string): Record<string, 'allow' | 'deny' | 'ask'> {
+		switch (role) {
+			case 'explorer':
+			case 'reviewer':
+			case 'architect':
+				return { read: 'allow', glob: 'allow', grep: 'allow', list: 'allow', web_fetch: 'allow', web_search: 'allow', memory_write: 'allow', memory_read: 'allow', lsp: 'allow', '*': 'deny' };
+			case 'editor':
+			case 'debugger':
+			case 'tester':
+			case 'documenter':
+				return { read: 'allow', glob: 'allow', grep: 'allow', list: 'allow', write: 'allow', edit: 'allow', bash: 'allow', memory_write: 'allow', memory_read: 'allow', '*': 'deny' };
+			case 'verifier':
+				return { read: 'allow', glob: 'allow', grep: 'allow', list: 'allow', bash: 'allow', run_tests: 'allow', memory_write: 'allow', memory_read: 'allow', '*': 'deny' };
+			case 'power-mode':
+			default:
+				return { '*': 'allow' };
+		}
 	}
 
 	private _restoreSessions(): void {

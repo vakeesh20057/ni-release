@@ -56,6 +56,11 @@ export interface IProcessorCallbacks {
 	 * Returns 'allow', 'allow-all' (skip future asks this session), or 'deny' (cancel).
 	 */
 	askPermission(toolName: string, input: Record<string, any>): Promise<ToolPermissionDecision>;
+	/**
+	 * Optional: called at the start of each step to inject queued inter-agent messages.
+	 * Messages are prepended as user turns before the LLM call.
+	 */
+	getPendingMessages?(): string[];
 }
 
 export interface ILLMRequest {
@@ -199,6 +204,22 @@ export async function runAgentLoop(input: {
 				} catch {
 					// Compaction failure is non-fatal — continue with full history
 				}
+			}
+		}
+
+		// ── Drain inter-agent message queue ─────────────────────────
+		// Messages queued via send_message are injected as user turns before the LLM call.
+		if (callbacks.getPendingMessages && step > 1) {
+			const queued = callbacks.getPendingMessages();
+			for (const qm of queued) {
+				const injectId = nextId();
+				effectiveSessionMessages.push({
+					id: injectId,
+					sessionId: assistantMessage.sessionId,
+					role: 'user',
+					createdAt: Date.now(),
+					parts: [{ type: 'text', id: nextId(), text: `[inter-agent message]: ${qm}` }],
+				} as import('../common/powerModeTypes.js').IPowerMessage);
 			}
 		}
 

@@ -10,7 +10,7 @@
  * concurrently while the parent agent continues working.
  */
 
-import { IPowerTool, IToolContext, IToolResult } from '../../common/powerModeTypes.js';
+import { IPowerTool, IToolContext, IToolResult, IPowerMessage } from '../../common/powerModeTypes.js';
 import { definePowerTool } from './powerToolRegistry.js';
 import { INeuralInverseSubAgentService } from '../../../void/browser/neuralInverseSubAgentService.js';
 import { SubAgentRole } from '../../../void/common/subAgentTypes.js';
@@ -374,6 +374,131 @@ Shows:
 					completed: completed.length,
 					failed: failed.length,
 				},
+			};
+		},
+	);
+}
+
+// ─── fork_agent: Fork from current conversation context ──────────────────────
+
+export function createForkAgentTool(powerModeService: IPowerModeService): IPowerTool {
+	return definePowerTool(
+		'fork_agent',
+		`Fork a parallel worker agent that inherits this conversation's full context.
+
+The fork starts with everything you've seen so far — files you've read, code you've analyzed.
+It runs independently in the background and does NOT affect your conversation.
+
+Use cases:
+- Run a risky or experimental change in isolation while you continue
+- Delegate a well-scoped sub-task ("fix all TODO comments in auth/") so you can do other work
+- Run two approaches in parallel and compare results
+
+Parameters:
+- directive: What the forked agent should do (be specific and scoped)
+- name: Optional friendly name for routing via send_message (e.g. "auth-fixer")
+
+After spawning: use send_message to communicate with the fork, list_agents to check status,
+wait_for_agent to get its result.
+
+The fork CANNOT spawn further forks. It reports results in a structured format.`,
+		[
+			{ name: 'directive', type: 'string', description: 'What the fork should accomplish (specific, scoped task)', required: true },
+			{ name: 'name', type: 'string', description: 'Optional friendly name for send_message routing', required: false },
+		],
+		async (args: Record<string, any>, ctx: IToolContext): Promise<IToolResult> => {
+			const directive = args.directive as string;
+			const name = args.name as string | undefined;
+
+			ctx.metadata({ title: `Forking agent: ${directive.substring(0, 50)}...` });
+
+			const parentMessages = powerModeService.getActiveSessionMessages();
+			let agentId: string;
+			try {
+				agentId = powerModeService.forkAgent(directive, name, parentMessages);
+			} catch (err: any) {
+				return {
+					title: 'Fork not allowed',
+					output: err?.message ?? 'Cannot fork from inside a fork child. Execute directly.',
+					metadata: { error: true },
+				};
+			}
+			const shortId = agentId.substring(0, 8);
+			const displayName = name ?? `fork-${shortId}`;
+
+			return {
+				title: `Forked agent ${displayName}`,
+				output: `Fork spawned: ${displayName} (${shortId})\n\nGoal: ${directive}\n\nThe fork has inherited your full conversation context and is running in the background.\nUse send_message "${displayName}" <message> to communicate with it.\nUse wait_for_agent ${shortId} to get its result when ready.`,
+				metadata: { agentId, name: displayName, shortId },
+			};
+		},
+	);
+}
+
+// ─── send_message: Inter-agent communication ─────────────────────────────────
+
+export function createSendMessageTool(powerModeService: IPowerModeService): IPowerTool {
+	return definePowerTool(
+		'send_message',
+		`Send a message to a running agent by name or ID.
+
+The message is queued and delivered at the agent's next tool round.
+If the agent has already completed, returns its last result instead.
+
+Use cases:
+- Give a running fork new instructions mid-task
+- Ask a fork to check something additional
+- Provide clarification to a running sub-agent
+
+Parameters:
+- to: Agent name (e.g. "auth-fixer") or agent ID / short prefix (first 8 chars)
+- message: The message to send
+
+Returns immediately — the message is queued, not a synchronous exchange.`,
+		[
+			{ name: 'to', type: 'string', description: 'Agent name or ID to send to', required: true },
+			{ name: 'message', type: 'string', description: 'Message content', required: true },
+		],
+		async (args: Record<string, any>, ctx: IToolContext): Promise<IToolResult> => {
+			const to = args.to as string;
+			const message = args.message as string;
+
+			ctx.metadata({ title: `Sending message to ${to}...` });
+
+			const registry = powerModeService.getAgentRegistry();
+			const agent = registry.get(to);
+
+			if (!agent) {
+				const all = registry.getAll();
+				const names = all.map(a => a.name || a.agentId.substring(0, 8)).join(', ');
+				return {
+					title: 'Agent not found',
+					output: `No agent found with name or ID: "${to}"\n\nActive agents: ${names || 'none'}`,
+					metadata: { error: true, to },
+				};
+			}
+
+			if (agent.status === 'running') {
+				agent.pendingMessages.push(message);
+				return {
+					title: `Message queued for ${agent.name}`,
+					output: `Message queued for agent "${agent.name}" (${agent.agentId.substring(0, 8)}).\nIt will be delivered at the agent's next tool round.`,
+					metadata: { to, agentId: agent.agentId, queued: true },
+				};
+			}
+
+			if (agent.status === 'completed') {
+				return {
+					title: `Agent ${agent.name} already completed`,
+					output: `Agent "${agent.name}" has already finished.\n\nResult:\n${agent.result ?? '(no output)'}`,
+					metadata: { to, agentId: agent.agentId, status: 'completed' },
+				};
+			}
+
+			return {
+				title: `Agent ${agent.name} is ${agent.status}`,
+				output: `Agent "${agent.name}" is ${agent.status} and cannot receive messages.${agent.error ? `\n\nError: ${agent.error}` : ''}`,
+				metadata: { to, agentId: agent.agentId, status: agent.status },
 			};
 		},
 	);

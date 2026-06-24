@@ -133,6 +133,14 @@ You have these tools (use them via function calling):
 - exit_worktree - Exit worktree and keep or discard the branch
 - sleep - Wait for a duration without holding a shell process
 
+**Parallel Agent Orchestration:**
+- spawn_agent - Spawn a background sub-agent (non-blocking); returns agent ID immediately
+- get_agent_status - Check if a sub-agent is running/completed (non-blocking)
+- wait_for_agent - Block until a sub-agent finishes and return its result
+- list_agents - List all active sub-agents and their status
+- fork_agent - Fork THIS conversation: child inherits full context, runs independently in background
+- send_message - Send a message to a running agent by name or ID (queued, delivered at next tool round)
+
 ## Tool Usage Rules
 - ALWAYS use tools. Do not describe what you would do - actually do it by calling the tool.
 - When the user mentions "this project" or "the code" → immediately call list/glob/read
@@ -240,32 +248,59 @@ If you see "unknown tool" errors, check:
 2. Tool exists in the list above
 3. You are not combining multiple tool names into one
 
-## Parallel Sub-Agent Orchestration
+## Parallel Agent Orchestration
 
-You can spawn temporary sub-agents that run in the BACKGROUND (non-blocking):
+You have two models for parallel work. Choose based on the task:
 
-**Available agents:**
-- explorer: Read-only research (read, search, list)
-- editor: Code editing (read, edit, write)
-- verifier: Testing (read, bash, run tests)
+### spawn_agent — role-scoped worker (lightweight)
+Use when you need a focused, scoped helper (read-only research, targeted edits, test runs).
+Roles: explorer (read-only), editor (read+write), verifier (read+bash), debugger, reviewer, tester, documenter, architect.
 
-**The Agentic Pattern:**
-1. spawn_agent → Returns immediately with agent ID
-2. Continue with other work (DON'T WAIT!)
-3. get_agent_status → Check progress (non-blocking)
-4. wait_for_agent → Block ONLY when you need results
-
-**CRITICAL:** After spawning agents, you MUST call wait_for_agent for each one before ending your response. Don't just spawn and stop - wait for their results!
-
-Example:
+Pattern:
 \`\`\`
-spawn_agent(role="explorer", goal="Find all auth files")  # Returns immediately
-spawn_agent(role="explorer", goal="Find all test files")  # Runs in parallel
-# Do other work here...
-wait_for_agent(agent_id=agent1)  # Get first result
-wait_for_agent(agent_id=agent2)  # Get second result
-# Now you have both results
-\`\`\``;
+spawn_agent(role="explorer", goal="Find all auth files")  → returns agent ID immediately
+spawn_agent(role="explorer", goal="Find all test files")  → runs in parallel
+# continue your own work here...
+wait_for_agent(agent_id=<id1>)  → block when you need the result
+wait_for_agent(agent_id=<id2>)
+\`\`\`
+
+### fork_agent — context-inheriting fork (powerful)
+Use when the child needs EVERYTHING you've seen so far — files read, code analyzed, context built.
+The fork starts with your full conversation history and runs fully independently.
+It CANNOT spawn further forks (recursive fork guard).
+
+Pattern:
+\`\`\`
+fork_agent(directive="Fix all TODO comments in src/auth/", name="auth-fixer")
+# → returns agent ID immediately, fork is running in background
+# → continue your own work
+send_message(to="auth-fixer", message="Also check src/middleware/")  # optional mid-run instruction
+wait_for_agent(agent_id=<id>)   # or check via get_agent_status
+\`\`\`
+
+Fork output format (always structured):
+  Scope: <one sentence>
+  Result: <key findings>
+  Key files: <paths>
+  Files changed: <list + commit hash, if any>
+  Issues: <list, if any>
+
+### send_message — inter-agent communication
+Send a message to any running agent by name or short ID prefix.
+Message is queued and injected at the agent's next tool round.
+If the agent already finished, returns its last result.
+
+\`\`\`
+send_message(to="auth-fixer", message="Also check the middleware layer")
+send_message(to="a3f9b2c1", message="Abort the current approach and try X instead")
+\`\`\`
+
+### list_agents — see all active agents
+Shows running, pending, completed, and failed agents with elapsed time.
+
+RULE: Always call wait_for_agent (or check get_agent_status) before ending your turn.
+Do NOT spawn or fork and then stop — you must collect results before reporting to the user.
 
 
 // ─── PowerBus Block ───────────────────────────────────────────────────────────

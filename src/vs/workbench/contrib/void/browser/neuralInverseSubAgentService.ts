@@ -128,6 +128,8 @@ class NeuralInverseSubAgentService extends Disposable implements INeuralInverseS
 	cancel(subAgentId: string): void {
 		const subAgent = this._subAgents.get(subAgentId);
 		if (!subAgent || subAgent.status !== 'running') return;
+		// Signal the running agent loop to stop
+		subAgent.abortController?.abort();
 		subAgent.status = 'cancelled';
 		subAgent.completedAt = new Date().toISOString();
 		this._onDidChangeSubAgent.fire({ subAgentId, status: 'cancelled' });
@@ -182,28 +184,33 @@ class NeuralInverseSubAgentService extends Disposable implements INeuralInverseS
 			const powerMode = this._getPowerMode();
 			if (!powerMode) throw new Error('Power Mode service not available');
 
+			// Create a real abort controller for this agent's execution
+			const abort = new AbortController();
+			subAgent.abortController = abort;
+
 			const rolePrefix = this._buildSubAgentPrefix(request);
-			const fullGoal = `${rolePrefix}\n\n${request.goal}`;
+			const result = await powerMode.runSubAgentLoop(subAgent.id, request, rolePrefix, abort.signal);
 
-			const writeRoles: SubAgentRole[] = ['editor', 'verifier', 'debugger', 'tester', 'documenter'];
-			const allowWrite = writeRoles.includes(request.role);
-			const result = await powerMode.answerQuery(fullGoal, allowWrite);
+			if (!abort.signal.aborted) {
+				subAgent.status = 'completed';
+				subAgent.result = result;
 
-			subAgent.status = 'completed';
-			subAgent.result = result;
-
-			// Inject assistant response into the background thread
-			this._chatThreadService.addBackgroundMessage(subAgent.threadId, {
-				role: 'assistant',
-				content: result,
-				displayContent: result,
-			} as any);
+				this._chatThreadService.addBackgroundMessage(subAgent.threadId, {
+					role: 'assistant',
+					content: result,
+					displayContent: result,
+				} as any);
+			}
 		} catch (err: any) {
-			subAgent.status = 'failed';
-			subAgent.error = err.message ?? 'Unknown error';
+			if (subAgent.status !== 'cancelled') {
+				subAgent.status = 'failed';
+				subAgent.error = err.message ?? 'Unknown error';
+			}
 		}
 
-		subAgent.completedAt = new Date().toISOString();
+		if (!subAgent.completedAt) {
+			subAgent.completedAt = new Date().toISOString();
+		}
 		this._onDidChangeSubAgent.fire({ subAgentId: subAgent.id, status: subAgent.status });
 
 		this._agentService.recordContext({
