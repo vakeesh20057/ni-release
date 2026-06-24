@@ -158,7 +158,7 @@
 		"@types/react": "^19.2.14",
 		"@types/react-dom": "19.2.3",
 		"@types/sinon": "^10.0.2",
-		"@types/sinon-test": "^2.4.2",
+		"@types/sinon-test": "^2.4.7",
 		"@types/trusted-types": "^1.0.6",
 		"@types/vscode-notebook-renderer": "^1.72.0",
 		"@types/webpack": "^5.28.5",
