@@ -89,6 +89,7 @@ import {
 	createEnterPlanModeTool,
 	createExitPlanModeTool,
 } from './tools/planModeTools.js';
+import { createNotebookEditTool } from './tools/notebookEditTool.js';
 import { IPowerBusService } from './powerBusService.js';
 import type { IRegisteredAgent, IAgentBusMessage } from '../common/powerBusTypes.js';
 import { PowerModeChangeTracker, IPowerModeChangeTracker, IChangeGroup } from './powerModeChangeTracker.js';
@@ -533,6 +534,8 @@ export class PowerModeService extends Disposable implements IPowerModeService {
 				// Worktree isolation
 				createEnterWorktreeTool(directory, this.commandExecutor),
 				createExitWorktreeTool(directory, this.commandExecutor),
+				// Notebook editing (.ipynb Jupyter files)
+				createNotebookEditTool(directory, this.fileService),
 			]);
 
 			// Sub-agent orchestration (lazy-resolved to avoid circular dependency)
