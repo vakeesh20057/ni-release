@@ -272,6 +272,7 @@ export class WorkflowOrchestrator {
 		const toolCtx: IToolExecutionContext = {
 			workspaceUri: baseCtx.workspaceUri,
 			fileService: baseCtx.fileService,
+			modelInfo: baseCtx.modelInfo,
 			log: (msg: string) => {
 				stepRun.outputLog.push(`[${new Date().toISOString()}] ${msg}`);
 				onUpdate(run);

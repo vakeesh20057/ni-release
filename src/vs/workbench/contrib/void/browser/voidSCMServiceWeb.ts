@@ -92,8 +92,9 @@ class GenerateCommitMessageServiceWeb extends Disposable implements IGenerateCom
 					featureName: 'SCM',
 				});
 
-				const commitMessage = await this.sendLLMMessage(messages, separateSystemMessage!, modelOptions);
+				let commitMessage = await this.sendLLMMessage(messages, separateSystemMessage!, modelOptions);
 				if (!this.isCurrentRequest(requestId)) { throw new CancellationError(); }
+				commitMessage = this._appendCoAuthorTrailers(commitMessage, modelOptions.modelSelection);
 				repo.input.setValue(commitMessage, false);
 			} catch (error) {
 				this.onError(error);
@@ -141,6 +142,28 @@ class GenerateCommitMessageServiceWeb extends Disposable implements IGenerateCom
 	}
 
 	private isCurrentRequest(requestId: string) { return requestId === this.currentRequestId; }
+
+	private _appendCoAuthorTrailers(message: string, modelSelection: ModelSelection | null): string {
+		if (message.includes('Co-authored-by:')) { return message; }
+		const platform = 'Co-authored-by: neuralinverse-dev <noreply@neuralinverse.com>';
+		let llmTrailer: string;
+		const provider = (modelSelection?.providerName ?? '').toLowerCase();
+		const model = (modelSelection?.modelName ?? '').toLowerCase();
+		if (provider.includes('openai') || model.includes('gpt') || model.includes('chatgpt') || model.includes('o1') || model.includes('o3') || model.includes('o4')) {
+			llmTrailer = 'Co-authored-by: ChatGPT <noreply@openai.com>';
+		} else if (provider.includes('google') || model.includes('gemini') || model.includes('gemma')) {
+			llmTrailer = 'Co-authored-by: Gemini <noreply@google.com>';
+		} else if (provider.includes('deepseek') || model.includes('deepseek')) {
+			llmTrailer = 'Co-authored-by: DeepSeek <noreply@deepseek.com>';
+		} else if (provider.includes('mistral') || model.includes('mistral') || model.includes('codestral')) {
+			llmTrailer = 'Co-authored-by: Mistral <noreply@mistral.ai>';
+		} else if (provider.includes('meta') || model.includes('llama')) {
+			llmTrailer = 'Co-authored-by: Meta AI <noreply@meta.com>';
+		} else {
+			llmTrailer = 'Co-authored-by: Claude <noreply@anthropic.com>';
+		}
+		return `${message}\n\n${platform}\n${llmTrailer}`;
+	}
 
 	private onError(error: any) {
 		if (!isCancellationError(error)) {

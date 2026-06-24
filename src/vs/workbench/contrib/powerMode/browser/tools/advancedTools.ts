@@ -433,7 +433,8 @@ export function createGitDiffTool(
 
 export function createGitCommitTool(
 	workingDirectory: string,
-	commandExecutor: IExternalCommandExecutor
+	commandExecutor: IExternalCommandExecutor,
+	getModelInfo?: () => { provider: string; model: string } | undefined
 ): IPowerTool {
 	return definePowerTool(
 		'git_commit',
@@ -443,18 +444,12 @@ Rules:
 - Changes must already be staged (use bash tool with 'git add' first)
 - Message should follow conventional commit format
 - This will create a commit but NOT push it
-- ALWAYS append TWO Co-authored-by trailers (Git standard trailer format):
-    1. Platform (always):  Co-authored-by: neuralinverse-dev <noreply@neuralinverse.com>
-    2. LLM used (pick one):
-       Claude:             Co-authored-by: Claude <noreply@anthropic.com>
-       ChatGPT / GPT-4:    Co-authored-by: ChatGPT <noreply@openai.com>
-       Gemini:             Co-authored-by: Gemini <noreply@google.com>
-  Leave a blank line between the commit body and the trailers.`,
+- Co-authored-by trailers are appended AUTOMATICALLY by the IDE — do NOT add them yourself`,
 		[
-			{ name: 'message', type: 'string', description: 'Commit message', required: true },
+			{ name: 'message', type: 'string', description: 'Commit message (trailers are auto-appended)', required: true },
 		],
 		async (args: Record<string, any>, ctx: IToolContext): Promise<IToolResult> => {
-			const message = args.message as string;
+			let message = args.message as string;
 
 			ctx.metadata({ title: 'Committing...' });
 
@@ -474,6 +469,9 @@ Rules:
 			} catch {
 				// Continue anyway - the commit will fail with a clear error if there's nothing staged
 			}
+
+			// Auto-append co-authored-by trailers based on the active model
+			message = _appendCoAuthorTrailers(message, getModelInfo?.());
 
 			// Commit
 			const commitCommand = `cd ${_shellQuote(workingDirectory)} && git commit -m ${_shellQuote(message)}`;
@@ -495,6 +493,36 @@ Rules:
 			}
 		},
 	);
+}
+
+function _appendCoAuthorTrailers(message: string, modelInfo?: { provider: string; model: string }): string {
+	// Don't double-append if the message already has trailers
+	if (message.includes('Co-authored-by:')) {
+		return message;
+	}
+
+	const platform = 'Co-authored-by: neuralinverse-dev <noreply@neuralinverse.com>';
+	let llmTrailer: string;
+
+	const provider = (modelInfo?.provider ?? '').toLowerCase();
+	const model = (modelInfo?.model ?? '').toLowerCase();
+
+	if (provider.includes('openai') || model.includes('gpt') || model.includes('chatgpt') || model.includes('o1') || model.includes('o3') || model.includes('o4')) {
+		llmTrailer = 'Co-authored-by: ChatGPT <noreply@openai.com>';
+	} else if (provider.includes('google') || model.includes('gemini') || model.includes('gemma')) {
+		llmTrailer = 'Co-authored-by: Gemini <noreply@google.com>';
+	} else if (provider.includes('deepseek') || model.includes('deepseek')) {
+		llmTrailer = 'Co-authored-by: DeepSeek <noreply@deepseek.com>';
+	} else if (provider.includes('mistral') || model.includes('mistral') || model.includes('codestral')) {
+		llmTrailer = 'Co-authored-by: Mistral <noreply@mistral.ai>';
+	} else if (provider.includes('meta') || model.includes('llama')) {
+		llmTrailer = 'Co-authored-by: Meta AI <noreply@meta.com>';
+	} else {
+		// Default to Claude (Anthropic) for anthropic/claude/unknown
+		llmTrailer = 'Co-authored-by: Claude <noreply@anthropic.com>';
+	}
+
+	return `${message}\n\n${platform}\n${llmTrailer}`;
 }
 
 // ─── Memory Tools ───────────────────────────────────────────────────────────

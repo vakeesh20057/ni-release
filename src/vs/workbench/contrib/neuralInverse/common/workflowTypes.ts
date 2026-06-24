@@ -79,6 +79,8 @@ export interface IToolExecutionContext {
 	fileService: IFileService;
 	/** Append a line to the current step's output log */
 	log: (msg: string) => void;
+	/** Active LLM model info — used for auto co-author trailers */
+	modelInfo?: { provider: string; model: string };
 }
 
 export interface IAgentTool {

@@ -1350,7 +1350,8 @@ export class ToolsService extends Disposable implements IToolsService {
 				return { result: lintErrorsPromise }
 			},
 			// ---
-			run_command: async ({ command, cwd, terminalId, bgAfter }) => {
+			run_command: async ({ command: rawCommand, cwd, terminalId, bgAfter }) => {
+				const command = this._injectCoAuthorIfGitCommit(rawCommand);
 				const commitGateMsg = this._checkCommitGate(command);
 				if (commitGateMsg) {
 					return { result: Promise.resolve({ resolveReason: { type: 'done' as const, exitCode: 1 }, result: commitGateMsg }) }
@@ -1435,7 +1436,8 @@ export class ToolsService extends Disposable implements IToolsService {
 
 				return { result, interruptTool: interrupt }
 			},
-			run_persistent_command: async ({ command, persistentTerminalId }) => {
+			run_persistent_command: async ({ command: rawCommand, persistentTerminalId }) => {
+				const command = this._injectCoAuthorIfGitCommit(rawCommand);
 				const commitGateMsg = this._checkCommitGate(command);
 				if (commitGateMsg) {
 					return { result: Promise.resolve({ resolveReason: { type: 'done' as const, exitCode: 1 }, result: commitGateMsg }) }
@@ -1722,6 +1724,36 @@ export class ToolsService extends Disposable implements IToolsService {
 	private _checkCommitGate(_command: string): string | null {
 		// GRC commit gate not available in community edition
 		return null;
+	}
+
+	private _injectCoAuthorIfGitCommit(command: string): string {
+		if (command.includes('Co-authored-by:')) { return command; }
+		const pattern = /(git\s+commit\s+(?:[^-]*\s+)?-m\s+)(["'])([\s\S]*?)\2/;
+		const match = command.match(pattern);
+		if (!match) { return command; }
+
+		const platform = 'Co-authored-by: neuralinverse-dev <noreply@neuralinverse.com>';
+		const sel = this.voidSettingsService.state.modelSelectionOfFeature['Chat'];
+		const provider = (sel?.providerName ?? '').toLowerCase();
+		const model = (sel?.modelName ?? '').toLowerCase();
+		let llmTrailer: string;
+		if (provider.includes('openai') || model.includes('gpt') || model.includes('chatgpt') || model.includes('o1') || model.includes('o3') || model.includes('o4')) {
+			llmTrailer = 'Co-authored-by: ChatGPT <noreply@openai.com>';
+		} else if (provider.includes('google') || model.includes('gemini') || model.includes('gemma')) {
+			llmTrailer = 'Co-authored-by: Gemini <noreply@google.com>';
+		} else if (provider.includes('deepseek') || model.includes('deepseek')) {
+			llmTrailer = 'Co-authored-by: DeepSeek <noreply@deepseek.com>';
+		} else if (provider.includes('mistral') || model.includes('mistral') || model.includes('codestral')) {
+			llmTrailer = 'Co-authored-by: Mistral <noreply@mistral.ai>';
+		} else if (provider.includes('meta') || model.includes('llama')) {
+			llmTrailer = 'Co-authored-by: Meta AI <noreply@meta.com>';
+		} else {
+			llmTrailer = 'Co-authored-by: Claude <noreply@anthropic.com>';
+		}
+
+		const trailers = `\n\n${platform}\n${llmTrailer}`;
+		const newMsg = match[3] + trailers;
+		return command.replace(pattern, `$1$2${newMsg}$2`);
 	}
 
 	private _getLintErrors(uri: URI): { lintErrors: LintErrorItem[] | null } {

@@ -301,9 +301,11 @@ export class WorkflowAgentService extends Disposable implements IWorkflowAgentSe
 			return run;
 		}
 
+		const modelSel = this.settingsService.state.modelSelectionOfFeature['Chat'];
 		const baseCtx = {
 			workspaceUri: folder.uri,
 			fileService: this.fileService,
+			modelInfo: modelSel ? { provider: modelSel.providerName, model: modelSel.modelName } : undefined,
 		};
 
 		try {
@@ -360,7 +362,8 @@ export class WorkflowAgentService extends Disposable implements IWorkflowAgentSe
 				return run;
 			}
 
-			const baseCtx = { workspaceUri: folder.uri, fileService: this.fileService };
+			const agentModelSel = this.settingsService.state.modelSelectionOfFeature['Chat'];
+			const baseCtx = { workspaceUri: folder.uri, fileService: this.fileService, modelInfo: agentModelSel ? { provider: agentModelSel.providerName, model: agentModelSel.modelName } : undefined };
 
 			try {
 				await this._orchestrator.run(

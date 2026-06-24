@@ -20,9 +20,9 @@ import { createListTool } from './listTool.js';
 /**
  * Create all built-in tools for the given workspace directory.
  */
-export function createAllTools(workingDirectory: string): IPowerTool[] {
+export function createAllTools(workingDirectory: string, getModelInfo?: () => { provider: string; model: string } | undefined): IPowerTool[] {
 	return [
-		createBashTool(workingDirectory),
+		createBashTool(workingDirectory, getModelInfo),
 		createReadTool(workingDirectory),
 		createWriteTool(workingDirectory),
 		createEditTool(workingDirectory),

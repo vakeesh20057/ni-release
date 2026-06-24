@@ -35,6 +35,36 @@
 
 import { IAgentTool, IToolExecutionContext, IToolResult } from '../../common/workflowTypes.js';
 
+// ─── Co-Author Trailer Logic ─────────────────────────────────────────────────
+
+function appendCoAuthorTrailers(message: string, modelInfo?: { provider: string; model: string }): string {
+	if (message.includes('Co-authored-by:')) {
+		return message;
+	}
+
+	const platform = 'Co-authored-by: neuralinverse-dev <noreply@neuralinverse.com>';
+	let llmTrailer: string;
+
+	const provider = (modelInfo?.provider ?? '').toLowerCase();
+	const model = (modelInfo?.model ?? '').toLowerCase();
+
+	if (provider.includes('openai') || model.includes('gpt') || model.includes('chatgpt') || model.includes('o1') || model.includes('o3') || model.includes('o4')) {
+		llmTrailer = 'Co-authored-by: ChatGPT <noreply@openai.com>';
+	} else if (provider.includes('google') || model.includes('gemini') || model.includes('gemma')) {
+		llmTrailer = 'Co-authored-by: Gemini <noreply@google.com>';
+	} else if (provider.includes('deepseek') || model.includes('deepseek')) {
+		llmTrailer = 'Co-authored-by: DeepSeek <noreply@deepseek.com>';
+	} else if (provider.includes('mistral') || model.includes('mistral') || model.includes('codestral')) {
+		llmTrailer = 'Co-authored-by: Mistral <noreply@mistral.ai>';
+	} else if (provider.includes('meta') || model.includes('llama')) {
+		llmTrailer = 'Co-authored-by: Meta AI <noreply@meta.com>';
+	} else {
+		llmTrailer = 'Co-authored-by: Claude <noreply@anthropic.com>';
+	}
+
+	return `${message}\n\n${platform}\n${llmTrailer}`;
+}
+
 // ─── Shared execFile helper ───────────────────────────────────────────────────
 
 interface GitResult {
@@ -317,7 +347,8 @@ export class GitCommitTool implements IAgentTool {
 	readonly description =
 		'Commit currently staged changes with a message. ' +
 		'Use gitAdd first to stage the files you want to include. ' +
-		'Will not push — only creates a local commit.';
+		'Will not push — only creates a local commit. ' +
+		'Co-authored-by trailers are appended automatically — do NOT add them yourself.';
 
 	readonly parameters = {
 		message: {
@@ -328,7 +359,7 @@ export class GitCommitTool implements IAgentTool {
 	};
 
 	async execute(args: Record<string, unknown>, ctx: IToolExecutionContext): Promise<IToolResult> {
-		const message = args['message'] as string;
+		let message = args['message'] as string;
 
 		if (!message?.trim()) {
 			return { success: false, output: '', error: 'message is required' };
@@ -339,6 +370,9 @@ export class GitCommitTool implements IAgentTool {
 		if (!staged.stdout.trim()) {
 			return { success: false, output: '', error: 'Nothing staged. Use gitAdd to stage files first.' };
 		}
+
+		// Auto-append co-authored-by trailers based on the active model
+		message = appendCoAuthorTrailers(message, ctx.modelInfo);
 
 		ctx.log(`gitCommit: "${message}"`);
 

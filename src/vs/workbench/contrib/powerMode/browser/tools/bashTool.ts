@@ -10,7 +10,7 @@ import * as cp from 'child_process';
 const DEFAULT_TIMEOUT = 2 * 60 * 1000; // 2 minutes
 const MAX_OUTPUT = 50 * 1024; // 50KB
 
-export function createBashTool(workingDirectory: string) {
+export function createBashTool(workingDirectory: string, getModelInfo?: () => { provider: string; model: string } | undefined) {
 	return definePowerTool(
 		'bash',
 		`Execute a bash command in the working directory (${workingDirectory}).
@@ -28,10 +28,13 @@ Rules:
 			{ name: 'workdir', type: 'string', description: `Working directory (default: ${workingDirectory})`, required: false },
 		],
 		async (args: Record<string, any>, ctx: IToolContext): Promise<IToolResult> => {
-			const command = args.command as string;
+			let command = args.command as string;
 			const description = args.description as string;
 			const timeout = (args.timeout as number) ?? DEFAULT_TIMEOUT;
 			const cwd = (args.workdir as string) ?? workingDirectory;
+
+			// Auto-inject co-author trailers when bash is used for git commit
+			command = _injectCoAuthorIfGitCommit(command, getModelInfo?.());
 
 			if (timeout < 0) {
 				throw new Error(`Invalid timeout: ${timeout}. Must be positive.`);
@@ -111,4 +114,38 @@ Rules:
 			});
 		},
 	);
+}
+
+function _getCoAuthorTrailers(modelInfo?: { provider: string; model: string }): string {
+	const platform = 'Co-authored-by: neuralinverse-dev <noreply@neuralinverse.com>';
+	let llmTrailer: string;
+	const provider = (modelInfo?.provider ?? '').toLowerCase();
+	const model = (modelInfo?.model ?? '').toLowerCase();
+	if (provider.includes('openai') || model.includes('gpt') || model.includes('chatgpt') || model.includes('o1') || model.includes('o3') || model.includes('o4')) {
+		llmTrailer = 'Co-authored-by: ChatGPT <noreply@openai.com>';
+	} else if (provider.includes('google') || model.includes('gemini') || model.includes('gemma')) {
+		llmTrailer = 'Co-authored-by: Gemini <noreply@google.com>';
+	} else if (provider.includes('deepseek') || model.includes('deepseek')) {
+		llmTrailer = 'Co-authored-by: DeepSeek <noreply@deepseek.com>';
+	} else if (provider.includes('mistral') || model.includes('mistral') || model.includes('codestral')) {
+		llmTrailer = 'Co-authored-by: Mistral <noreply@mistral.ai>';
+	} else if (provider.includes('meta') || model.includes('llama')) {
+		llmTrailer = 'Co-authored-by: Meta AI <noreply@meta.com>';
+	} else {
+		llmTrailer = 'Co-authored-by: Claude <noreply@anthropic.com>';
+	}
+	return `\n\n${platform}\n${llmTrailer}`;
+}
+
+function _injectCoAuthorIfGitCommit(command: string, modelInfo?: { provider: string; model: string }): string {
+	if (command.includes('Co-authored-by:')) { return command; }
+
+	// Match: git commit -m "message" or git commit -m 'message'
+	const pattern = /(git\s+commit\s+(?:[^-]*\s+)?-m\s+)(["'])([\s\S]*?)\2/;
+	const match = command.match(pattern);
+	if (!match) { return command; }
+
+	const trailers = _getCoAuthorTrailers(modelInfo);
+	const newMsg = match[3] + trailers;
+	return command.replace(pattern, `$1$2${newMsg}$2`);
 }

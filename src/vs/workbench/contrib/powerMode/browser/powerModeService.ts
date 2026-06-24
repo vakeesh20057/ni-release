@@ -463,7 +463,7 @@ export class PowerModeService extends Disposable implements IPowerModeService {
 			registry = new PowerToolRegistry();
 			registry.registerMany([
 				// Core filesystem tools
-				createBrowserBashTool(directory, this.commandExecutor),
+				createBrowserBashTool(directory, this.commandExecutor, () => this.getModelInfo()),
 				createBrowserReadTool(directory, this.fileService),
 				createBrowserWriteTool(directory, this.fileService, this._changeTracker, this.shadowValidationService),
 				createBrowserEditTool(directory, this.fileService, this._changeTracker, this.shadowValidationService),
@@ -499,7 +499,7 @@ export class PowerModeService extends Disposable implements IPowerModeService {
 				// Git tools
 				createGitStatusTool(directory, this.commandExecutor),
 				createGitDiffTool(directory, this.commandExecutor),
-				createGitCommitTool(directory, this.commandExecutor),
+				createGitCommitTool(directory, this.commandExecutor, () => this.getModelInfo()),
 				// Memory tools
 				createMemoryWriteTool(directory, this.fileService),
 				createMemoryReadTool(directory, this.fileService),
