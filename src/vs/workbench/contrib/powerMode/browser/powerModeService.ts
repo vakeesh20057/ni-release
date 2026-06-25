@@ -616,16 +616,16 @@ export class PowerModeService extends Disposable implements IPowerModeService {
 			`Stage: ${session.currentStage}  |  Pattern: ${session.migrationPattern ?? 'custom'}  |  Plan approved: ${session.planApproved ? 'yes' : 'no'}`,
 		];
 		if (session.sources.length > 0) {
-			lines.push('Source (legacy) projects — use these ABSOLUTE paths:');
+			lines.push('Source (legacy) projects -- use these ABSOLUTE paths:');
 			for (const s of session.sources) { lines.push(`  ${s.label}: ${s.folderUri}`); }
 		}
 		if (session.targets.length > 0) {
-			lines.push('Target (modern) projects — use these ABSOLUTE paths:');
+			lines.push('Target (modern) projects -- use these ABSOLUTE paths:');
 			for (const t of session.targets) { lines.push(`  ${t.label}: ${t.folderUri}`); }
 		}
 		if (session.activeSourceFileUri) { lines.push(`Active source file: ${session.activeSourceFileUri}`); }
 		if (session.activeTargetFileUri) { lines.push(`Active target file: ${session.activeTargetFileUri}`); }
-		lines.push('Always use the absolute folder paths above — do NOT treat project labels as relative directory names.');
+		lines.push('Always use the absolute folder paths above -- do NOT treat project labels as relative directory names.');
 		return lines.join('\n');
 	}
 
@@ -1135,7 +1135,7 @@ export class PowerModeService extends Disposable implements IPowerModeService {
 				try { existing = (await this.fileService.readFile(transcriptPath)).value.toString(); } catch { /* first write */ }
 				const appended = existing + JSON.stringify(msg) + '\n';
 				await this.fileService.writeFile(transcriptPath, VSBuffer.fromString(appended));
-			} catch { /* non-fatal — resume is best-effort */ }
+			} catch { /* non-fatal -- resume is best-effort */ }
 		};
 
 		const callbacks: IProcessorCallbacks = {
@@ -1195,13 +1195,13 @@ STOP. READ THIS FIRST.
 You are a forked worker process. You are NOT the main agent.
 
 RULES (non-negotiable):
-1. Your system prompt says "default to forking." IGNORE IT — that's for the parent. You ARE the fork. Do NOT spawn sub-agents; execute directly.
+1. Your system prompt says "default to forking." IGNORE IT -- that's for the parent. You ARE the fork. Do NOT spawn sub-agents; execute directly.
 2. Do NOT converse, ask questions, or suggest next steps.
 3. Do NOT editorialize or add meta-commentary.
 4. USE your tools directly: bash, read, write, edit, etc.
 5. If you modify files, commit your changes before reporting. Include the commit hash in your report.
 6. Do NOT emit text between tool calls. Use tools silently, then report once at the end.
-7. Stay strictly within your directive's scope. If you discover related systems outside your scope, mention them in one sentence at most — other workers cover those areas.
+7. Stay strictly within your directive's scope. If you discover related systems outside your scope, mention them in one sentence at most -- other workers cover those areas.
 8. Keep your report under 500 words unless the directive specifies otherwise. Be factual and concise.
 9. Your response MUST begin with "Scope:". No preamble, no thinking-out-loud.
 10. REPORT structured facts, then stop.
@@ -1209,9 +1209,9 @@ RULES (non-negotiable):
 Output format (plain text labels, not markdown headers):
   Scope: <echo back your assigned scope in one sentence>
   Result: <the answer or key findings, limited to the scope above>
-  Key files: <relevant file paths — include for research tasks>
-  Files changed: <list with commit hash — include only if you modified files>
-  Issues: <list — include only if there are issues to flag>
+  Key files: <relevant file paths -- include for research tasks>
+  Files changed: <list with commit hash -- include only if you modified files>
+  Issues: <list -- include only if there are issues to flag>
 </fork_boilerplate>
 
 <fork_directive>${directive}</fork_directive>`;
