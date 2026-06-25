@@ -10,7 +10,7 @@
  * concurrently while the parent agent continues working.
  */
 
-import { IPowerTool, IToolContext, IToolResult, IPowerMessage } from '../../common/powerModeTypes.js';
+import { IPowerTool, IToolContext, IToolResult } from '../../common/powerModeTypes.js';
 import { definePowerTool } from './powerToolRegistry.js';
 import { INeuralInverseSubAgentService } from '../../../void/browser/neuralInverseSubAgentService.js';
 import { SubAgentRole } from '../../../void/common/subAgentTypes.js';

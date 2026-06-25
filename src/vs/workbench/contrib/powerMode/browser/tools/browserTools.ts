@@ -78,8 +78,8 @@ Rules:
 			// Check for destructive commands (informational warning)
 			const destructiveCheck = isDestructiveCommand(command);
 			let warningPrefix = '';
-			if (destructiveCheck.isDestructive && destructiveCheck.warning) {
-				warningPrefix = `Warning: ${destructiveCheck.warning}\n\n`;
+			if (destructiveCheck.isDestructive && destructiveCheck.warnings.length > 0) {
+				warningPrefix = `Warning: ${destructiveCheck.warnings[0]}\n\n`;
 			}
 
 			// Auto-inject co-author trailers when bash is used for git commit

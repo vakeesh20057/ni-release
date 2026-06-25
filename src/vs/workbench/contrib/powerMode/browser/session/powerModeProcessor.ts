@@ -219,7 +219,7 @@ export async function runAgentLoop(input: {
 					role: 'user',
 					createdAt: Date.now(),
 					parts: [{ type: 'text', id: nextId(), text: `[inter-agent message]: ${qm}` }],
-				} as import('../common/powerModeTypes.js').IPowerMessage);
+				} as import('../../common/powerModeTypes.js').IPowerMessage);
 			}
 		}
 
