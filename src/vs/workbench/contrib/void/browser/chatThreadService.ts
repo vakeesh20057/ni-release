@@ -43,7 +43,41 @@ import { IMCPService } from '../common/mcpService.js';
 import { IVoidInternalToolService } from './voidInternalToolService.js';
 import { RawMCPToolCall } from '../common/mcpServiceTypes.js';
 import { INeuralInverseAgentService } from './neuralInverseAgentService.js';
+import { needsOSSEnhancement } from '../common/ossModelEnhancement/ossDetection.js';
+import { shouldAutoRetry, getCorrectionMessage } from '../common/ossModelEnhancement/autoRetryCorrection.js';
+import { wrapToolResultForOSS } from '../common/ossModelEnhancement/progressFeedbackLoop.js';
 
+
+// Tool name aliases: OSS models use alternative names for built-in tools
+// NOTE: edit_file, read_file are REAL built-in tools with different schemas — do NOT alias them
+const TOOL_ALIASES: Record<string, string> = {
+	'run': 'bash',
+	'shell': 'bash',
+	'execute': 'bash',
+	'terminal': 'bash',
+	'exec': 'bash',
+	'create_file': 'write',
+	'write_file': 'write',
+	'save_file': 'write',
+	'open_file': 'read',
+	'view_file': 'read',
+	'cat': 'read',
+	'modify_file': 'edit',
+	'replace': 'edit',
+	'search_files': 'glob',
+	'find_files': 'glob',
+	'search': 'grep',
+	'search_code': 'grep',
+	'find': 'grep',
+	'list_directory': 'list',
+	'ls': 'list',
+	'list_files': 'list',
+	'list_dir': 'list',
+};
+
+function resolveToolAlias(name: string): string {
+	return TOOL_ALIASES[name] || name;
+}
 
 // related to retrying when LLM message has error
 const CHAT_RETRIES = 3
@@ -627,9 +661,16 @@ class ChatThreadService extends Disposable implements IChatThreadService {
 
 		// 5. add to history and keep going
 		// If tool result is empty, null, undefined, or whitespace-only, inject fallback message so LLM can continue
-		const finalToolResultStr = (toolResultStr !== null && toolResultStr !== undefined && toolResultStr.trim())
+		let finalToolResultStr = (toolResultStr !== null && toolResultStr !== undefined && toolResultStr.trim())
 			? toolResultStr
 			: '(Tool completed successfully but returned no output)'
+
+		// Layer 6: Progress feedback for OSS models
+		const _modelSel = this._settingsService.state.modelSelectionOfFeature['Chat'];
+		if (_modelSel && needsOSSEnhancement(_modelSel.providerName, _modelSel.modelName)) {
+			finalToolResultStr = wrapToolResultForOSS(toolName, true, finalToolResultStr, 0);
+		}
+
 		this._updateLatestTool(threadId, { role: 'tool', type: 'success', params: toolParams, result: toolResult, name: toolName, content: finalToolResultStr, id: toolId, rawParams: opts.unvalidatedToolParams, mcpServerName })
 		return {}
 	};
@@ -666,6 +707,7 @@ class ChatThreadService extends Disposable implements IChatThreadService {
 		const MAX_MESSAGES_SENT = 50 // hard cap to prevent infinite loops
 		let _lastToolSig = '' // for consecutive duplicate tool detection
 		let _consecutiveDuplicateTools = 0
+		let _failedBashCommands: string[] = [] // track failed bash commands to detect retry loops
 
 		// before enter loop, call tool
 		if (callThisToolFirst) {
@@ -845,13 +887,28 @@ class ChatThreadService extends Disposable implements IChatThreadService {
 					const toolSig = toolCalls.map(t => `${t.name}:${JSON.stringify(t.rawParams)}`).join('|')
 					if (toolSig === _lastToolSig) {
 						_consecutiveDuplicateTools++
-						if (_consecutiveDuplicateTools >= 3) {
-							this._setStreamState(threadId, { isRunning: undefined, error: { message: `Agent stopped: detected infinite loop (same tool called ${_consecutiveDuplicateTools} times in a row with identical parameters).`, fullError: null } })
+						if (_consecutiveDuplicateTools >= 2) {
+							this._setStreamState(threadId, { isRunning: undefined, error: { message: `Agent stopped: detected repeated tool call loop (same tool called ${_consecutiveDuplicateTools + 1} times with identical parameters). The command may require interactive input that cannot be provided in this environment.`, fullError: null } })
 							return
 						}
 					} else {
 						_consecutiveDuplicateTools = 0
 						_lastToolSig = toolSig
+					}
+
+					// Broader loop guard: detect similar bash commands (same base command, different flags)
+					if (toolCalls.length === 1 && toolCalls[0].name === 'bash') {
+						const cmd = (toolCalls[0].rawParams?.['command'] || '').toString().split(/\s+/).slice(0, 4).join(' ');
+						if (cmd) {
+							_failedBashCommands.push(cmd);
+							const recentSame = _failedBashCommands.filter(c => c === cmd).length;
+							if (recentSame >= 4) {
+								this._setStreamState(threadId, { isRunning: undefined, error: { message: `Agent stopped: the same command pattern has been attempted ${recentSame} times. It may require interactive terminal input or have a persistent error.`, fullError: null } })
+								return
+							}
+						}
+					} else {
+						_failedBashCommands = []
 					}
 
 					// execute all tools sequentially or concurrently (sequentially is safer for things like git and file edits)
@@ -883,7 +940,13 @@ class ChatThreadService extends Disposable implements IChatThreadService {
 						});
 						continue;
 					}
-						// Internal tools take priority over MCP tools with the same name.
+						// Normalize tool name aliases (OSS models use alternative names)
+					const resolvedToolName = resolveToolAlias(toolCall.name);
+					if (resolvedToolName !== toolCall.name) {
+						toolCall.name = resolvedToolName;
+					}
+
+					// Internal tools take priority over MCP tools with the same name.
 					// Don't pass mcpServerName for internal tools so they don't display as "MCP".
 					const isInternal = this._internalToolService.has(toolCall.name);
 					const mcpTool = isInternal ? undefined : mcpTools?.find(t => t.name === toolCall.name);
@@ -908,6 +971,19 @@ class ChatThreadService extends Disposable implements IChatThreadService {
 					else { shouldSendAnotherMessage = true }
 
 					this._setStreamState(threadId, { isRunning: 'idle', interrupt: 'not_needed' }) // just decorative, for clarity
+				}
+				// Layer 3: Auto-retry for OSS models that output text instead of tool calls
+				else if (info.fullText && modelSelection && needsOSSEnhancement(modelSelection.providerName, modelSelection.modelName)) {
+					const _ossRetryKey = `_ossRetry_${threadId}`;
+					const retryCount = ((this as any)[_ossRetryKey] || 0) as number;
+					if (shouldAutoRetry(info.fullText, 0, chatMode, retryCount)) {
+						(this as any)[_ossRetryKey] = retryCount + 1;
+						const correction = getCorrectionMessage(retryCount, info.fullText);
+						this._addMessageToThread(threadId, { role: 'user', content: correction, displayContent: '', selections: null, state: defaultMessageState });
+						shouldSendAnotherMessage = true;
+					} else {
+						(this as any)[_ossRetryKey] = 0;
+					}
 				}
 
 			} // end while (attempts)

@@ -9,9 +9,10 @@ import { IDirectoryStrService } from '../directoryStrService.js';
 import { StagingSelectionItem } from '../chatThreadServiceTypes.js';
 import { RawToolParamsObj } from '../sendLLMMessageTypes.js';
 import { approvalTypeOfBuiltinToolName, BuiltinToolCallParams, BuiltinToolName, BuiltinToolResultType, ToolName, SnakeCaseKeys } from '../toolsServiceTypes.js';
-import { ChatMode } from '../voidSettingsTypes.js';
+import { ChatMode, ProviderName } from '../voidSettingsTypes.js';
 import { systemPromptSection, DANGEROUS_uncachedSystemPromptSection, resolveSystemPromptSections } from './sectionCache.js'
 import { getSystemSection, getDoingTasksSection, getActionsSection, getToolsSection, getOutputSection, getToneSection, getAgentBehaviorSection, getEnvironmentSection } from './sections/index.js'
+import { needsOSSEnhancement, getOSSEnhancementPrompt } from '../ossModelEnhancement/index.js';
 
 // Triple backtick wrapper used throughout the prompts for code blocks
 export const tripleTick = ['```', '```']
@@ -780,7 +781,7 @@ export function buildGRCPostureBlock(data: {
 	return lines.join('\n');
 }
 
-export const chat_systemMessage = ({ workspaceFolders, openedURIs, activeURI, persistentTerminalIDs, directoryStr, chatMode: mode, mcpTools, includeXMLToolDefinitions, allowedToolNames, grcPosture }: { workspaceFolders: string[], directoryStr: string, openedURIs: string[], activeURI: string | undefined, persistentTerminalIDs: string[], chatMode: ChatMode, mcpTools: InternalToolInfo[] | undefined, includeXMLToolDefinitions: boolean, allowedToolNames?: string[], grcPosture?: string }) => {
+export const chat_systemMessage = ({ workspaceFolders, openedURIs, activeURI, persistentTerminalIDs, directoryStr, chatMode: mode, mcpTools, includeXMLToolDefinitions, allowedToolNames, grcPosture, providerName, modelName }: { workspaceFolders: string[], directoryStr: string, openedURIs: string[], activeURI: string | undefined, persistentTerminalIDs: string[], chatMode: ChatMode, mcpTools: InternalToolInfo[] | undefined, includeXMLToolDefinitions: boolean, allowedToolNames?: string[], grcPosture?: string, providerName?: string, modelName?: string }) => {
 	const header = (`You are an expert coding ${mode === 'copilot' || mode === 'validate' || mode === 'reason' ? 'agent' : 'assistant'} whose job is \
 ${(mode === 'copilot' || mode === 'validate') ? `to help the user develop, run, and make changes to their codebase. You are action-oriented: when given a task, you execute it immediately using the available tools. You do not hedge, ask unnecessary questions, or explain why something might be difficult. You find a way and do it.`
 			: (mode === 'reason') ? `to analyze, design, and plan changes to the user's codebase.`
@@ -921,9 +922,17 @@ ${details.map((d, i) => `${i + 1}. ${d}`).join('\n\n')}`)
 	const resolvedStaticSections = resolveSystemPromptSections(staticSections)
 	const resolvedEnvironment = resolveSystemPromptSections([environmentSection])
 
+	// OSS model enhancement: inject tool-enforcement prompt for weaker models
+	let ossEnhancement: string | null = null;
+	if (providerName && modelName && needsOSSEnhancement(providerName as ProviderName, modelName)) {
+		const enhMode = (mode === 'copilot' || mode === 'validate' || mode === 'agent') ? 'agent' : mode === 'ask' ? 'ask' : 'agent';
+		ossEnhancement = getOSSEnhancementPrompt(enhMode);
+	}
+
 	// return answer
 	const ansStrs: string[] = []
 	ansStrs.push(header)
+	if (ossEnhancement) ansStrs.push(ossEnhancement)
 	ansStrs.push(...resolvedStaticSections.filter((s): s is string => s !== null))
 	if (grcPosture) ansStrs.push(grcPosture)
 	if (toolDefinitions) ansStrs.push(toolDefinitions)

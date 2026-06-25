@@ -23,6 +23,7 @@ import { IVoidSettingsService } from '../common/voidSettingsService.js'
 import { generateUuid } from '../../../../base/common/uuid.js'
 
 import { IPathService } from '../../../services/path/common/pathService.js';
+import { wrapNonInteractive } from '../common/commandSanitizer.js';
 import { IEditorService, SIDE_GROUP } from '../../../services/editor/common/editorService.js';
 import { IProductService } from '../../../../platform/product/common/productService.js';
 import { VSBuffer } from '../../../../base/common/buffer.js';
@@ -303,26 +304,26 @@ export class ToolsService extends Disposable implements IToolsService {
 		this.validateParams = {
 			// --- Power Mode style tools ---
 			bash: (params: RawToolParamsObj) => {
-				const command = validateStr('command', params.command)
-				const description = validateStr('description', params.description)
+				const command = validateStr('command', params.command ?? params.cmd ?? params.run ?? params.shell ?? params.script)
+				const description = (typeof params.description === 'string') ? params.description : (typeof params.desc === 'string' ? params.desc : '')
 				const timeout = validateNumber(params.timeout, { default: null })
 				return { command, description, timeout }
 			},
 			read: (params: RawToolParamsObj) => {
-				const filePath = validateStr('file_path', params.file_path)
+				const filePath = validateStr('file_path', params.file_path ?? params.filePath ?? params.path ?? params.file)
 				const offset = validateNumber(params.offset, { default: null })
 				const limit = validateNumber(params.limit, { default: null })
 				return { filePath, offset, limit }
 			},
 			write: (params: RawToolParamsObj) => {
-				const filePath = validateStr('file_path', params.file_path)
-				const content = validateStr('content', params.content)
+				const filePath = validateStr('file_path', params.file_path ?? params.filePath ?? params.path ?? params.file ?? params.filename)
+				const content = validateStr('content', params.content ?? params.text ?? params.code ?? params.body)
 				return { filePath, content }
 			},
 			edit: (params: RawToolParamsObj) => {
-				const filePath = validateStr('file_path', params.file_path)
-				const oldString = validateStr('old_string', params.old_string)
-				const newString = validateStr('new_string', params.new_string)
+				const filePath = validateStr('file_path', params.file_path ?? params.filePath ?? params.path ?? params.file)
+				const oldString = validateStr('old_string', params.old_string ?? params.oldString ?? params.old ?? params.search ?? params.find ?? params.original)
+				const newString = validateStr('new_string', params.new_string ?? params.newString ?? params.new ?? params.replace ?? params.replacement)
 				return { filePath, oldString, newString }
 			},
 			glob: (params: RawToolParamsObj) => {
@@ -633,17 +634,18 @@ export class ToolsService extends Disposable implements IToolsService {
 			// --- Power Mode style tools ---
 			bash: async ({ command, description, timeout }) => {
 				const jobId = `void_bash_${Date.now()}`
-				const fullCommand = `cd ${JSON.stringify(workspaceDir)} && ${command}`
-				try {
-					const output = await this.commandExecutor.execute(jobId, fullCommand, timeout ?? 120000, MAX_PM_OUTPUT)
+				const fullCommand = `cd ${JSON.stringify(workspaceDir)} && ${wrapNonInteractive(command)}`
+				const { resultPromise, interrupt: interruptTool } = this.commandExecutor.executeWithInterrupt(jobId, fullCommand, timeout ?? 120_000, MAX_PM_OUTPUT)
+				const result = resultPromise.then(output => {
 					const truncated = output.length > MAX_PM_OUTPUT ? output.substring(0, MAX_PM_OUTPUT) + '\n[Output truncated at 50KB]' : output
-					return { result: { result: truncated } }
-				} catch (err: any) {
-					return { result: { result: `Error: ${err.message}${err.stderr ? '\n' + err.stderr : ''}` } }
-				}
+					return { result: truncated }
+				}).catch((err: any) => {
+					return { result: `Error: ${err.message}${err.stderr ? '\n' + err.stderr : ''}` }
+				})
+				return { result, interruptTool }
 			},
 			read: async ({ filePath, offset, limit: readLimit }) => {
-				const normalizedPath = filePath.startsWith('/') ? filePath : `${workspaceDir}/${filePath}`
+				const normalizedPath = (filePath.startsWith('/') && filePath.startsWith(workspaceDir)) ? filePath : `${workspaceDir}/${filePath.replace(/^\//, '')}`
 				const uri = validateURIws(normalizedPath)
 				try {
 					const stat = await fileService.stat(uri)
@@ -669,9 +671,18 @@ export class ToolsService extends Disposable implements IToolsService {
 				}
 			},
 			write: async ({ filePath, content }) => {
-				const normalizedPath = filePath.startsWith('/') ? filePath : `${workspaceDir}/${filePath}`
+				const normalizedPath = (filePath.startsWith('/') && filePath.startsWith(workspaceDir)) ? filePath : `${workspaceDir}/${filePath.replace(/^\//, '')}`
 				const uri = validateURIws(normalizedPath)
 				try {
+					// If path has no file extension, model is trying to create a directory
+					const basename = normalizedPath.split('/').pop() || '';
+					if (!basename.includes('.') && (!content || content.trim() === '')) {
+						await fileService.createFolder(uri);
+						return { result: { result: `Created directory: ${normalizedPath}` } }
+					}
+					// Auto-create parent directories (like mkdir -p)
+					const parentUri = URI.file(normalizedPath.substring(0, normalizedPath.lastIndexOf('/')))
+					try { await fileService.createFolder(parentUri); } catch { /* already exists */ }
 					await fileService.writeFile(uri, VSBuffer.fromString(content))
 					return { result: { result: `Successfully wrote ${content.split('\n').length} lines to ${normalizedPath}` } }
 				} catch (err: any) {
@@ -679,7 +690,7 @@ export class ToolsService extends Disposable implements IToolsService {
 				}
 			},
 			edit: async ({ filePath, oldString, newString }) => {
-				const normalizedPath = filePath.startsWith('/') ? filePath : `${workspaceDir}/${filePath}`
+				const normalizedPath = (filePath.startsWith('/') && filePath.startsWith(workspaceDir)) ? filePath : `${workspaceDir}/${filePath.replace(/^\//, '')}`
 				const uri = validateURIws(normalizedPath)
 				try {
 					const content = await fileService.readFile(uri)

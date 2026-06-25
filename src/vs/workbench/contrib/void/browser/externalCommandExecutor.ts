@@ -10,6 +10,7 @@ import { ITerminalToolService } from './terminalToolService.js';
 export interface IExternalCommandExecutor {
 	readonly _serviceBrand: undefined;
 	execute(jobId: string, command: string, timeoutMs: number, maxOutputBytes: number): Promise<string>;
+	executeWithInterrupt(jobId: string, command: string, timeoutMs: number, maxOutputBytes: number): { resultPromise: Promise<string>; interrupt: () => void };
 }
 
 export const IExternalCommandExecutor = createDecorator<IExternalCommandExecutor>('externalCommandExecutor');
@@ -22,14 +23,27 @@ class TerminalBackedCommandExecutor implements IExternalCommandExecutor {
 	) {}
 
 	async execute(jobId: string, command: string, timeoutMs: number, maxOutputBytes: number): Promise<string> {
-		const { resPromise } = await this.terminalToolService.runCommand(command, {
-			type: 'temporary',
-			cwd: null,
-			terminalId: jobId,
-		});
-		const { result } = await resPromise;
-		const out = result ?? '';
-		return out.length > maxOutputBytes ? out.substring(0, maxOutputBytes) + '\n[truncated]' : out;
+		const { resultPromise } = this.executeWithInterrupt(jobId, command, timeoutMs, maxOutputBytes);
+		return resultPromise;
+	}
+
+	executeWithInterrupt(jobId: string, command: string, timeoutMs: number, maxOutputBytes: number): { resultPromise: Promise<string>; interrupt: () => void } {
+		let interruptFn: (() => void) | undefined;
+
+		const resultPromise = (async () => {
+			const { resPromise, interrupt } = await this.terminalToolService.runCommand(command, {
+				type: 'temporary',
+				cwd: null,
+				terminalId: jobId,
+			});
+			interruptFn = interrupt;
+			const { result } = await resPromise;
+			const out = result ?? '';
+			return out.length > maxOutputBytes ? out.substring(0, maxOutputBytes) + '\n[truncated]' : out;
+		})();
+
+		const interrupt = () => { interruptFn?.(); };
+		return { resultPromise, interrupt };
 	}
 }
 

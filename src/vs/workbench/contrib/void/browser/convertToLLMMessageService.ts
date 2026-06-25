@@ -22,6 +22,7 @@ import { IVoidInternalToolService } from './voidInternalToolService.js';
 import { INeuralInverseAgentService } from './neuralInverseAgentService.js';
 import { IModernisationSessionService } from '../../neuralInverseModernisation/browser/modernisationSessionService.js';
 import { IKnowledgeBaseService } from '../../neuralInverseModernisation/browser/knowledgeBase/service.js';
+import { needsOSSEnhancement, getFewShotExamples } from '../common/ossModelEnhancement/index.js';
 
 export const EMPTY_MESSAGE = '(empty message)'
 
@@ -606,20 +607,32 @@ const prepareMessages = (params: {
 	supportsAnthropicReasoning: boolean,
 	contextWindow: number,
 	reservedOutputTokenSpace: number | null | undefined,
-	providerName: ProviderName
+	providerName: ProviderName,
+	modelName?: string,
 }): { messages: LLMChatMessage[], separateSystemMessage: string | undefined } => {
 
 	const specialFormat = params.specialToolFormat // this is just for ts stupidness
 
+	// Layer 4: Few-shot injection for OSS models using XML tool format
+	let messages = params.messages;
+	if (!specialFormat && params.modelName && needsOSSEnhancement(params.providerName, params.modelName)) {
+		const fewShot = getFewShotExamples();
+		const fewShotMessages: SimpleLLMMessage[] = fewShot.map(m =>
+			m.role === 'user'
+				? { role: 'user' as const, content: m.content }
+				: { role: 'assistant' as const, content: m.content, anthropicReasoning: null }
+		);
+		messages = [...fewShotMessages, ...messages];
+	}
+
 	// if need to convert to gemini style of messaes, do that (treat as anthropic style, then convert to gemini style)
 	if (params.providerName === 'gemini' || specialFormat === 'gemini-style') {
-		const res = prepareOpenAIOrAnthropicMessages({ ...params, specialToolFormat: specialFormat === 'gemini-style' ? 'anthropic-style' : undefined })
-		const messages = res.messages as AnthropicLLMChatMessage[]
-		const messages2 = prepareGeminiMessages(messages)
+		const res = prepareOpenAIOrAnthropicMessages({ ...params, messages, specialToolFormat: specialFormat === 'gemini-style' ? 'anthropic-style' : undefined })
+		const messages2 = prepareGeminiMessages(res.messages as AnthropicLLMChatMessage[])
 		return { messages: messages2, separateSystemMessage: res.separateSystemMessage }
 	}
 
-	return prepareOpenAIOrAnthropicMessages({ ...params, specialToolFormat: specialFormat })
+	return prepareOpenAIOrAnthropicMessages({ ...params, messages, specialToolFormat: specialFormat })
 }
 
 
@@ -630,7 +643,7 @@ export interface IConvertToLLMMessageService {
 	prepareLLMSimpleMessages: (opts: { simpleMessages: SimpleLLMMessage[], systemMessage: string, modelSelection: ModelSelection | null, featureName: FeatureName }) => { messages: LLMChatMessage[], separateSystemMessage: string | undefined }
 	prepareLLMChatMessages: (opts: { chatMessages: ChatMessage[], chatMode: ChatMode, modelSelection: ModelSelection | null }) => Promise<{ messages: LLMChatMessage[], separateSystemMessage: string | undefined }>
 	prepareFIMMessage(opts: { messages: LLMFIMMessage, }): { prefix: string, suffix: string, stopTokens: string[] }
-	generateSystemMessage(chatMode: ChatMode, specialToolFormat: 'openai-style' | 'anthropic-style' | 'gemini-style' | undefined, allowedToolNames?: string[]): Promise<string>
+	generateSystemMessage(chatMode: ChatMode, specialToolFormat: 'openai-style' | 'anthropic-style' | 'gemini-style' | undefined, allowedToolNames?: string[], providerName_?: string, modelName_?: string): Promise<string>
 }
 
 export const IConvertToLLMMessageService = createDecorator<IConvertToLLMMessageService>('ConvertToLLMMessageService');
@@ -848,7 +861,7 @@ class ConvertToLLMMessageService extends Disposable implements IConvertToLLMMess
 	}
 
 
-	public generateSystemMessage = async (chatMode: ChatMode, specialToolFormat: 'openai-style' | 'anthropic-style' | 'gemini-style' | undefined, allowedToolNames?: string[]) => {
+	public generateSystemMessage = async (chatMode: ChatMode, specialToolFormat: 'openai-style' | 'anthropic-style' | 'gemini-style' | undefined, allowedToolNames?: string[], providerName_?: string, modelName_?: string) => {
 		const workspaceFolders = this.workspaceContextService.getWorkspace().folders.map(f => f.uri.fsPath)
 
 		const openedURIs = this.modelService.getModels().filter(m => m.isAttachedToEditor()).map(m => m.uri.fsPath) || [];
@@ -883,7 +896,7 @@ class ConvertToLLMMessageService extends Disposable implements IConvertToLLMMess
 		})();
 
 		const persistentTerminalIDs = this.terminalToolService.listPersistentTerminalIds()
-		const systemMessage = chat_systemMessage({ workspaceFolders, openedURIs, directoryStr, activeURI, persistentTerminalIDs, chatMode, mcpTools: allMcpTools, includeXMLToolDefinitions, allowedToolNames, grcPosture: undefined })
+		const systemMessage = chat_systemMessage({ workspaceFolders, openedURIs, directoryStr, activeURI, persistentTerminalIDs, chatMode, mcpTools: allMcpTools, includeXMLToolDefinitions, allowedToolNames, grcPosture: undefined, providerName: providerName_, modelName: modelName_ })
 		return systemMessage
 	}
 
@@ -960,6 +973,7 @@ class ConvertToLLMMessageService extends Disposable implements IConvertToLLMMess
 			contextWindow,
 			reservedOutputTokenSpace,
 			providerName,
+			modelName,
 		})
 		return { messages, separateSystemMessage };
 	}
@@ -997,6 +1011,7 @@ class ConvertToLLMMessageService extends Disposable implements IConvertToLLMMess
 			contextWindow,
 			reservedOutputTokenSpace,
 			providerName,
+			modelName,
 		})
 		return { messages, separateSystemMessage };
 	}

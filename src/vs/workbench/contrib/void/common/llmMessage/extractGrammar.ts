@@ -9,6 +9,7 @@ import { availableTools, InternalToolInfo } from '../prompt/prompts.js'
 import { OnFinalMessage, OnText, RawToolCallObj, RawToolParamsObj } from '../sendLLMMessageTypes.js'
 import { ToolName, ToolParamName } from '../toolsServiceTypes.js'
 import { ChatMode } from '../voidSettingsTypes.js'
+import { extractToolCallsFromMarkdown } from '../ossModelEnhancement/markdownToToolExtractor.js'
 
 
 // =============== reasoning ===============
@@ -446,7 +447,16 @@ export const extractXMLToolsWrapper = (
 		// filter out any unresolved 'tool_call' placeholder names
 		const resolvedFinalToolCalls = latestToolCalls.filter(tc => tc.name !== 'tool_call' as any)
 
-		onFinalMessage({ ...params, fullText: latestFullText, toolCalls: (resolvedFinalToolCalls.length > 0 ? resolvedFinalToolCalls : undefined) || params.toolCalls })
+		// Layer 2: If XML parsing yielded no tool calls, try markdown extraction as fallback
+		let finalToolCalls = resolvedFinalToolCalls;
+		if (finalToolCalls.length === 0 && latestFullText.length > 30) {
+			const mdResult = extractToolCallsFromMarkdown(latestFullText);
+			if (mdResult && mdResult.extractedToolCalls.length > 0) {
+				finalToolCalls = mdResult.extractedToolCalls;
+			}
+		}
+
+		onFinalMessage({ ...params, fullText: latestFullText, toolCalls: (finalToolCalls.length > 0 ? finalToolCalls : undefined) || params.toolCalls })
 	}
 	return { newOnText, newOnFinalMessage };
 }
