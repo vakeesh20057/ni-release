@@ -599,6 +599,7 @@ function readCookie(name: string): string | undefined {
 		throw new Error('Missing web configuration element');
 	}
 	const config: IWorkbenchConstructionOptions & { folderUri?: UriComponents; workspaceUri?: UriComponents; callbackRoute: string } = JSON.parse(configElementAttribute);
+	if (config.niAgentToken) { (mainWindow as any).NI_AGENT_TOKEN = config.niAgentToken; }
 	const secretStorageKeyPath = readCookie('vscode-secret-key-path');
 	const secretStorageCrypto = secretStorageKeyPath && ServerKeyedAESCrypto.supported()
 		? new ServerKeyedAESCrypto(secretStorageKeyPath) : new TransparentCrypto();

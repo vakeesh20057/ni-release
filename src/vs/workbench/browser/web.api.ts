@@ -156,6 +156,9 @@ export interface IWorkbenchConstructionOptions {
 	 */
 	readonly remoteAuthority?: string;
 
+	/** Neural Inverse: workspace agent token injected by the server for free-models auth */
+	readonly niAgentToken?: string;
+
 	/**
 	 * The server base path is the path where the workbench is served from.
 	 * The path must be absolute (start with a slash).

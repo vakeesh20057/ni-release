@@ -47,6 +47,9 @@ export class BrowserWorkbenchEnvironmentService implements IBrowserWorkbenchEnvi
 	get remoteAuthority(): string | undefined { return this.options.remoteAuthority; }
 
 	@memoize
+	get niAgentToken(): string | undefined { return this.options.niAgentToken; }
+
+	@memoize
 	get expectsResolverExtension(): boolean {
 		return !!this.options.remoteAuthority?.includes('+') && !this.options.webSocketFactory;
 	}
