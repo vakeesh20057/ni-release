@@ -56,6 +56,7 @@ const dirs = [
 	'.vscode/extensions/vscode-selfhost-test-provider',
 	'extensions/open-remote-ssh', // Void added this
 	'extensions/open-remote-wsl', // Void added this
+	'extensions/neuralinverse-cloud',
 
 ];
 

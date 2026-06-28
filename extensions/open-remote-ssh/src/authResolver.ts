@@ -238,7 +238,7 @@ export class RemoteSSHResolver implements vscode.RemoteAuthorityResolver, vscode
 					}
 				});
 
-				const resolvedResult: vscode.ResolverResult = new vscode.ResolvedAuthority('127.0.0.1', tunnelConfig.localPort, installResult.connectionToken);
+				const resolvedResult: vscode.ResolverResult = new vscode.ResolvedAuthority('127.0.0.1', tunnelConfig.localPort, installResult.connectionToken || undefined);
 				resolvedResult.extensionHostEnv = envVariables;
 				return resolvedResult;
 			} catch (e: unknown) {

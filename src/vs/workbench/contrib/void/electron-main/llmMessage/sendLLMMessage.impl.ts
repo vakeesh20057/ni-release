@@ -23,6 +23,26 @@ import { extractReasoningWrapper, extractXMLToolsWrapper } from './extractGramma
 import { availableTools, InternalToolInfo } from '../../common/prompt/prompts.js';
 import { generateUuid } from '../../../../../base/common/uuid.js';
 import { ToolName } from '../../common/toolsServiceTypes.js';
+import * as fs from 'fs';
+import * as path from 'path';
+import { homedir } from 'os';
+
+function getNiCloudSessionToken(): string | undefined {
+	// Read token written by neuralinverse.cloud extension on login
+	const possiblePaths = [
+		path.join(homedir(), 'Library', 'Application Support', 'code-oss-dev', 'User', 'globalStorage', 'neuralinverse.cloud', 'session_token'),
+		path.join(homedir(), 'Library', 'Application Support', 'NeuralInverse', 'User', 'globalStorage', 'neuralinverse.cloud', 'session_token'),
+		path.join(homedir(), '.config', 'NeuralInverse', 'User', 'globalStorage', 'neuralinverse.cloud', 'session_token'),
+		path.join(homedir(), '.config', 'code-oss-dev', 'User', 'globalStorage', 'neuralinverse.cloud', 'session_token'),
+	];
+	for (const p of possiblePaths) {
+		try {
+			const token = fs.readFileSync(p, 'utf8').trim();
+			if (token) return token;
+		} catch { /* not found, try next */ }
+	}
+	return undefined;
+}
 
 const getGoogleApiKey = async () => {
 	// module‑level singleton
@@ -45,6 +65,7 @@ type InternalCommonMessageParams = {
 	overridesOfModel: OverridesOfModel | undefined;
 	modelName: string;
 	_setAborter: (aborter: () => void) => void;
+	remoteAuthority?: string;
 }
 
 type SendChatParams_Internal = InternalCommonMessageParams & {
@@ -73,7 +94,7 @@ const parseHeadersJSON = (s: string | undefined): Record<string, string | null |
 	}
 }
 
-const newOpenAICompatibleSDK = async ({ settingsOfProvider, providerName, includeInPayload }: { settingsOfProvider: SettingsOfProvider, providerName: ProviderName, includeInPayload?: { [s: string]: any } }) => {
+const newOpenAICompatibleSDK = async ({ settingsOfProvider, providerName, includeInPayload, remoteAuthority }: { settingsOfProvider: SettingsOfProvider, providerName: ProviderName, includeInPayload?: { [s: string]: any }, remoteAuthority?: string }) => {
 	const commonPayloadOpts: ClientOptions = {
 		dangerouslyAllowBrowser: true,
 		...includeInPayload,
@@ -97,6 +118,15 @@ const newOpenAICompatibleSDK = async ({ settingsOfProvider, providerName, includ
 	else if (providerName === 'lmStudio') {
 		const thisConfig = settingsOfProvider[providerName]
 		return new OpenAI({ baseURL: `${thisConfig.endpoint}/v1`, apiKey: 'noop', ...commonPayloadOpts })
+	}
+	else if (providerName === 'niFreeModels') {
+		const thisConfig = settingsOfProvider[providerName]
+		if (!remoteAuthority || !remoteAuthority.includes('neuralinverse-vscode--')) {
+			throw new Error('Neural Inverse Free Models is only available when connected to a Neural Inverse cloud workspace.');
+		}
+		const cloudToken = getNiCloudSessionToken();
+		if (!cloudToken) throw new Error('Neural Inverse Free Models requires a cloud connection. Please log in via the Neural Inverse Cloud extension.');
+		return new OpenAI({ baseURL: `${thisConfig.endpoint}/v1`, apiKey: cloudToken, ...commonPayloadOpts })
 	}
 	else if (providerName === 'openRouter') {
 		const thisConfig = settingsOfProvider[providerName]
@@ -188,7 +218,7 @@ const newOpenAICompatibleSDK = async ({ settingsOfProvider, providerName, includ
 }
 
 
-const _sendOpenAICompatibleFIM = async ({ messages: { prefix, suffix, stopTokens }, onFinalMessage, onError, settingsOfProvider, modelName: modelName_, _setAborter, providerName, overridesOfModel }: SendFIMParams_Internal) => {
+const _sendOpenAICompatibleFIM = async ({ messages: { prefix, suffix, stopTokens }, onFinalMessage, onError, settingsOfProvider, modelName: modelName_, _setAborter, providerName, overridesOfModel, remoteAuthority }: SendFIMParams_Internal) => {
 
 	const {
 		modelName,
@@ -204,7 +234,7 @@ const _sendOpenAICompatibleFIM = async ({ messages: { prefix, suffix, stopTokens
 		return
 	}
 
-	const openai = await newOpenAICompatibleSDK({ providerName, settingsOfProvider, includeInPayload: additionalOpenAIPayload })
+	const openai = await newOpenAICompatibleSDK({ providerName, settingsOfProvider, includeInPayload: additionalOpenAIPayload, remoteAuthority })
 	openai.completions
 		.create({
 			model: modelName,
@@ -291,7 +321,7 @@ const rawToolCallObjOfAnthropicParams = (toolBlock: Anthropic.Messages.ToolUseBl
 // ------------ OPENAI-COMPATIBLE ------------
 
 
-const _sendOpenAICompatibleChat = async ({ messages, onText, onFinalMessage, onError, settingsOfProvider, modelSelectionOptions, modelName: modelName_, _setAborter, providerName, chatMode, separateSystemMessage, overridesOfModel, mcpTools, allowedToolNames }: SendChatParams_Internal) => {
+const _sendOpenAICompatibleChat = async ({ messages, onText, onFinalMessage, onError, settingsOfProvider, modelSelectionOptions, modelName: modelName_, _setAborter, providerName, chatMode, separateSystemMessage, overridesOfModel, mcpTools, allowedToolNames, remoteAuthority }: SendChatParams_Internal) => {
 	const {
 		modelName,
 		specialToolFormat,
@@ -317,7 +347,7 @@ const _sendOpenAICompatibleChat = async ({ messages, onText, onFinalMessage, onE
 		: {}
 
 	// instance
-	const openai: OpenAI = await newOpenAICompatibleSDK({ providerName, settingsOfProvider, includeInPayload })
+	const openai: OpenAI = await newOpenAICompatibleSDK({ providerName, settingsOfProvider, includeInPayload, remoteAuthority })
 	if (providerName === 'microsoftAzure') {
 		// Required to select the model
 		(openai as AzureOpenAI).deploymentName = modelName;

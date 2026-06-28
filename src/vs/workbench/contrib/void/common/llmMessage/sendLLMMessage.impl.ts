@@ -110,7 +110,9 @@ const newOpenAICompatibleSDK = async ({ settingsOfProvider, providerName, includ
 	}
 	else if (providerName === 'niFreeModels') {
 		const thisConfig = settingsOfProvider[providerName]
-		return new (_OpenAI())({ baseURL: `${thisConfig.endpoint}/v1`, apiKey: 'noop', ...commonPayloadOpts })
+		const agentToken = typeof process !== 'undefined' ? process.env?.NEURALINVERSE_AGENT_TOKEN : undefined;
+		if (!agentToken) throw new Error('Neural Inverse Free Models is only available inside a Neural Inverse cloud workspace.');
+		return new (_OpenAI())({ baseURL: `${thisConfig.endpoint}/v1`, apiKey: agentToken, ...commonPayloadOpts })
 	}
 	else if (providerName === 'openRouter') {
 		const thisConfig = settingsOfProvider[providerName]

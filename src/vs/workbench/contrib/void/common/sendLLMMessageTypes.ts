@@ -144,6 +144,7 @@ export type SendLLMMessageParams = {
 
 	settingsOfProvider: SettingsOfProvider;
 	mcpTools: InternalToolInfo[] | undefined;
+	remoteAuthority?: string;
 } & SendLLMType
 
 

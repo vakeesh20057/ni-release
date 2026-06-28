@@ -4,6 +4,7 @@
  *--------------------------------------------------------------------------------------------*/
 
 import { URI } from '../../../../base/common/uri.js';
+import { Schemas } from '../../../../base/common/network.js';
 import { Event, Emitter } from '../../../../base/common/event.js';
 import { ResourceMap } from '../../../../base/common/map.js';
 import { equals } from '../../../../base/common/objects.js';
@@ -962,20 +963,25 @@ export class WorkspaceService extends Disposable implements IWorkbenchConfigurat
 		return Promise.all([...folders.map(async folder => {
 			let folderConfiguration = this.cachedFolderConfigs.get(folder.uri);
 			if (!folderConfiguration) {
-				const oldConfigFolder = this.uriIdentityService.extUri.joinPath(folder.uri, '.vscode');
-				const newConfigFolder = this.uriIdentityService.extUri.joinPath(folder.uri, FOLDER_CONFIG_FOLDER_NAME);
+				// Only migrate .vscode → config folder for local filesystems.
+				// Remote URIs would deadlock: fileService.exists() needs the remote
+				// connection which isn't established until after extensions activate.
+				if (folder.uri.scheme === Schemas.file) {
+					const oldConfigFolder = this.uriIdentityService.extUri.joinPath(folder.uri, '.vscode');
+					const newConfigFolder = this.uriIdentityService.extUri.joinPath(folder.uri, FOLDER_CONFIG_FOLDER_NAME);
 
-				try {
-					const [oldExists, newExists] = await Promise.all([
-						this.fileService.exists(oldConfigFolder),
-						this.fileService.exists(newConfigFolder)
-					]);
+					try {
+						const [oldExists, newExists] = await Promise.all([
+							this.fileService.exists(oldConfigFolder),
+							this.fileService.exists(newConfigFolder)
+						]);
 
-					if (oldExists && !newExists) {
-						await this.fileService.move(oldConfigFolder, newConfigFolder, false);
+						if (oldExists && !newExists) {
+							await this.fileService.move(oldConfigFolder, newConfigFolder, false);
+						}
+					} catch (error) {
+						this.logService.error(`Error migrating configuration folder for workspace ${folder.uri.toString()}:`, error);
 					}
-				} catch (error) {
-					this.logService.error(`Error migrating configuration folder for workspace ${folder.uri.toString()}:`, error);
 				}
 
 				folderConfiguration = new FolderConfiguration(!this.initialized, folder, FOLDER_CONFIG_FOLDER_NAME, this.getWorkbenchState(), this.isWorkspaceTrusted, this.fileService, this.uriIdentityService, this.logService, this.configurationCache);

@@ -31,9 +31,13 @@ export async function getVSCodeServerConfig(): Promise<IServerConfig> {
 
 	const customServerBinaryName = vscode.workspace.getConfiguration('remote.SSH.experimental').get<string>('serverBinaryName', '');
 
+	// In dev mode, product.json may lack a commit hash. Use a stable dev identifier
+	// so the install script has a valid directory path.
+	const commit = productJson.commit || 'dev';
+
 	return {
 		version: vscode.version.replace('-insider', ''),
-		commit: productJson.commit,
+		commit,
 		quality: productJson.quality,
 		release: productJson.release,
 		serverApplicationName: customServerBinaryName || productJson.serverApplicationName,

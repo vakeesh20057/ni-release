@@ -14,6 +14,7 @@ import { Event } from '../../../../base/common/event.js';
 import { Disposable } from '../../../../base/common/lifecycle.js';
 import { IVoidSettingsService } from './voidSettingsService.js';
 import { IMCPService } from './mcpService.js';
+import { IWorkbenchEnvironmentService } from '../../../../workbench/services/environment/common/environmentService.js';
 
 
 // calls channel to implement features
@@ -64,6 +65,7 @@ export class LLMMessageService extends Disposable implements ILLMMessageService 
 		@IVoidSettingsService private readonly voidSettingsService: IVoidSettingsService,
 		// @INotificationService private readonly notificationService: INotificationService,
 		@IMCPService private readonly mcpService: IMCPService,
+		@IWorkbenchEnvironmentService private readonly environmentService: IWorkbenchEnvironmentService,
 	) {
 		super()
 
@@ -143,6 +145,7 @@ export class LLMMessageService extends Disposable implements ILLMMessageService 
 				settingsOfProvider,
 				modelSelection,
 				mcpTools,
+				remoteAuthority: this.environmentService.remoteAuthority,
 			} satisfies MainSendLLMMessageParams);
 		};
 		runAsync();

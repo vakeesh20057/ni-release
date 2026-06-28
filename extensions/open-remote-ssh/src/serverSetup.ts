@@ -24,7 +24,7 @@ export interface ServerInstallOptions {
 export interface ServerInstallResult {
 	exitCode: number;
 	listeningOn: number | string;
-	connectionToken: string;
+	connectionToken: string | undefined;
 	logFile: string;
 	osReleaseId: string;
 	arch: string;
@@ -42,6 +42,37 @@ export class ServerInstallError extends Error {
 const DEFAULT_DOWNLOAD_URL_TEMPLATE = 'https://github.com/voideditor/binaries/releases/download/${version}/void-reh-${os}-${arch}-${version}.tar.gz';
 
 export async function installCodeServer(conn: SSHConnection, serverDownloadUrlTemplate: string | undefined, extensionIds: string[], envVariables: string[], platform: string | undefined, useSocketPath: boolean, logger: Log): Promise<ServerInstallResult> {
+	// Check if a server is already running on the remote (e.g. cloud workspace with pre-installed IDE server)
+	try {
+		const preCheck = await conn.exec('ps -o args -A 2>/dev/null | grep "server-main.js" | grep -v grep | head -1');
+		if (preCheck.stdout && preCheck.stdout.includes('server-main.js')) {
+			logger.info('Detected pre-installed server on remote');
+			// Extract port from --port=XXXX or --port XXXX
+			const portMatch = preCheck.stdout.match(/--port[= ](\d+)/);
+			const port = portMatch ? parseInt(portMatch[1], 10) : 13337;
+			const hasNoToken = preCheck.stdout.includes('--without-connection-token');
+
+			// Verify the server is responding
+			const verify = await conn.exec(`curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:${port}/version 2>/dev/null || echo "0"`);
+			const httpCode = verify.stdout.trim();
+			if (httpCode === '200' || httpCode === '301' || httpCode === '302') {
+				logger.info(`Pre-installed server responding on port ${port}`);
+				return {
+					exitCode: 0,
+					listeningOn: port,
+					connectionToken: hasNoToken ? undefined : undefined,
+					logFile: '',
+					osReleaseId: '',
+					arch: '',
+					platform: 'linux',
+					tmpDir: '/tmp',
+				};
+			}
+		}
+	} catch {
+		// Fall through to normal install
+	}
+
 	let shell = 'powershell';
 
 	// detect platform and shell for windows
