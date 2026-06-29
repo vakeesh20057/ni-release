@@ -77,10 +77,21 @@ if (-not $SkipVSBuildTools) {
         }
     }
     if (-not $hasVS) {
-        Write-Step "Installing Visual Studio Build Tools 2022 with C++ workload (~2GB, ~10 mins)..."
+        Write-Step "Downloading Visual Studio Build Tools 2022 (~2GB)..."
+        Write-Host "  This will take ~10 mins. Please wait..." -ForegroundColor Yellow
         $vsBuildTools = "$env:TEMP\vs_buildtools.exe"
+        $ProgressPreference = 'SilentlyContinue'
         Invoke-WebRequest -Uri "https://aka.ms/vs/17/release/vs_buildtools.exe" -OutFile $vsBuildTools
-        Start-Process $vsBuildTools -ArgumentList "--quiet --wait --norestart --nocache --add Microsoft.VisualStudio.Workload.VCTools --includeRecommended" -Wait
+        $ProgressPreference = 'Continue'
+        Write-OK "Downloaded. Now installing C++ workload..."
+        Write-Host "  Still ~5-8 mins remaining..." -ForegroundColor Yellow
+        $vsProc = Start-Process $vsBuildTools -ArgumentList "--quiet --wait --norestart --nocache --add Microsoft.VisualStudio.Workload.VCTools --includeRecommended" -PassThru
+        $dots = 0
+        while (-not $vsProc.HasExited) {
+            Start-Sleep -Seconds 10
+            $dots++
+            Write-Host "  Installing... ($($dots * 10)s elapsed)" -ForegroundColor DarkYellow
+        }
         Write-OK "Visual Studio Build Tools installed"
     }
 }
