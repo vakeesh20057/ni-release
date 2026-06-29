@@ -32,17 +32,15 @@ if (-not $isAdmin) {
 # Node.js 20 LTS
 if (-not $SkipNode) {
     Write-Step "Checking Node.js..."
-    try {
-        $nodeVer = & node --version 2>$null
-        if ($nodeVer -match "v20\." -or $nodeVer -match "v22\.") {
-            Write-OK "Node.js already installed: $nodeVer"
-        } else {
-            throw "wrong version"
-        }
-    } catch {
+    $nodeVer = & node --version 2>$null
+    if ($nodeVer) {
+        Write-OK "Node.js already installed: $nodeVer"
+    } else {
         Write-Step "Installing Node.js 20 LTS..."
         $nodeMsi = "$env:TEMP\node-v20.19.0-x64.msi"
+        $ProgressPreference = 'SilentlyContinue'
         Invoke-WebRequest -Uri "https://nodejs.org/dist/v20.19.0/node-v20.19.0-x64.msi" -OutFile $nodeMsi
+        $ProgressPreference = 'Continue'
         Start-Process msiexec.exe -ArgumentList "/i `"$nodeMsi`" /qn" -Wait
         $env:PATH = "C:\Program Files\nodejs;" + $env:PATH
         Write-OK "Node.js 20 installed"
@@ -79,7 +77,7 @@ if (-not $SkipVSBuildTools) {
     if (-not $hasVS) {
         Write-Step "Downloading Visual Studio Build Tools 2022 (~2GB)..."
         Write-Host "  This will take ~10 mins. Please wait..." -ForegroundColor Yellow
-        $vsBuildTools = "$env:TEMP\vs_buildtools.exe"
+        $vsBuildTools = "$env:TEMP\vs_buildtools_$(Get-Random).exe"
         $ProgressPreference = 'SilentlyContinue'
         Invoke-WebRequest -Uri "https://aka.ms/vs/17/release/vs_buildtools.exe" -OutFile $vsBuildTools
         $ProgressPreference = 'Continue'
