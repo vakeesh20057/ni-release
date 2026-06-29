@@ -71,6 +71,13 @@ if (-not $SkipVSBuildTools) {
         if ($vsInstalls.Count -gt 0) {
             $hasVS = $true
             Write-OK "Visual Studio Build Tools already installed: $($vsInstalls[0].displayName)"
+            # Ensure Spectre-mitigated libs are present (required by @vscode/deviceid)
+            Write-Step "Ensuring Spectre-mitigated libraries are installed..."
+            $vsInstaller = Join-Path (Split-Path $vsWhere) "vs_installer.exe"
+            if (Test-Path $vsInstaller) {
+                Start-Process $vsInstaller -ArgumentList "modify --installPath `"$($vsInstalls[0].installationPath)`" --quiet --norestart --add Microsoft.VisualStudio.Component.VC.Runtimes.x86.x64.Spectre" -Wait
+                Write-OK "Spectre libraries ensured"
+            }
         }
     }
     if (-not $hasVS) {
@@ -82,7 +89,7 @@ if (-not $SkipVSBuildTools) {
         $ProgressPreference = 'Continue'
         Write-OK "Downloaded. Now installing C++ workload..."
         Write-Host "  Still ~5-8 mins remaining..." -ForegroundColor Yellow
-        $vsProc = Start-Process $vsBuildTools -ArgumentList "--quiet --wait --norestart --nocache --add Microsoft.VisualStudio.Workload.VCTools --includeRecommended" -PassThru
+        $vsProc = Start-Process $vsBuildTools -ArgumentList "--quiet --wait --norestart --nocache --add Microsoft.VisualStudio.Workload.VCTools --includeRecommended --add Microsoft.VisualStudio.Component.VC.Runtimes.x86.x64.Spectre" -PassThru
         $dots = 0
         while (-not $vsProc.HasExited) {
             Start-Sleep -Seconds 10
