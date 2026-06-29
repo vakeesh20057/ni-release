@@ -195,12 +195,21 @@ for (let dir of dirs) {
 }
 
 // @vscode/gulp-electron has nested node_modules with ESM-only versions of
-// @electron/get, got, and @octokit/rest. Delete them so Node's module resolution
-// walks up to the root node_modules where CJS-compatible versions are pinned.
-const gulpElectronNested = path.join(root, 'node_modules', '@vscode', 'gulp-electron', 'node_modules');
-if (fs.existsSync(gulpElectronNested)) {
-	fs.rmSync(gulpElectronNested, { recursive: true, force: true });
-	log('postinstall', 'Removed @vscode/gulp-electron/node_modules (ESM-only nested deps, using root CJS versions)');
+// @electron/get, got, and @octokit/rest. Delete them and reinstall CJS-compatible
+// versions directly into gulp-electron so require() resolves correctly.
+const gulpElectronDir = path.join(root, 'node_modules', '@vscode', 'gulp-electron');
+const gulpElectronNested = path.join(gulpElectronDir, 'node_modules');
+if (fs.existsSync(gulpElectronDir)) {
+	if (fs.existsSync(gulpElectronNested)) {
+		fs.rmSync(gulpElectronNested, { recursive: true, force: true });
+	}
+	log('postinstall', 'Installing CJS-compatible deps into @vscode/gulp-electron...');
+	cp.execSync(`${npm} install --no-save @electron/get@1.14.1 got@11.8.6 @octokit/rest@18.12.0`, {
+		cwd: gulpElectronDir,
+		stdio: 'inherit',
+		shell: true,
+	});
+	log('postinstall', 'Done patching @vscode/gulp-electron');
 }
 
 cp.execSync('git config pull.rebase merges');
