@@ -112,6 +112,13 @@ if (Get-Command python -ErrorAction SilentlyContinue) {
     Write-OK "Python 3.11 installed"
 }
 
+# Ensure npm global dir exists (node-pty post-install needs it)
+$npmGlobal = "$env:APPDATA\npm"
+if (-not (Test-Path $npmGlobal)) {
+    New-Item -ItemType Directory -Path $npmGlobal -Force | Out-Null
+    Write-OK "Created npm global directory: $npmGlobal"
+}
+
 Write-Host "`n================================================" -ForegroundColor Green
 Write-Host " All dependencies installed!" -ForegroundColor Green
 Write-Host " Please RESTART your terminal, then run:" -ForegroundColor Green
