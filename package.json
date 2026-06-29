@@ -265,7 +265,8 @@
 			"node-addon-api": "7.1.0"
 		},
 		"@octokit/rest": "18.12.0",
-		"@electron/get": "1.14.1"
+		"@electron/get": "1.14.1",
+		"got": "11.8.6"
 	},
 	"repository": {
 		"type": "git",

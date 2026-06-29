@@ -194,17 +194,23 @@ for (let dir of dirs) {
 	npmInstall(dir, opts);
 }
 
-// @vscode/gulp-electron pulls in ESM-only got and @electron/get (v2+).
-// Force-install CJS-compatible versions directly into its node_modules.
-const gulpElectronDir = path.join(root, 'node_modules', '@vscode', 'gulp-electron');
-if (fs.existsSync(gulpElectronDir)) {
-	log('postinstall', 'Pinning @vscode/gulp-electron deps to CJS-compatible versions...');
-	cp.execSync(`${npm} install --no-save @electron/get@1.14.1 got@11.8.6`, {
-		cwd: gulpElectronDir,
-		stdio: 'inherit',
-		shell: true,
-	});
-	log('postinstall', 'Done patching @vscode/gulp-electron');
+// @vscode/gulp-electron/src/download.js requires @electron/get, got, and @octokit/rest.
+// Its nested node_modules has ESM-only versions of these. Patch download.js to use
+// absolute paths to the root-level CJS-compatible pinned versions instead.
+const downloadJs = path.join(root, 'node_modules', '@vscode', 'gulp-electron', 'src', 'download.js');
+if (fs.existsSync(downloadJs)) {
+	let src = fs.readFileSync(downloadJs, 'utf8');
+	const electronGetPath = path.join(root, 'node_modules', '@electron', 'get').replace(/\\/g, '/');
+	const octokitPath = path.join(root, 'node_modules', '@octokit', 'rest').replace(/\\/g, '/');
+	const gotPath = path.join(root, 'node_modules', 'got').replace(/\\/g, '/');
+	const patched = src
+		.replace(/require\("@electron\/get"\)/, `require("${electronGetPath}")`)
+		.replace(/require\("@octokit\/rest"\)/, `require("${octokitPath}")`)
+		.replace(/require\("got"\)/, `require("${gotPath}")`);
+	if (patched !== src) {
+		fs.writeFileSync(downloadJs, patched, 'utf8');
+		log('postinstall', 'Patched @vscode/gulp-electron/src/download.js to use root CJS packages');
+	}
 }
 
 cp.execSync('git config pull.rebase merges');
