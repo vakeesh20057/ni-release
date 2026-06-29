@@ -48,7 +48,7 @@ const getGoogleApiKey = async () => {
 	// module‑level singleton
 	const auth = new GoogleAuth({ scopes: `https://www.googleapis.com/auth/cloud-platform` });
 	const key = await auth.getAccessToken()
-	if (!key) throw new Error(`Google API failed to generate a key.`)
+	if (!key) throw new Error(`Google API failed to generate a key.\n\nHelp: https://neuralinverse.com/docs/troubleshooting/google-api-key-failed`)
 	return key
 }
 
@@ -79,7 +79,7 @@ type SendFIMParams_Internal = InternalCommonMessageParams & { messages: LLMFIMMe
 export type ListParams_Internal<ModelResponse> = ModelListParams<ModelResponse>
 
 
-const invalidApiKeyMessage = (providerName: ProviderName) => `Invalid ${displayInfoOfProviderName(providerName).title} API key.`
+const invalidApiKeyMessage = (providerName: ProviderName) => `Invalid ${displayInfoOfProviderName(providerName).title} API key.\n\nHelp: https://neuralinverse.com/docs/troubleshooting/invalid-api-key`
 
 // ------------ OPENAI-COMPATIBLE (HELPERS) ------------
 
@@ -90,7 +90,7 @@ const parseHeadersJSON = (s: string | undefined): Record<string, string | null |
 	try {
 		return JSON.parse(s)
 	} catch (e) {
-		throw new Error(`Error parsing OpenAI-Compatible headers: ${s} is not a valid JSON.`)
+		throw new Error(`Error parsing OpenAI-Compatible headers: ${s} is not a valid JSON.\n\nHelp: https://neuralinverse.com/docs/troubleshooting/custom-headers-invalid`)
 	}
 }
 
@@ -122,10 +122,10 @@ const newOpenAICompatibleSDK = async ({ settingsOfProvider, providerName, includ
 	else if (providerName === 'niFreeModels') {
 		const thisConfig = settingsOfProvider[providerName]
 		if (!remoteAuthority || !remoteAuthority.includes('neuralinverse-vscode--')) {
-			throw new Error('Neural Inverse Free Models is only available when connected to a Neural Inverse cloud workspace.');
+			throw new Error('Neural Inverse Free Models requires a Neural Inverse Cloud workspace.\n\n• Sign up free: https://cloud.neuralinverse.com\n• Already have an account? Connect via Remote Explorer → Neural Inverse Cloud\n• Docs: https://neuralinverse.com/docs/cloud/free-models');
 		}
 		const cloudToken = getNiCloudSessionToken();
-		if (!cloudToken) throw new Error('Neural Inverse Free Models requires a cloud connection. Please log in via the Neural Inverse Cloud extension.');
+		if (!cloudToken) throw new Error('Neural Inverse Free Models requires an active cloud session.\n\nPlease sign in: https://cloud.neuralinverse.com');
 		return new OpenAI({ baseURL: `${thisConfig.endpoint}/v1`, apiKey: cloudToken, ...commonPayloadOpts })
 	}
 	else if (providerName === 'openRouter') {
@@ -214,7 +214,7 @@ const newOpenAICompatibleSDK = async ({ settingsOfProvider, providerName, includ
 		return new OpenAI({ baseURL: 'https://api.cerebras.ai/v1', apiKey: thisConfig.apiKey, ...commonPayloadOpts })
 	}
 
-	else throw new Error(`Neural Inverse providerName was invalid: ${providerName}.`)
+	else throw new Error(`Neural Inverse providerName was invalid: ${providerName}.\n\nHelp: https://neuralinverse.com/docs/troubleshooting/provider-not-available`)
 }
 
 
@@ -435,7 +435,7 @@ const _sendOpenAICompatibleChat = async ({ messages, onText, onFinalMessage, onE
 					if (attemptNum < MAX_EMPTY_RETRIES) {
 						setTimeout(() => attemptStream(attemptNum + 1), 800 * (attemptNum + 1))
 					} else {
-						onError({ message: 'Neural Inverse: Response from model was empty.', fullError: null })
+						onError({ message: 'Neural Inverse: Response from model was empty.\n\nHelp: https://neuralinverse.com/docs/troubleshooting/empty-response', fullError: null })
 					}
 				}
 				else {
@@ -691,7 +691,7 @@ const sendMistralFIM = ({ messages, onFinalMessage, onError, settingsOfProvider,
 // ------------ OLLAMA ------------
 const newOllamaSDK = ({ endpoint }: { endpoint: string }) => {
 	// if endpoint is empty, normally ollama will send to 11434, but we want it to fail - the user should type it in
-	if (!endpoint) throw new Error(`Ollama Endpoint was empty (please enter ${defaultProviderSettings.ollama.endpoint} in Neural Inverse if you want the default url).`)
+	if (!endpoint) throw new Error(`Ollama Endpoint was empty (please enter ${defaultProviderSettings.ollama.endpoint} in Neural Inverse if you want the default url).\n\nHelp: https://neuralinverse.com/docs/troubleshooting/ollama-endpoint-empty`)
 	const ollama = new Ollama({ host: endpoint })
 	return ollama
 }
@@ -896,7 +896,7 @@ const sendGeminiChat = async ({
 
 			// on final
 			if (!fullTextSoFar && !fullReasoningSoFar && toolCallsBuffer.length === 0) {
-				onError({ message: 'Neural Inverse: Response from model was empty.', fullError: null })
+				onError({ message: 'Neural Inverse: Response from model was empty.\n\nHelp: https://neuralinverse.com/docs/troubleshooting/empty-response', fullError: null })
 			} else {
 				toolCallsBuffer = toolCallsBuffer.map(t => ({ ...t, id: t.id || generateUuid() })) // ids are empty, but other providers might expect an id
 				const toolCalls = toolCallsBuffer.map(t => rawToolCallObjOfParamsStr(t.name, t.args, t.id)).filter(Boolean) as RawToolCallObj[]
@@ -912,7 +912,7 @@ const sendGeminiChat = async ({
 					onError({ message: invalidApiKeyMessage(providerName), fullError: error });
 				}
 				else if (error?.message?.includes('429')) {
-					onError({ message: 'Rate limit reached. ' + error, fullError: error });
+					onError({ message: 'Rate limit reached. ' + error + '\n\nHelp: https://neuralinverse.com/docs/troubleshooting/rate-limited', fullError: error });
 				}
 				else
 					onError({ message: error + '', fullError: error });

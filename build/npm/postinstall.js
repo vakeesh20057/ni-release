@@ -185,6 +185,12 @@ for (let dir of dirs) {
 		continue;
 	}
 
+	// Skip neuralinverse-cloud in Docker/CI builds where its native deps aren't needed
+	if (dir === 'extensions/neuralinverse-cloud' && (process.env['CI'] || process.env['DOCKER_BUILD'])) {
+		log(dir, 'Skipping in CI/Docker build');
+		continue;
+	}
+
 	npmInstall(dir, opts);
 }
 

@@ -79,7 +79,7 @@ export const sendLLMMessage = async ({
 
 		// handle failed to fetch errors, which give 0 information by design
 		if (errorMessage === 'TypeError: fetch failed')
-			errorMessage = `Failed to fetch from ${displayInfoOfProviderName(providerName).title}. This likely means you specified the wrong endpoint in Neural Inverse LLM Settings, or your local model provider like Ollama is powered off.`
+			errorMessage = `Failed to fetch from ${displayInfoOfProviderName(providerName).title}. This likely means you specified the wrong endpoint in Neural Inverse LLM Settings, or your local model provider like Ollama is powered off.\n\nHelp: https://neuralinverse.com/docs/troubleshooting/connection-failed`
 
 		captureLLMEvent('LLM Error', { error: errorMessage })
 		onError_({ message: errorMessage, fullError })
@@ -99,7 +99,7 @@ export const sendLLMMessage = async ({
 	try {
 		const implementation = sendLLMMessageToProviderImplementation[providerName]
 		if (!implementation) {
-			onError({ message: `Error: Provider "${providerName}" not recognized.`, fullError: null })
+			onError({ message: `Error: Provider "${providerName}" not recognized.\n\nHelp: https://neuralinverse.com/docs/troubleshooting/provider-not-available`, fullError: null })
 			return
 		}
 		const { sendFIM, sendChat } = implementation
@@ -112,7 +112,7 @@ export const sendLLMMessage = async ({
 				await sendFIM({ messages: messages_, onText, onFinalMessage, onError, settingsOfProvider, modelSelectionOptions, overridesOfModel, modelName, _setAborter, providerName, separateSystemMessage, remoteAuthority })
 				return
 			}
-			onError({ message: `Error running Autocomplete with ${providerName} - ${modelName}.`, fullError: null })
+			onError({ message: `Error running Autocomplete with ${providerName} - ${modelName}.\n\nHelp: https://neuralinverse.com/docs/troubleshooting/autocomplete-error`, fullError: null })
 			return
 		}
 		onError({ message: `Error: Message type "${messagesType}" not recognized.`, fullError: null })
