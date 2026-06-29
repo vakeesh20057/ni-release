@@ -168,7 +168,7 @@
 		"@types/yauzl": "^2.10.0",
 		"@types/yazl": "^2.4.2",
 		"@typescript-eslint/utils": "^8.8.0",
-		"@vscode/gulp-electron": "^1.41.4",
+		"@vscode/gulp-electron": "1.36.0",
 		"@vscode/l10n-dev": "0.0.35",
 		"@vscode/telemetry-extractor": "^1.10.2",
 		"@vscode/test-cli": "^0.0.6",
@@ -263,10 +263,7 @@
 		"node-gyp-build": "4.8.1",
 		"kerberos@2.1.1": {
 			"node-addon-api": "7.1.0"
-		},
-		"@octokit/rest": "18.12.0",
-		"@electron/get": "1.14.1",
-		"got": "11.8.6"
+		}
 	},
 	"repository": {
 		"type": "git",
