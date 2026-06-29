@@ -32,9 +32,9 @@ if (-not $isAdmin) {
 # Node.js 20 LTS
 if (-not $SkipNode) {
     Write-Step "Checking Node.js..."
-    $nodeVer = & node --version 2>$null
-    if ($nodeVer) {
-        Write-OK "Node.js already installed: $nodeVer"
+    $nodeExists = Get-Command node -ErrorAction SilentlyContinue
+    if ($nodeExists) {
+        Write-OK "Node.js already installed: $(node --version)"
     } else {
         Write-Step "Installing Node.js 20 LTS..."
         $nodeMsi = "$env:TEMP\node-v20.19.0-x64.msi"
@@ -50,10 +50,9 @@ if (-not $SkipNode) {
 # Git
 if (-not $SkipGit) {
     Write-Step "Checking Git..."
-    try {
-        $gitVer = & git --version 2>$null
-        Write-OK "Git already installed: $gitVer"
-    } catch {
+    if (Get-Command git -ErrorAction SilentlyContinue) {
+        Write-OK "Git already installed: $(git --version)"
+    } else {
         Write-Step "Installing Git..."
         $gitExe = "$env:TEMP\git-setup.exe"
         Invoke-WebRequest -Uri "https://github.com/git-for-windows/git/releases/download/v2.47.0.windows.2/Git-2.47.0.2-64-bit.exe" -OutFile $gitExe
@@ -96,10 +95,9 @@ if (-not $SkipVSBuildTools) {
 
 # Python (required by node-gyp)
 Write-Step "Checking Python..."
-try {
-    $pyVer = & python --version 2>$null
-    Write-OK "Python already installed: $pyVer"
-} catch {
+if (Get-Command python -ErrorAction SilentlyContinue) {
+    Write-OK "Python already installed: $(python --version)"
+} else {
     Write-Step "Installing Python 3.11..."
     $pyExe = "$env:TEMP\python-3.11.9-amd64.exe"
     Invoke-WebRequest -Uri "https://www.python.org/ftp/python/3.11.9/python-3.11.9-amd64.exe" -OutFile $pyExe
