@@ -194,5 +194,13 @@ for (let dir of dirs) {
 	npmInstall(dir, opts);
 }
 
+// Patch @vscode/gulp-electron's nested got to a CJS-compatible version (got v12+ is ESM-only)
+const gulpElectronGot = path.join(root, 'node_modules', '@vscode', 'gulp-electron', 'node_modules', 'got');
+if (fs.existsSync(gulpElectronGot)) {
+	log('postinstall', 'Patching @vscode/gulp-electron nested got to CJS-compatible version...');
+	cp.execSync(`${npm} install got@11.8.6`, { cwd: path.join(root, 'node_modules', '@vscode', 'gulp-electron'), stdio: 'inherit' });
+	log('postinstall', 'Patched @vscode/gulp-electron/got -> 11.8.6');
+}
+
 cp.execSync('git config pull.rebase merges');
 cp.execSync('git config blame.ignoreRevsFile .git-blame-ignore-revs');
