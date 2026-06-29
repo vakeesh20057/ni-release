@@ -194,12 +194,14 @@ for (let dir of dirs) {
 	npmInstall(dir, opts);
 }
 
-// Patch @vscode/gulp-electron's nested got to a CJS-compatible version (got v12+ is ESM-only)
-const gulpElectronGot = path.join(root, 'node_modules', '@vscode', 'gulp-electron', 'node_modules', 'got');
-if (fs.existsSync(gulpElectronGot)) {
-	log('postinstall', 'Patching @vscode/gulp-electron nested got to CJS-compatible version...');
-	cp.execSync(`${npm} install got@11.8.6`, { cwd: path.join(root, 'node_modules', '@vscode', 'gulp-electron'), stdio: 'inherit' });
-	log('postinstall', 'Patched @vscode/gulp-electron/got -> 11.8.6');
+// Remove nested ESM-only packages inside @vscode/gulp-electron so they
+// fall through to the root-level CJS-compatible pinned versions instead.
+for (const nested of ['got', path.join('@electron', 'get')]) {
+	const nestedPath = path.join(root, 'node_modules', '@vscode', 'gulp-electron', 'node_modules', nested);
+	if (fs.existsSync(nestedPath)) {
+		log('postinstall', `Removing ESM-only nested package @vscode/gulp-electron/node_modules/${nested}`);
+		fs.rmSync(nestedPath, { recursive: true, force: true });
+	}
 }
 
 cp.execSync('git config pull.rebase merges');
