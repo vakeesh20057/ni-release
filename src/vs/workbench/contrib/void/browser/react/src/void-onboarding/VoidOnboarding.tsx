@@ -6,7 +6,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useAccessor, useIsDark, useSettingsState } from '../util/services.js';
 import { Brain, Check, ChevronRight, DollarSign, ExternalLink, Lock, X } from 'lucide-react';
-import { displayInfoOfProviderName, ProviderName, providerNames, localProviderNames, featureNames, FeatureName, isFeatureNameDisabled } from '../../../../common/voidSettingsTypes.js';
+import { displayInfoOfProviderName, ProviderName, providerNames, localProviderNames, featureNames, FeatureName, isFeatureNameDisabled, UseCase } from '../../../../common/voidSettingsTypes.js';
 import { ChatMarkdownRender } from '../markdown/ChatMarkdownRender.js';
 import { OllamaSetupInstructions, OneClickSwitchButton, SettingsForProvider, ModelDump } from '../void-settings-tsx/Settings.js';
 import { ColorScheme } from '../../../../../../../platform/theme/common/theme.js';
@@ -188,6 +188,7 @@ const AddProvidersPage = ({ pageIndex, setPageIndex }: { pageIndex: number, setP
 		{/* Right Column */}
 		<div className="flex-1 flex flex-col items-center justify-start p-6 h-full overflow-y-auto">
 			<div className="text-5xl mb-2 text-center w-full">Add a Provider</div>
+			<p className="text-xs text-void-fg-3 text-center mb-2">You can configure more providers later in Settings.</p>
 
 			<div className="w-full max-w-xl mt-4 mb-10">
 				<div className="text-4xl font-light my-4 w-full">{currentTab}</div>
@@ -340,6 +341,237 @@ const PreviousButton = ({ onClick, ...props }: { onClick: () => void } & React.B
 
 
 
+const USECASE_SETUP: Record<string, { title: string; description: string; docs: { label: string; url: string }[]; command?: string }> = {
+	firmware: {
+		title: 'Firmware Development',
+		description: 'Neural Inverse will activate hardware context — register maps, compliance checks, and 127 agent tools for your MCU.',
+		docs: [
+			{ label: 'Getting Started', url: 'https://neuralinverse.com/docs/firmware/getting-started' },
+			{ label: 'MCU Database (361 variants)', url: 'https://neuralinverse.com/docs/firmware/mcu-database' },
+			{ label: 'Compliance (MISRA C, ISO 26262, IEC 61508)', url: 'https://neuralinverse.com/docs/firmware/compliance' },
+		],
+		command: 'neuralInverse.openFirmware',
+	},
+	legacy: {
+		title: 'Legacy Modernisation',
+		description: 'Neural Inverse will set up the modernisation workspace for migrating your legacy codebase.',
+		docs: [
+			{ label: 'Modernisation Workflow', url: 'https://neuralinverse.com/docs/modernisation/getting-started' },
+			{ label: 'Supported Languages', url: 'https://neuralinverse.com/docs/modernisation/languages' },
+			{ label: 'Migration Patterns', url: 'https://neuralinverse.com/docs/modernisation/patterns' },
+		],
+		command: 'neuralInverse.openModernisation',
+	},
+};
+
+const UseCaseSetupPage = ({ useCase, onComplete }: { useCase: UseCase; onComplete: () => void }) => {
+	const accessor = useAccessor();
+	const commandService = accessor.get('ICommandService');
+	const setup = USECASE_SETUP[useCase || 'firmware'];
+
+	return (
+		<div className='flex flex-col items-center gap-6 max-w-[480px] mx-auto'>
+			<div className="text-3xl font-light text-center text-void-fg-1">{setup.title}</div>
+			<p className="text-sm text-void-fg-3 text-center">{setup.description}</p>
+
+			{/* Docs links */}
+			<div className="w-full mt-2 border border-void-border rounded-lg overflow-hidden">
+				{setup.docs.map((doc, i) => (
+					<a
+						key={doc.url}
+						href={doc.url}
+						target="_blank"
+						rel="noopener noreferrer"
+						className={`w-full flex items-center px-5 py-3.5 hover:bg-void-bg-2 transition-all cursor-pointer text-left ${i < setup.docs.length - 1 ? 'border-b border-void-border' : ''}`}
+					>
+						<div className="flex-1 text-sm text-void-fg-1">{doc.label}</div>
+						<ExternalLink className="w-3.5 h-3.5 text-void-fg-3" />
+					</a>
+				))}
+			</div>
+
+			{/* Complete button */}
+			<PrimaryActionButton
+				onClick={() => {
+					if (setup.command) {
+						commandService.executeCommand(setup.command);
+					}
+					onComplete();
+				}}
+			>
+				Enter the Neural Inverse
+			</PrimaryActionButton>
+		</div>
+	);
+};
+
+const CLOUD_REGIONS = [
+	{ id: 'eastus', code: 'US', name: 'East US', location: 'Virginia · cloud.neuralinverse.com' },
+	{ id: 'seasia', code: 'SG', name: 'Southeast Asia', location: 'Singapore · sea.cloud.neuralinverse.com' },
+	{ id: 'westeurope', code: 'EU', name: 'West Europe', location: 'Netherlands · eu.cloud.neuralinverse.com' },
+	{ id: 'japan', code: 'JP', name: 'Japan', location: 'Tokyo · jp.cloud.neuralinverse.com' },
+];
+
+const cloudWorkspaceUrl = (region: string) =>
+	`https://cloud.neuralinverse.com/templates/neuralinverse/NeuralInverse/workspace?mode=manual&param.cpu=2&param.home_disk_size=10&param.memory=2&param.region=${region}`;
+
+const ConnectPage = ({ onComplete, pageIndex, setPageIndex, onConnectMethodSelected }: { onComplete: () => void; pageIndex: number; setPageIndex: (i: number) => void; onConnectMethodSelected: (method: 'cloud' | 'api' | 'local') => void }) => {
+	const [view, setView] = useState<'choose' | 'cloud' | 'local'>('choose');
+	const [acceptedTerms, setAcceptedTerms] = useState(false);
+	const accessor = useAccessor();
+
+	if (view === 'cloud') {
+		return (
+			<div className='flex flex-col items-center gap-6 max-w-[520px] mx-auto w-full'>
+				<div className="text-3xl font-light text-center text-void-fg-1">Select your region</div>
+				<p className="text-sm text-void-fg-3 text-center">Choose a region to launch your workspace.</p>
+
+				<div className="w-full mt-4 border border-void-border rounded-lg overflow-hidden">
+					{CLOUD_REGIONS.map((region, i) => (
+						<button
+							key={region.id}
+							onClick={() => {
+								window.open(cloudWorkspaceUrl(region.id), '_blank');
+								onComplete();
+							}}
+							className={`w-full flex items-center px-5 py-4 hover:bg-void-bg-2 transition-all cursor-pointer text-left ${i < CLOUD_REGIONS.length - 1 ? 'border-b border-void-border' : ''}`}
+						>
+							<div className="w-9 h-9 rounded-full bg-void-bg-2 border border-void-border flex items-center justify-center text-xs font-medium text-void-fg-3 mr-4 shrink-0">
+								{region.code}
+							</div>
+							<div className="flex-1">
+								<div className='text-sm font-medium text-void-fg-1'>
+									{region.name}
+																	</div>
+								<div className='text-xs text-void-fg-3 mt-0.5'>{region.location}</div>
+							</div>
+							<ChevronRight className="w-4 h-4 text-void-fg-3" />
+						</button>
+					))}
+				</div>
+
+				<div className="flex items-center gap-2 mt-2">
+					<PreviousButton onClick={() => setView('choose')} />
+				</div>
+			</div>
+		);
+	}
+
+	if (view === 'local') {
+		const localSetPageIndex = (i: number) => {
+			if (i > pageIndex) {
+				onComplete();
+			} else {
+				setView('choose');
+			}
+		};
+		return (
+			<div className='w-full h-full'>
+				<AddProvidersPage pageIndex={pageIndex} setPageIndex={localSetPageIndex} />
+			</div>
+		);
+	}
+
+	return (
+		<div className='flex flex-col items-center gap-6 max-w-[520px] mx-auto w-full'>
+			<div className="text-3xl font-light text-center text-void-fg-1">Connect your AI</div>
+			<p className="text-sm text-void-fg-3 text-center">Choose how to power your coding assistant.</p>
+
+			<div className={`w-full border border-void-border rounded-lg overflow-hidden transition-opacity ${acceptedTerms ? 'opacity-100' : 'opacity-40 pointer-events-none'}`}>
+				{/* Option 1: Cloud */}
+				<button
+					onClick={() => { onConnectMethodSelected('cloud'); setView('cloud'); }}
+					className="w-full flex items-center px-5 py-5 hover:bg-void-bg-2 transition-all cursor-pointer border-b border-void-border text-left"
+				>
+					<div className="flex-1">
+						<div className='text-sm font-medium text-void-fg-1'>Via Neural Inverse Cloud</div>
+						<div className='text-xs text-void-fg-3 mt-1'>Free models included · No setup required</div>
+					</div>
+					<ChevronRight className="w-4 h-4 text-void-fg-3" />
+				</button>
+
+				{/* Option 2: Own API key */}
+				<button
+					onClick={() => { onConnectMethodSelected('api'); setView('local'); }}
+					className="w-full flex items-center px-5 py-5 hover:bg-void-bg-2 transition-all cursor-pointer border-b border-void-border text-left"
+				>
+					<div className="flex-1">
+						<div className='text-sm font-medium text-void-fg-1'>Use your own API key</div>
+						<div className='text-xs text-void-fg-3 mt-1'>Anthropic · OpenAI · Gemini · OpenRouter</div>
+					</div>
+					<ChevronRight className="w-4 h-4 text-void-fg-3" />
+				</button>
+
+				{/* Option 3: Local */}
+				<button
+					onClick={() => { onConnectMethodSelected('local'); setView('local'); }}
+					className="w-full flex items-center px-5 py-5 hover:bg-void-bg-2 transition-all cursor-pointer text-left"
+				>
+					<div className="flex-1">
+						<div className='text-sm font-medium text-void-fg-1'>Run models locally</div>
+						<div className='text-xs text-void-fg-3 mt-1'>Ollama · vLLM · LM Studio · Fully private</div>
+					</div>
+					<ChevronRight className="w-4 h-4 text-void-fg-3" />
+				</button>
+			</div>
+
+			<div className="flex items-center gap-2 mt-4">
+				<PreviousButton onClick={() => { setPageIndex(pageIndex - 1) }} />
+			</div>
+
+			{/* Terms & Conditions */}
+			<label className="flex items-center gap-2 cursor-pointer">
+				<input
+					type="checkbox"
+					checked={acceptedTerms}
+					onChange={(e) => setAcceptedTerms(e.target.checked)}
+					className="w-3.5 h-3.5 rounded border-void-border accent-blue-500 cursor-pointer"
+				/>
+				<span className="text-xs text-void-fg-3">
+					I agree to the <a href="https://neuralinverse.com/terms" target="_blank" rel="noopener noreferrer" className="underline hover:text-void-fg-1">Terms of Service</a> and <a href="https://neuralinverse.com/privacy" target="_blank" rel="noopener noreferrer" className="underline hover:text-void-fg-1">Privacy Policy</a>
+				</span>
+			</label>
+		</div>
+	);
+};
+
+const USE_CASE_OPTIONS: { id: UseCase; title: string; description: string }[] = [
+	{ id: 'software', title: 'Build Software', description: 'Web, mobile, backend, cloud-native applications' },
+	{ id: 'firmware', title: 'Build Firmware', description: 'Embedded systems, MCUs, RTOS, safety-critical drivers' },
+	{ id: 'legacy', title: 'Modernise Legacy', description: 'Migrate COBOL, RPG, PL/SQL, mainframe to modern stacks' },
+];
+
+const UseCasePage = ({ selectedUseCase, onSelect, onNext }: { selectedUseCase: UseCase; onSelect: (uc: UseCase) => void; onNext: () => void }) => {
+	return (
+		<div className='flex flex-col items-center gap-6 max-w-[480px] mx-auto'>
+			<div className="text-3xl font-light text-center text-void-fg-1">What are you building?</div>
+			<p className="text-sm text-void-fg-3 text-center">This personalises your AI checks, frameworks, and tooling.</p>
+			<div className='flex flex-col gap-3 w-full mt-2'>
+				{USE_CASE_OPTIONS.map(opt => (
+					<button
+						key={opt.id}
+						onClick={() => onSelect(opt.id)}
+						className={`w-full text-left px-5 py-4 rounded-lg border transition-all cursor-pointer relative ${selectedUseCase === opt.id
+							? 'border-blue-500 bg-blue-500/10'
+							: 'border-void-border hover:border-void-fg-3 bg-transparent'
+							}`}
+					>
+												<div className='text-sm font-medium text-void-fg-1'>{opt.title}</div>
+						<div className='text-xs text-void-fg-3 mt-1'>{opt.description}</div>
+					</button>
+				))}
+			</div>
+			{selectedUseCase && (
+				<FadeIn>
+					<PrimaryActionButton onClick={onNext}>
+						Continue
+					</PrimaryActionButton>
+				</FadeIn>
+			)}
+		</div>
+	);
+};
+
 const OnboardingPageShell = ({ top, bottom, content, hasMaxWidth = true, className = '', }: {
 	top?: React.ReactNode,
 	bottom?: React.ReactNode,
@@ -464,7 +696,11 @@ const VoidOnboardingContent = () => {
 	const voidSettingsState = useSettingsState()
 
 	const [pageIndex, setPageIndex] = useState(0)
+	const [_onboardingStartMs] = useState(() => Date.now())
+	const [connectMethod, setConnectMethod] = useState<'cloud' | 'api' | 'local' | null>(null)
 
+	// use case state
+	const [selectedUseCase, setSelectedUseCase] = useState<UseCase>(voidSettingsState.globalSettings.useCase)
 
 	// page 1 state
 	const [wantToUseOption, setWantToUseOption] = useState<WantToUseOption>('smart')
@@ -523,20 +759,6 @@ const VoidOnboardingContent = () => {
 	</div>
 
 
-	const lastPagePrevAndNextButtons = <div className="max-w-[600px] w-full mx-auto flex flex-col items-end">
-		<div className="flex items-center gap-2">
-			<PreviousButton
-				onClick={() => { setPageIndex(pageIndex - 1) }}
-			/>
-			<PrimaryActionButton
-				onClick={() => {
-					voidSettingsService.setGlobalSetting('isOnboardingComplete', true);
-					voidMetricsService.capture('Completed Onboarding', { selectedProviderName, wantToUseOption })
-				}}
-				ringSize={voidSettingsState.globalSettings.isOnboardingComplete ? 'screen' : undefined}
-			>Enter the Neural Inverse</PrimaryActionButton>
-		</div>
-	</div>
 
 
 	// cannot be md
@@ -590,12 +812,13 @@ const VoidOnboardingContent = () => {
 						{!isLinux && <VoidIcon />}
 					</div>
 
+					<p className="text-sm text-void-fg-3 text-center max-w-sm">The AI-native IDE for teams that ship regulated and critical software.</p>
 
 					<FadeIn
 						delayMs={1000}
 					>
 						<PrimaryActionButton
-							onClick={() => { setPageIndex(1) }}
+							onClick={() => { voidMetricsService.capture('Onboarding Started', {}); setPageIndex(1); }}
 						>
 							Get Started
 						</PrimaryActionButton>
@@ -605,26 +828,52 @@ const VoidOnboardingContent = () => {
 			}
 		/>,
 
-		1: <OnboardingPageShell hasMaxWidth={false}
+		1: <OnboardingPageShell
 			content={
-				<AddProvidersPage pageIndex={pageIndex} setPageIndex={setPageIndex} />
+				<UseCasePage
+					selectedUseCase={selectedUseCase}
+					onSelect={(uc) => {
+						setSelectedUseCase(uc);
+						voidSettingsService.setGlobalSetting('useCase', uc);
+						voidMetricsService.capture('Onboarding Use Case Selected', { useCase: uc });
+					}}
+					onNext={() => { setPageIndex(2) }}
+				/>
 			}
-		/>,
-		2: <OnboardingPageShell
-
-			content={
-				<div>
-					<div className="text-5xl font-light text-center">Settings and Themes</div>
-
-					<div className="mt-8 text-center flex flex-col items-center gap-4 w-full max-w-md mx-auto">
-						<h4 className="text-void-fg-3 mb-4">Transfer your settings from an existing editor?</h4>
-						<OneClickSwitchButton className='w-full px-4 py-2' fromEditor="VS Code" />
-						<OneClickSwitchButton className='w-full px-4 py-2' fromEditor="Cursor" />
-						<OneClickSwitchButton className='w-full px-4 py-2' fromEditor="Windsurf" />
-					</div>
+			bottom={<div className="max-w-[600px] w-full mx-auto flex flex-col items-end">
+				<div className="flex items-center gap-2">
+					<PreviousButton onClick={() => { setPageIndex(pageIndex - 1) }} />
 				</div>
+			</div>}
+		/>,
+		2: <ConnectPage
+			onComplete={() => {
+				if (selectedUseCase === 'software') {
+					voidSettingsService.setGlobalSetting('isOnboardingComplete', true);
+					voidMetricsService.capture('Onboarding Completed', { useCase: selectedUseCase, connectMethod, duration_ms: Date.now() - _onboardingStartMs })
+				} else {
+					setPageIndex(3);
+				}
+			}}
+			onConnectMethodSelected={(method) => setConnectMethod(method)}
+			pageIndex={pageIndex}
+			setPageIndex={setPageIndex}
+		/>,
+		3: <OnboardingPageShell
+			content={
+				<UseCaseSetupPage
+					useCase={selectedUseCase}
+					onComplete={() => {
+						voidSettingsService.setGlobalSetting('isOnboardingComplete', true);
+						voidMetricsService.capture('Onboarding Completed', { useCase: selectedUseCase, connectMethod, duration_ms: Date.now() - _onboardingStartMs })
+					}}
+				/>
 			}
-			bottom={lastPagePrevAndNextButtons}
+			bottom={<div className="max-w-[600px] w-full mx-auto flex flex-col items-end">
+				<div className="flex items-center gap-2">
+					<PreviousButton onClick={() => { setPageIndex(pageIndex - 1) }} />
+				</div>
+			</div>}
 		/>,
 	}
 
