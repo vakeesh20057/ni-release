@@ -708,6 +708,8 @@ class ChatThreadService extends Disposable implements IChatThreadService {
 		let _lastToolSig = '' // for consecutive duplicate tool detection
 		let _consecutiveDuplicateTools = 0
 		let _failedBashCommands: string[] = [] // track failed bash commands to detect retry loops
+		let _consecutiveNoProgressRounds = 0 // track rounds where all tool calls fail (no forward progress)
+		let _sameToolNameAttempts: Record<string, number> = {} // track repeated calls to same tool name
 
 		// before enter loop, call tool
 		if (callThisToolFirst) {
@@ -965,6 +967,31 @@ class ChatThreadService extends Disposable implements IChatThreadService {
 					if (anyInterrupted) {
 						this._setStreamState(threadId, undefined)
 						return
+					}
+
+					// No-progress guard: if all tool calls in this round failed, increment counter
+					const msgs = this.state.allThreads[threadId]?.messages ?? []
+					const lastToolMsgs = msgs.slice(-toolCalls.length).filter(m => m.role === 'tool')
+					const allFailed = lastToolMsgs.length > 0 && lastToolMsgs.every(m => m.type === 'tool_error' || m.type === 'invalid_params')
+					if (allFailed) {
+						_consecutiveNoProgressRounds++
+						// Track which tools keep failing
+						for (const tc of toolCalls) {
+							_sameToolNameAttempts[tc.name] = (_sameToolNameAttempts[tc.name] || 0) + 1
+						}
+						const maxFailedAttempts = Math.max(...Object.values(_sameToolNameAttempts))
+						if (maxFailedAttempts >= 4) {
+							const stuckTool = Object.entries(_sameToolNameAttempts).find(([_, v]) => v >= 4)?.[0] ?? 'unknown'
+							this._setStreamState(threadId, { isRunning: undefined, error: { message: `Agent stopped: tool "${stuckTool}" failed ${maxFailedAttempts} consecutive times. The operation may not be possible in this context.`, fullError: null } })
+							return
+						}
+						if (_consecutiveNoProgressRounds >= 3) {
+							this._setStreamState(threadId, { isRunning: undefined, error: { message: `Agent stopped: ${_consecutiveNoProgressRounds} consecutive rounds of failed tool calls with no forward progress.`, fullError: null } })
+							return
+						}
+					} else {
+						_consecutiveNoProgressRounds = 0
+						_sameToolNameAttempts = {}
 					}
 
 					if (anyAwaitingUserApproval) { isRunningWhenEnd = 'awaiting_user' }

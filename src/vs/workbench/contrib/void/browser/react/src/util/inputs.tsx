@@ -1595,8 +1595,8 @@ const normalizeIndentation = (code: string): string => {
 
 
 const modelOfEditorId: { [id: string]: ITextModel | undefined } = {}
-export type BlockCodeProps = { initValue: string, language?: string, maxHeight?: number, showScrollbars?: boolean }
-export const BlockCode = ({ initValue, language, maxHeight, showScrollbars }: BlockCodeProps) => {
+export type BlockCodeProps = { initValue: string, language?: string, maxHeight?: number, showScrollbars?: boolean, wordWrap?: boolean }
+export const BlockCode = ({ initValue, language, maxHeight, showScrollbars, wordWrap }: BlockCodeProps) => {
 
 	initValue = normalizeIndentation(initValue)
 
@@ -1638,7 +1638,7 @@ export const BlockCode = ({ initValue, language, maxHeight, showScrollbars }: Bl
 					container,
 					{
 						automaticLayout: true,
-						wordWrap: 'off',
+						wordWrap: wordWrap ? 'on' : 'off',
 
 						scrollbar: {
 							alwaysConsumeMouseWheel: false,

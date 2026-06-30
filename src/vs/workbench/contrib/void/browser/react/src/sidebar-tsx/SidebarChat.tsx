@@ -2154,9 +2154,9 @@ const CommandTool = ({ toolMessage, type, threadId }: { threadId: string } & ({
 					{isBg && <span className='text-[10px] text-void-fg-4 opacity-30 ml-auto'>bg</span>}
 				</div>
 				{trimmed && !isBg && (
-					<div className='ml-3 mt-0.5 max-h-[200px] overflow-auto'>
+					<div className='ml-3 mt-1 max-h-[200px] overflow-auto rounded border border-void-fg-4/10'>
 						<div className='!select-text cursor-auto'>
-							<BlockCode initValue={trimmed} language='shellscript' />
+							<BlockCode initValue={trimmed} language='shellscript' wordWrap />
 						</div>
 					</div>
 				)}
@@ -2174,7 +2174,7 @@ const CommandTool = ({ toolMessage, type, threadId }: { threadId: string } & ({
 					<span className='text-[11px] text-void-fg-4 font-mono truncate opacity-60'>{desc1}</span>
 					<span className='text-[10px] text-void-warning opacity-50 ml-auto'>error</span>
 				</div>
-				<div className='ml-3 mt-0.5 max-h-[150px] overflow-auto text-[11px] font-mono text-void-warning/70 whitespace-pre'>
+				<div className='ml-3 mt-1 max-h-[150px] overflow-auto rounded border border-void-warning/15 px-2 py-1.5 bg-void-warning/5 text-[11px] font-mono text-void-warning/70 whitespace-pre-wrap break-words'>
 					{result}
 				</div>
 			</div>
