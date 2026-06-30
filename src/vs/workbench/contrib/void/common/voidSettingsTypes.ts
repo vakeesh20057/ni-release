@@ -487,6 +487,8 @@ export const isFeatureNameDisabled = (featureName: FeatureName, settingsState: V
 export type ChatMode = 'ask' | 'reason' | 'validate' | 'copilot' | 'agent' | 'gather' | 'power' | 'checks'
 
 
+export type UseCase = 'software' | 'firmware' | 'legacy' | null;
+
 export type GlobalSettings = {
 	autoRefreshModels: boolean;
 	aiInstructions: string;
@@ -501,6 +503,7 @@ export type GlobalSettings = {
 	isOnboardingComplete: boolean;
 	disableSystemMessage: boolean;
 	autoAcceptLLMChanges: boolean;
+	useCase: UseCase;
 }
 
 export const defaultGlobalSettings: GlobalSettings = {
@@ -517,6 +520,7 @@ export const defaultGlobalSettings: GlobalSettings = {
 	isOnboardingComplete: false,
 	disableSystemMessage: false,
 	autoAcceptLLMChanges: false,
+	useCase: null,
 }
 
 export type GlobalSettingName = keyof GlobalSettings
