@@ -130,7 +130,7 @@ jobs:
           NODE_OPTIONS: "--max-old-space-size=12288"
 
       - name: Compile neuralinverse-cloud extension
-        run: cd extensions/neuralinverse-cloud && npx tsc -p tsconfig.json
+        run: node_modules\.bin\tsc.cmd -p extensions/neuralinverse-cloud/tsconfig.json
 
       - name: Compile extensions (syntax + language features)
         run: node_modules\.bin\gulp.cmd compile-extensions-build
@@ -291,7 +291,7 @@ jobs:
           NODE_OPTIONS: "--max-old-space-size=12288"
 
       - name: Compile neuralinverse-cloud extension
-        run: cd extensions/neuralinverse-cloud && npx tsc -p tsconfig.json
+        run: node_modules\.bin\tsc.cmd -p extensions/neuralinverse-cloud/tsconfig.json
 
       - name: Compile extensions (syntax + language features)
         run: node_modules\.bin\gulp.cmd compile-extensions-build
