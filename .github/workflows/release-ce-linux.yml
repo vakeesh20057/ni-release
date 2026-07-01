@@ -110,6 +110,33 @@ jobs:
         env:
           VSCODE_QUALITY: ${{ env.NI_QUALITY }}
 
+      - name: Build server tarball (linux-x64)
+        run: |
+          node node_modules/.bin/gulp minify-vscode-reh
+          node node_modules/.bin/gulp vscode-reh-linux-x64-min-ci
+          COMMIT=$(node -e "const p=require('./product.json'); console.log(p.commit || require('child_process').execSync('git rev-parse HEAD').toString().trim())")
+          REH_DIR=$(find . .. -maxdepth 3 -type d -name "vscode-reh-linux-x64" 2>/dev/null | head -1)
+          if [ -n "$REH_DIR" ]; then
+            mkdir -p .build/release/server
+            tar czf ".build/release/server/neuralinverse-server-linux-x64.tar.gz" \
+              -C "$(dirname "$REH_DIR")" "$(basename "$REH_DIR")"
+            echo "SERVER_COMMIT=$COMMIT" >> "$GITHUB_ENV"
+            echo "server tarball: $(du -sh .build/release/server/neuralinverse-server-linux-x64.tar.gz | cut -f1)"
+          else
+            echo "::warning::vscode-reh-linux-x64 not found -- skipping server tarball"
+          fi
+        env:
+          VSCODE_QUALITY: ${{ env.NI_QUALITY }}
+          NODE_OPTIONS: "--max-old-space-size=8192"
+
+      - name: Upload server tarball artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: server-linux-x64
+          path: .build/release/server/
+          retention-days: 7
+        if: ${{ env.SERVER_COMMIT != '' }}
+
       - name: Debug -- list gulp output
         run: |
           echo "=== Files in workspace root ==="
@@ -482,8 +509,16 @@ jobs:
     needs: [build-linux-x64, build-linux-arm64, build-linux-armhf]
 
     steps:
-      - name: Set version
-        run: echo "NI_VERSION=${{ github.event.inputs.version }}" >> "$GITHUB_ENV"
+      - name: Checkout (for commit hash)
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 1
+
+      - name: Set version + commit
+        run: |
+          echo "NI_VERSION=${{ github.event.inputs.version }}" >> "$GITHUB_ENV"
+          echo "NI_COMMIT=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
 
       - name: Download all Linux artifacts
         uses: actions/download-artifact@v4
@@ -492,8 +527,15 @@ jobs:
           path: release/
           merge-multiple: true
 
+      - name: Download server tarball
+        uses: actions/download-artifact@v4
+        with:
+          name: server-linux-x64
+          path: server/
+        continue-on-error: true
+
       - name: List release artifacts
-        run: mkdir -p release/ && ls -lh release/
+        run: mkdir -p release/ && ls -lh release/ && ls -lh server/ 2>/dev/null || true
 
       - name: Upload to S3
         env:
@@ -502,8 +544,15 @@ jobs:
           AWS_DEFAULT_REGION: us-east-1
         run: |
           VERSION="${{ env.NI_VERSION }}"
+          COMMIT="${{ env.NI_COMMIT }}"
           aws s3 cp release/ s3://neuralinverse/ce/${VERSION}/ --recursive
           aws s3 cp release/ s3://neuralinverse/ce/latest/ --recursive
+          if [ -f "server/neuralinverse-server-linux-x64.tar.gz" ]; then
+            aws s3 cp server/neuralinverse-server-linux-x64.tar.gz \
+              s3://neuralinverse/ce/server/${COMMIT}/neuralinverse-server-linux-x64.tar.gz \
+              --content-type application/gzip
+            echo "Uploaded server tarball to s3://neuralinverse/ce/server/${COMMIT}/"
+          fi
           DATE=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
           echo "{\"version\": \"${VERSION}\", \"date\": \"${DATE}\"}" | \
             aws s3 cp - s3://neuralinverse/ce/latest.json --content-type application/json

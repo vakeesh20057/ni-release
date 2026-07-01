@@ -15,6 +15,7 @@
 	"serverLicensePrompt": "",
 	"serverApplicationName": "neuralinverse-server",
 	"serverDataFolderName": ".neuralinverse-server",
+	"serverDownloadUrlTemplate": "https://cdn.neuralinverse.io/ce/server/${commit}/neuralinverse-server-${os}-${arch}.tar.gz",
 	"tunnelApplicationName": "neuralinverse-tunnel",
 	"win32DirName": "NeuralInverse",
 	"win32NameVersion": "NeuralInverse",
