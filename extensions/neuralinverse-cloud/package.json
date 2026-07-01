@@ -1,0 +1,94 @@
+{
+	"name": "cloud",
+	"displayName": "Neural Inverse Cloud",
+	"description": "Connect to Neural Inverse Cloud workspaces from the desktop app",
+	"version": "0.1.0",
+	"publisher": "neuralinverse",
+	"license": "MIT",
+	"engines": {
+		"vscode": "^1.80.0"
+	},
+	"categories": ["Other"],
+	"extensionKind": ["ui"],
+	"activationEvents": [
+		"onUri",
+		"onStartupFinished"
+	],
+	"main": "./out/extension.js",
+	"contributes": {
+		"configuration": {
+			"title": "Neural Inverse Cloud",
+			"properties": {
+				"neuralinverse.cloud.defaultUrl": {
+					"markdownDescription": "The default Neural Inverse Cloud deployment URL.",
+					"type": "string",
+					"default": "",
+					"scope": "machine"
+				},
+				"neuralinverse.cloud.sshConfig": {
+					"markdownDescription": "Additional SSH config values for workspace connections. Format: `Key=Value`.",
+					"type": "array",
+					"items": {
+						"type": "string",
+						"pattern": "^[a-zA-Z0-9-]+[=\\s].*$"
+					},
+					"default": [],
+					"scope": "machine"
+				},
+				"neuralinverse.cloud.insecure": {
+					"markdownDescription": "If true, skip TLS verification for self-signed certificates.",
+					"type": "boolean",
+					"default": false,
+					"scope": "application"
+				},
+				"neuralinverse.cloud.enableDownloads": {
+					"markdownDescription": "Allow the extension to download the CLI when missing or out of date.",
+					"type": "boolean",
+					"default": true,
+					"scope": "application"
+				},
+				"neuralinverse.cloud.headerCommand": {
+					"markdownDescription": "External command that outputs additional HTTP headers (key=value per line). `NICLOUD_URL` will be set in the environment.",
+					"type": "string",
+					"default": "",
+					"scope": "machine"
+				}
+			}
+		},
+		"commands": [
+			{
+				"command": "neuralinverse.cloud.login",
+				"title": "Log In",
+				"category": "Neural Inverse Cloud"
+			},
+			{
+				"command": "neuralinverse.cloud.logout",
+				"title": "Log Out",
+				"category": "Neural Inverse Cloud"
+			},
+			{
+				"command": "neuralinverse.cloud.open",
+				"title": "Open Workspace",
+				"category": "Neural Inverse Cloud"
+			}
+		],
+		"resourceLabelFormatters": [
+			{
+				"scheme": "vscode-remote",
+				"authority": "ssh-remote+neuralinverse-vscode--*",
+				"formatting": {
+					"label": "${path}",
+					"separator": "/",
+					"workspaceSuffix": "Neural Inverse Cloud"
+				}
+			}
+		]
+	},
+	"scripts": {
+		"build": "tsc -p tsconfig.json",
+		"watch": "tsc -watch -p tsconfig.json"
+	},
+	"devDependencies": {
+		"@types/node": "20.x"
+	}
+}
