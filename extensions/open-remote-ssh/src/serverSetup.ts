@@ -52,21 +52,36 @@ export async function installCodeServer(conn: SSHConnection, serverDownloadUrlTe
 			const port = portMatch ? parseInt(portMatch[1], 10) : 13337;
 			const hasNoToken = preCheck.stdout.includes('--without-connection-token');
 
-			// Verify the server is responding
-			const verify = await conn.exec(`curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:${port}/version 2>/dev/null || echo "0"`);
-			const httpCode = verify.stdout.trim();
-			if (httpCode === '200' || httpCode === '301' || httpCode === '302') {
-				logger.info(`Pre-installed server responding on port ${port}`);
-				return {
-					exitCode: 0,
-					listeningOn: port,
-					connectionToken: hasNoToken ? undefined : undefined,
-					logFile: '',
-					osReleaseId: '',
-					arch: '',
-					platform: 'linux',
-					tmpDir: '/tmp',
-				};
+			// Verify the server is responding AND its commit matches the client.
+			// A commit mismatch causes an immediate protocol rejection — skip this
+			// server and fall through to install the correct version.
+			const verify = await conn.exec(`curl -s http://127.0.0.1:${port}/version 2>/dev/null || echo ""`);
+			const versionBody = verify.stdout.trim();
+			if (versionBody) {
+				try {
+					const versionJson = JSON.parse(versionBody);
+					const serverCommit: string | undefined = versionJson.commit;
+					const clientCommit = (await getVSCodeServerConfig()).commit;
+					if (serverCommit && clientCommit && serverCommit !== clientCommit) {
+						logger.info(`Pre-installed server commit ${serverCommit} does not match client ${clientCommit} — skipping`);
+						// Fall through to install the matching server version
+					} else {
+						logger.info(`Pre-installed server responding on port ${port}`);
+						return {
+							exitCode: 0,
+							listeningOn: port,
+							connectionToken: hasNoToken ? undefined : undefined,
+							logFile: '',
+							osReleaseId: '',
+							arch: '',
+							platform: 'linux',
+							tmpDir: '/tmp',
+						};
+					}
+				} catch {
+					// JSON parse failed — treat as version unknown, skip pre-installed server
+					logger.info('Pre-installed server /version response not parseable — skipping');
+				}
 			}
 		}
 	} catch {

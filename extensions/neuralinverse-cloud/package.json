@@ -67,6 +67,11 @@
 				"command": "neuralinverse.cloud.open",
 				"title": "Open Workspace",
 				"category": "Neural Inverse Cloud"
+			},
+			{
+				"command": "neuralinverse.cloud.resetRemoteServer",
+				"title": "Reset Remote Server Cache",
+				"category": "Neural Inverse Cloud"
 			}
 		],
 		"resourceLabelFormatters": [

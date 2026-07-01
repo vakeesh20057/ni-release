@@ -16,6 +16,7 @@ export async function activate(ctx: vscode.ExtensionContext): Promise<void> {
 		vscode.commands.registerCommand('neuralinverse.cloud.login', () => commands.login()),
 		vscode.commands.registerCommand('neuralinverse.cloud.logout', () => commands.logout()),
 		vscode.commands.registerCommand('neuralinverse.cloud.open', () => commands.open()),
+		vscode.commands.registerCommand('neuralinverse.cloud.resetRemoteServer', () => commands.resetRemoteServer()),
 	);
 
 	const deployment = storage.getDeployment();

@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import * as cp from 'node:child_process';
 import { Storage } from './storage';
 import { toRemoteAuthority } from './authority';
 import { writeSshConfig } from './sshConfig';
@@ -43,6 +44,70 @@ export class Commands {
 	async logout(): Promise<void> {
 		await this.storage.clearDeployment();
 		vscode.window.showInformationMessage('Neural Inverse Cloud: Logged out.');
+	}
+
+	async resetRemoteServer(owner?: string, workspace?: string): Promise<void> {
+		const deployment = this.storage.getDeployment();
+		if (!deployment) {
+			vscode.window.showErrorMessage('Neural Inverse Cloud: Not logged in.');
+			return;
+		}
+
+		if (!owner || !workspace) {
+			const input = await vscode.window.showInputBox({
+				title: 'Reset Remote Server',
+				prompt: 'Enter owner/workspace whose server cache to clear (e.g. sanjay/myproject)',
+				ignoreFocusOut: true,
+			});
+			if (!input) { return; }
+			const parts = input.split('/');
+			owner = parts[0];
+			workspace = parts[1];
+			if (!owner || !workspace) {
+				vscode.window.showErrorMessage('Neural Inverse Cloud: Use format owner/workspace.');
+				return;
+			}
+		}
+
+		const cliPath = await ensureCli(this.ctx, deployment.url, this.output);
+		if (!cliPath) { return; }
+
+		const prefix = `neuralinverse-vscode--${deployment.safeHostname}--`;
+		const sshHost = `${prefix}${owner}--${workspace}.main`;
+
+		const cmd = [
+			`"${cliPath}"`,
+			`--url ${deployment.url}`,
+			`--token ${deployment.token}`,
+			'ssh --stdio',
+			`--ssh-host-prefix ${prefix}`,
+			sshHost,
+		].join(' ');
+
+		// Use ssh via CLI proxy to delete the cached server directory
+		const deleteCmd = `ssh -o ProxyCommand='${cmd}' -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null ${sshHost} "rm -rf ~/.neuralinverse-server"`;
+
+		this.output.appendLine(`Resetting server cache on ${owner}/${workspace}...`);
+
+		await vscode.window.withProgress(
+			{ location: vscode.ProgressLocation.Notification, title: 'Neural Inverse Cloud: Clearing remote server cache...' },
+			() => new Promise<void>((resolve, reject) => {
+				cp.exec(deleteCmd, { timeout: 30000 }, (err, _stdout, stderr) => {
+					if (err) {
+						this.output.appendLine(`Reset error: ${stderr || err.message}`);
+						reject(err);
+					} else {
+						this.output.appendLine('Remote server cache cleared.');
+						resolve();
+					}
+				});
+			}),
+		).then(
+			() => vscode.window.showInformationMessage(
+				`Neural Inverse Cloud: Server cache cleared for ${owner}/${workspace}. Reconnect to install fresh server.`
+			),
+			(err) => vscode.window.showErrorMessage(`Neural Inverse Cloud: Reset failed — ${err.message}`)
+		);
 	}
 
 	async open(): Promise<void> {

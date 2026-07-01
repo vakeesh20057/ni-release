@@ -132,6 +132,11 @@ jobs:
       - name: Compile neuralinverse-cloud extension
         run: node_modules\.bin\tsc.cmd -p extensions/neuralinverse-cloud/tsconfig.json
 
+      - name: Bundle open-remote-ssh extension
+        run: node_modules\.bin\webpack-cli.cmd --config extensions/open-remote-ssh/extension.webpack.config.js --mode production
+        env:
+          NODE_OPTIONS: "--max-old-space-size=4096"
+
       - name: Compile extensions (syntax + language features)
         run: node_modules\.bin\gulp.cmd compile-extensions-build
         env:
@@ -292,6 +297,11 @@ jobs:
 
       - name: Compile neuralinverse-cloud extension
         run: node_modules\.bin\tsc.cmd -p extensions/neuralinverse-cloud/tsconfig.json
+
+      - name: Bundle open-remote-ssh extension
+        run: node_modules\.bin\webpack-cli.cmd --config extensions/open-remote-ssh/extension.webpack.config.js --mode production
+        env:
+          NODE_OPTIONS: "--max-old-space-size=4096"
 
       - name: Compile extensions (syntax + language features)
         run: node_modules\.bin\gulp.cmd compile-extensions-build

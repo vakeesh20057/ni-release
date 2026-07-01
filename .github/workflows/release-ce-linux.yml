@@ -100,6 +100,11 @@ jobs:
       - name: Compile neuralinverse-cloud extension
         run: cd extensions/neuralinverse-cloud && npx tsc -p tsconfig.json
 
+      - name: Bundle open-remote-ssh extension
+        run: cd extensions/open-remote-ssh && node ../../node_modules/.bin/webpack-cli --config extension.webpack.config.js --mode production
+        env:
+          NODE_OPTIONS: "--max-old-space-size=4096"
+
       - name: Compile extensions (syntax + language features)
         run: node node_modules/.bin/gulp compile-extensions-build
         env:
@@ -114,13 +119,21 @@ jobs:
         run: |
           node node_modules/.bin/gulp minify-vscode-reh
           node node_modules/.bin/gulp vscode-reh-linux-x64-min-ci
-          COMMIT=$(node -e "const p=require('./product.json'); console.log(p.commit || require('child_process').execSync('git rev-parse HEAD').toString().trim())")
+          # Read commit from the built product.json so it matches the installed app exactly.
           REH_DIR=$(find . .. -maxdepth 3 -type d -name "vscode-reh-linux-x64" 2>/dev/null | head -1)
           if [ -n "$REH_DIR" ]; then
+            BUILT_PRODUCT="$REH_DIR/product.json"
+            if [ -f "$BUILT_PRODUCT" ]; then
+              COMMIT=$(node -e "const p=require('$BUILT_PRODUCT'); console.log(p.commit || require('child_process').execSync('git rev-parse HEAD').toString().trim())")
+            else
+              COMMIT=$(node -e "const p=require('./product.json'); console.log(p.commit || require('child_process').execSync('git rev-parse HEAD').toString().trim())")
+            fi
             mkdir -p .build/release/server
             tar czf ".build/release/server/neuralinverse-server-linux-x64.tar.gz" \
               -C "$(dirname "$REH_DIR")" "$(basename "$REH_DIR")"
+            echo "$COMMIT" > .build/release/server/commit.txt
             echo "SERVER_COMMIT=$COMMIT" >> "$GITHUB_ENV"
+            echo "server tarball commit: $COMMIT"
             echo "server tarball: $(du -sh .build/release/server/neuralinverse-server-linux-x64.tar.gz | cut -f1)"
           else
             echo "::warning::vscode-reh-linux-x64 not found -- skipping server tarball"
@@ -319,6 +332,11 @@ jobs:
       - name: Compile neuralinverse-cloud extension
         run: cd extensions/neuralinverse-cloud && npx tsc -p tsconfig.json
 
+      - name: Bundle open-remote-ssh extension
+        run: cd extensions/open-remote-ssh && node ../../node_modules/.bin/webpack-cli --config extension.webpack.config.js --mode production
+        env:
+          NODE_OPTIONS: "--max-old-space-size=4096"
+
       - name: Compile extensions (syntax + language features)
         run: node node_modules/.bin/gulp compile-extensions-build
         env:
@@ -441,6 +459,11 @@ jobs:
       - name: Compile neuralinverse-cloud extension
         run: cd extensions/neuralinverse-cloud && npx tsc -p tsconfig.json
 
+      - name: Bundle open-remote-ssh extension
+        run: cd extensions/open-remote-ssh && node ../../node_modules/.bin/webpack-cli --config extension.webpack.config.js --mode production
+        env:
+          NODE_OPTIONS: "--max-old-space-size=4096"
+
       - name: Compile extensions (syntax + language features)
         run: node node_modules/.bin/gulp compile-extensions-build
         env:
@@ -518,7 +541,14 @@ jobs:
       - name: Set version + commit
         run: |
           echo "NI_VERSION=${{ github.event.inputs.version }}" >> "$GITHUB_ENV"
-          echo "NI_COMMIT=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
+          # Read the commit from the server artifact's commit.txt (stamped at build time
+          # from the built product.json -- guarantees the key matches what open-remote-ssh
+          # reads out of the installed app's product.json).
+          if [ -f "server/commit.txt" ]; then
+            echo "NI_COMMIT=$(cat server/commit.txt)" >> "$GITHUB_ENV"
+          else
+            echo "NI_COMMIT=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
+          fi
 
       - name: Download all Linux artifacts
         uses: actions/download-artifact@v4
